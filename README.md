@@ -178,13 +178,3 @@ If left blank, the rest of the app works normally — only the FMS sync is off.
 **Logo / static files not loading**
 - Confirm the `public/` folder uploaded correctly and `bunai-logo.png` exists.
 
----
-
-## 🔑 Default Login
-
-```
-Email:    aman@test.com
-Password: password
-```
-
-⚠️ Change this immediately in production (Profile → Change Password).
