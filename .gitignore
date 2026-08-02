@@ -1,0 +1,34 @@
+# ── Secrets — NEVER commit ──────────────────────────────
+.env
+.env.local
+.env.*.local
+credentials.json
+credential.json
+service-account.json
+serviceaccount.json
+google-credentials.json
+sa-key.json
+key.json
+secrets/*
+!secrets/.htaccess
+!secrets/README.txt
+*.pem
+*.p12
+*.key
+
+# ── Node ────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.npmrc
+
+# ── Uploads / runtime ───────────────────────────────────
+uploads/
+tmp/
+*.log
+
+# ── Editor / OS ─────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

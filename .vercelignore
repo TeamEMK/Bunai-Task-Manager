@@ -1,0 +1,23 @@
+# Never ship secrets or local-only files to the deployment
+.env
+.env.local
+credentials.json
+credential.json
+service-account.json
+serviceaccount.json
+google-credentials.json
+sa-key.json
+key.json
+secrets/
+*.pem
+*.p12
+*.key
+
+node_modules
+npm-debug.log*
+*.log
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

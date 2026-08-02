@@ -1,0 +1,2494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bunai IMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+  :root {
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --bg: #f3f6fc; --surface: #ffffff; --surface2: #eef3fb; --border: #e2e9f4;
+    --accent: #2563eb; --accent2: #3b82f6; --text: #0e1a30; --muted: #64748b;
+    --red: #e11d48; --red-bg: rgba(225,29,72,0.08);
+    --yellow: #c2820a; --yellow-bg: rgba(194,130,10,0.10);
+    --green: #15a05a; --green-bg: rgba(21,160,90,0.10);
+    --blue: #2563eb; --blue-bg: rgba(37,99,235,0.09);
+    --orange: #d4580a; --orange-bg: rgba(212,88,10,0.10);
+    --gold: #b8860b; --gold-bg: rgba(184,134,11,0.12);
+    --radius: 14px; --radius-sm: 9px;
+    --shadow-sm: 0 1px 2px rgba(15,30,60,0.05), 0 1px 3px rgba(15,30,60,0.04);
+    --shadow-md: 0 4px 14px rgba(15,30,60,0.07);
+    --shadow-lg: 0 18px 50px rgba(15,30,60,0.16);
+    --ring: 0 0 0 3px rgba(37,99,235,0.18);
+  }
+  [data-theme="dark"] {
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --bg: #0a0f1a; --surface: #121927; --surface2: #1a2233; --border: #273349;
+    --accent: #3b82f6; --accent2: #60a5fa; --text: #e9eff8; --muted: #8597b2;
+    --red: #fb5168; --red-bg: rgba(251,81,104,0.13);
+    --yellow: #ffd02a; --yellow-bg: rgba(255,208,42,0.13);
+    --green: #34d97e; --green-bg: rgba(52,217,126,0.13);
+    --blue: #4f8df9; --blue-bg: rgba(79,141,249,0.15);
+    --orange: #ff9f43; --orange-bg: rgba(255,159,67,0.13);
+    --gold: #ffd84d; --gold-bg: rgba(255,216,77,0.13);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.30);
+    --shadow-md: 0 6px 20px rgba(0,0,0,0.34);
+    --shadow-lg: 0 24px 60px rgba(0,0,0,0.55);
+    --ring: 0 0 0 3px rgba(59,130,246,0.30);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; line-height:1.5; letter-spacing:0.005em; }
+
+  ::-webkit-scrollbar { width:11px; height:11px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px; border:3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--muted); }
+  * { scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 32px; display:flex; align-items:center; justify-content:space-between; height:66px; position:sticky; top:0; z-index:100; box-shadow:var(--shadow-sm); }
+  .logo { font-family:var(--font); font-weight:800; font-size:22px; letter-spacing:-0.6px; background:linear-gradient(135deg,#2563eb,#60a5fa); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .logo span { font-weight:500; font-size:12.5px; background:none; -webkit-text-fill-color:var(--muted); margin-left:9px; letter-spacing:0.2px; }
+  .header-right { display:flex; align-items:center; gap:12px; }
+  .today-badge { background:var(--surface2); border:1px solid var(--border); padding:7px 14px; border-radius:9px; font-size:12px; font-weight:500; color:var(--muted); }
+
+  .tabs { display:flex; background:var(--surface); border-bottom:1px solid var(--border); padding:0 32px; overflow-x:auto; gap:2px; }
+  .tab-btn { padding:15px 22px; font-family:var(--font); font-weight:600; font-size:13px; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2.5px solid transparent; transition:color .18s ease, border-color .18s ease, background .18s ease; letter-spacing:0.2px; white-space:nowrap; border-radius:8px 8px 0 0; }
+  .tab-btn:hover { color:var(--text); background:var(--surface2); }
+  .tab-btn.active { color:var(--accent2); border-bottom-color:var(--accent); }
+  .tab-btn.tab-gold.active { color:var(--gold); border-bottom-color:var(--gold); }
+  .tab-btn.tab-red.active  { color:var(--red);  border-bottom-color:var(--red); }
+  .tab-btn.tab-orange.active { color:var(--orange); border-bottom-color:var(--orange); }
+
+  main { padding:28px 32px; }
+
+  /* FILTERS */
+  .filters { display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
+  .filter-group { display:flex; align-items:center; gap:8px; }
+  .filter-label { font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; font-weight:600; }
+  .filter-input { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:9px 14px; border-radius:9px; font-family:var(--font); font-size:13px; outline:none; transition:border-color .18s, box-shadow .18s; }
+  .filter-input:focus { border-color:var(--accent); box-shadow:var(--ring); }
+  .quick-btns { display:flex; gap:6px; }
+  .quick-btn { padding:9px 14px; border-radius:9px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-family:var(--font); font-size:12px; font-weight:600; cursor:pointer; transition:all .18s; }
+  .quick-btn:hover, .quick-btn.active { border-color:var(--accent); color:var(--accent2); background:var(--blue-bg); }
+  .search-box { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:9px 14px 9px 36px; border-radius:9px; font-family:var(--font); font-size:13px; outline:none; width:210px; transition:border-color .18s, box-shadow .18s; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b6b88' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:12px center; }
+  .search-box:focus { border-color:var(--accent); box-shadow:var(--ring); }
+
+  /* DROPDOWN FILTER */
+  .status-dropdown { position:relative; display:inline-block; }
+  .status-select {
+    appearance:none; -webkit-appearance:none;
+    background:var(--surface2); border:1px solid var(--border); color:var(--text);
+    padding:9px 32px 9px 14px; border-radius:9px;
+    font-family:var(--font); font-size:12px; font-weight:500; outline:none; cursor:pointer;
+    transition:border-color .18s, box-shadow .18s; min-width:160px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b6b88' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:calc(100% - 10px) center;
+  }
+  .status-select:focus { border-color:var(--accent); box-shadow:var(--ring); }
+  .status-select.filter-red    { border-color:var(--red);    color:var(--red);    background-color:var(--red-bg); }
+  .status-select.filter-yellow { border-color:var(--yellow); color:var(--yellow); background-color:var(--yellow-bg); }
+  .status-select.filter-green  { border-color:var(--green);  color:var(--green);  background-color:var(--green-bg); }
+  .status-select.filter-blue   { border-color:var(--blue);   color:var(--blue);   background-color:var(--blue-bg); }
+  .status-select.filter-orange { border-color:var(--orange); color:var(--orange); background-color:var(--orange-bg); }
+  .status-select.filter-gold   { border-color:var(--gold);   color:var(--gold);   background-color:var(--gold-bg); }
+
+  /* STATS */
+  .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+  .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; position:relative; overflow:hidden; cursor:pointer; box-shadow:var(--shadow-sm); transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+  .stat-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-md); border-color:var(--accent2); }
+  .stat-card.active-filter { box-shadow:0 0 0 2px var(--accent), var(--shadow-md); }
+  .stat-card.s-red.active-filter   { box-shadow:0 0 0 2px var(--red), var(--shadow-md); }
+  .stat-card.s-yellow.active-filter { box-shadow:0 0 0 2px var(--yellow), var(--shadow-md); }
+  .stat-card.s-green.active-filter  { box-shadow:0 0 0 2px var(--green), var(--shadow-md); }
+  .stat-card.s-blue.active-filter   { box-shadow:0 0 0 2px var(--blue), var(--shadow-md); }
+  .stat-card.s-orange.active-filter { box-shadow:0 0 0 2px var(--orange), var(--shadow-md); }
+  .stat-card.s-gold.active-filter   { box-shadow:0 0 0 2px var(--gold), var(--shadow-md); }
+  .stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+  .stat-card.s-red::before    { background:var(--red); }
+  .stat-card.s-yellow::before { background:var(--yellow); }
+  .stat-card.s-green::before  { background:var(--green); }
+  .stat-card.s-blue::before   { background:var(--blue); }
+  .stat-card.s-orange::before { background:var(--orange); }
+  .stat-card.s-gold::before   { background:var(--gold); }
+  .stat-label { font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); margin-bottom:8px; font-weight:600; }
+  .stat-value { font-family:var(--font); font-size:33px; font-weight:800; letter-spacing:-1px; }
+  .s-red .stat-value    { color:var(--red); }
+  .s-yellow .stat-value { color:var(--yellow); }
+  .s-green .stat-value  { color:var(--green); }
+  .s-blue .stat-value   { color:var(--blue); }
+  .s-orange .stat-value { color:var(--orange); }
+  .s-gold .stat-value   { color:var(--gold); }
+  .stat-sub { font-size:11px; color:var(--muted); margin-top:4px; }
+  .stat-click-hint { font-size:10px; color:var(--muted); margin-top:6px; opacity:0.6; }
+
+  /* TABLE */
+  .table-wrapper { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:visible; box-shadow:var(--shadow-sm); }
+  .table-header-bar { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .table-title { font-family:var(--font); font-weight:700; font-size:14px; color:var(--text); letter-spacing:-0.2px; }
+  .row-count { font-size:11px; color:var(--muted); }
+  .active-filter-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:7px; font-size:11px; font-weight:600; cursor:pointer; transition:opacity .15s; }
+  .active-filter-badge:hover { opacity:0.8; }
+  .scroll-container { overflow-x:auto; overflow-y:auto; height:calc(100vh - 380px); min-height:400px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead { position:sticky; top:0; z-index:10; }
+  thead th { background:var(--surface2); padding:11px 14px; text-align:left; font-family:var(--font); font-weight:600; font-size:11px; letter-spacing:0.4px; color:var(--muted); white-space:nowrap; border-bottom:1px solid var(--border); text-transform:uppercase; }
+  thead th.sticky-col   { position:sticky; left:0;    z-index:20; background:var(--surface2); min-width:140px; max-width:140px; width:140px; }
+  thead th.sticky-col-2 { position:sticky; left:140px; z-index:20; background:var(--surface2); min-width:240px; max-width:240px; width:240px; }
+  thead th.sticky-col-3 { position:sticky; left:380px; z-index:20; background:var(--surface2); min-width:90px; }
+  tbody tr { border-bottom:1px solid var(--border); transition:background .14s; }
+  tbody tr:hover { background:var(--blue-bg); }
+  tbody td { padding:10px 14px; white-space:nowrap; color:var(--text); }
+  tbody td.sticky-col   { position:sticky; left:0;    background:var(--surface); z-index:5; min-width:140px; max-width:140px; width:140px; }
+  tbody td.sticky-col-2 { position:sticky; left:140px; background:var(--surface); z-index:5; min-width:240px; max-width:240px; width:240px; white-space:normal; word-break:break-word; }
+  tbody td.sticky-col-3 { position:sticky; left:380px; background:var(--surface); z-index:5; min-width:90px; }
+  tbody tr:hover td.sticky-col, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3 { background:var(--surface2); }
+
+  .stock-cell { display:inline-flex; align-items:center; justify-content:center; min-width:60px; padding:4px 10px; border-radius:7px; font-weight:600; font-size:12px; }
+  .stock-red    { background:var(--red-bg);    color:var(--red); }
+  .stock-yellow { background:var(--yellow-bg); color:var(--yellow); }
+  .stock-green  { background:var(--green-bg);  color:var(--green); }
+  .stock-blue   { background:var(--blue-bg);   color:var(--blue); }
+  .stock-zero   { background:rgba(107,107,136,0.12); color:var(--muted); }
+
+  .order-badge { display:inline-flex; align-items:center; padding:4px 10px; border-radius:7px; font-weight:600; }
+  .order-needed { background:var(--red-bg); color:var(--red); }
+  .order-ok     { background:var(--green-bg);  color:var(--green); }
+
+  .op-alert  { background:var(--red-bg); color:var(--red);   border:1px solid rgba(225,29,72,0.35); border-radius:7px; padding:4px 10px; font-weight:700; font-size:11px; display:inline-flex; align-items:center; gap:4px; }
+  .op-safe   { background:var(--green-bg); color:var(--green); border-radius:7px; padding:4px 10px; font-weight:600; font-size:12px; display:inline-flex; align-items:center; }
+  .op-na     { color:var(--muted); font-size:11px; }
+  .avg-sale-badge { background:var(--blue-bg); color:var(--blue); border-radius:7px; padding:3px 9px; font-size:11px; font-weight:700; display:inline-flex; align-items:center; gap:3px; }
+
+  .shortfall-badge { color:var(--red); font-family:var(--font); font-weight:700; font-size:14px; }
+  .qty-order-badge { background:var(--red-bg); color:var(--red); border:1px solid rgba(225,29,72,0.35); border-radius:7px; padding:4px 12px; font-family:var(--font); font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:4px; }
+  .buffer-input { width:90px !important; text-align:center; font-weight:700; font-family:var(--font); font-size:14px; color:var(--red); border-color:rgba(225,29,72,0.3); }
+
+  .tbs-qty-badge { background:var(--orange-bg); color:var(--orange); border:1px solid rgba(212,88,10,0.35); border-radius:7px; padding:4px 12px; font-family:var(--font); font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:4px; }
+  .threshold-input { width:90px !important; text-align:center; font-weight:700; font-family:var(--font); font-size:14px; color:var(--orange); border-color:rgba(212,88,10,0.3); }
+  .tbs-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; position:relative; overflow:hidden; box-shadow:var(--shadow-sm); transition:transform .16s, border-color .16s, box-shadow .16s; }
+  .tbs-summary-card:hover { transform:translateY(-2px); border-color:var(--orange); box-shadow:var(--shadow-md); }
+  .tbs-summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--orange); }
+  .tbs-summary-card .tc-name { font-family:var(--font); font-weight:700; font-size:13px; color:var(--text); margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tbs-summary-card .tc-qty  { font-family:var(--font); font-weight:800; font-size:28px; color:var(--orange); margin-bottom:2px; letter-spacing:-0.5px; }
+  .tbs-summary-card .tc-meta { font-size:11px; color:var(--muted); margin-top:4px; }
+  .tbs-summary-card .tc-skus { font-size:10px; color:var(--muted); margin-top:6px; padding-top:6px; border-top:1px solid var(--border); }
+
+  .sku-link { cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; transition:opacity .15s; }
+  .sku-link:hover { opacity:0.75; }
+
+  th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
+  th.sortable:hover { color:var(--accent2); }
+  th.sortable .sort-icon { display:inline-block; margin-left:5px; opacity:0.4; font-size:10px; }
+  th.sortable.sort-asc .sort-icon, th.sortable.sort-desc .sort-icon { opacity:1; color:var(--accent); }
+
+  .legend { display:flex; gap:18px; margin-bottom:20px; flex-wrap:wrap; }
+  .legend-item { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); cursor:pointer; padding:5px 10px; border-radius:8px; transition:background .15s; }
+  .legend-item:hover { background:var(--surface2); }
+  .legend-dot { width:10px; height:10px; border-radius:4px; }
+
+  .loading { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; gap:16px; }
+  .spinner { width:38px; height:38px; border:2.5px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading-text { font-size:13px; color:var(--muted); }
+
+  .error-box { background:var(--red-bg); border:1px solid rgba(225,29,72,0.3); border-radius:var(--radius); padding:20px; color:var(--red); font-size:13px; text-align:center; margin:40px 0; }
+  .hidden { display:none !important; }
+
+  .refresh-btn { padding:9px 18px; border-radius:9px; border:1px solid var(--accent); background:var(--blue-bg); color:var(--accent2); font-family:var(--font); font-weight:600; font-size:12px; cursor:pointer; transition:all .18s; letter-spacing:0.2px; }
+  .refresh-btn:hover { background:var(--accent); color:#fff; }
+  .refresh-btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .clear-filter-btn { padding:7px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-family:var(--font); font-size:11px; cursor:pointer; transition:all .15s; }
+  .clear-filter-btn:hover { border-color:var(--red); color:var(--red); }
+
+  .max-level { color:var(--muted); font-size:11px; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; animation:fadeIn .25s ease; }
+
+  .theme-toggle { display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:5px 14px 5px 8px; cursor:pointer; font-family:var(--font); font-size:12px; font-weight:600; color:var(--muted); transition:all .2s; user-select:none; }
+  .theme-toggle:hover { border-color:var(--accent); color:var(--text); }
+  .theme-toggle .toggle-icon { width:26px; height:26px; border-radius:50%; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:14px; }
+
+  .size-pills { display:flex; flex-wrap:wrap; gap:4px; }
+  .size-pill  { background:var(--blue-bg); color:var(--accent2); border:1px solid rgba(37,99,235,0.2); border-radius:6px; font-size:10px; font-family:var(--font); font-weight:700; padding:2px 7px; white-space:nowrap; }
+  .size-pill-count { font-size:9px; color:var(--muted); margin-left:2px; }
+
+  .margin-badge { display:inline-flex; align-items:center; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700; }
+  .margin-good { background:var(--green-bg); color:var(--green); }
+  .margin-mid  { background:var(--yellow-bg); color:var(--yellow); }
+  .margin-low  { background:var(--red-bg); color:var(--red); }
+  .margin-na   { color:var(--muted); font-size:11px; }
+
+  .product-group-header td { background:linear-gradient(90deg,rgba(184,134,11,0.09),rgba(184,134,11,0.04)) !important; border-top:2px solid rgba(184,134,11,0.25) !important; border-bottom:1px solid rgba(184,134,11,0.15) !important; }
+  [data-theme="dark"] .product-group-header td { background:linear-gradient(90deg,rgba(255,216,77,0.1),rgba(255,216,77,0.04)) !important; }
+
+  .product-group-header .pg-toggle  { position:sticky; left:0;    z-index:6; background:inherit; min-width:40px; width:40px; text-align:center; }
+  .product-group-header .pg-name    { position:sticky; left:40px; z-index:6; background:inherit; min-width:340px; white-space:nowrap; overflow:visible; }
+  .product-group-header .pg-summary { color:var(--muted); font-size:11px; white-space:nowrap; }
+
+  .product-group-name { font-family:var(--font); font-weight:700; font-size:13px; color:var(--gold); display:flex; align-items:center; gap:8px; flex-wrap:nowrap; }
+  .product-group-badge { font-size:10px; background:var(--gold-bg); color:var(--gold); border:1px solid rgba(184,134,11,0.25); border-radius:999px; padding:2px 10px; font-weight:600; flex-shrink:0; }
+
+  .sku-sub-row td                   { padding:8px 14px !important; background:var(--surface) !important; font-size:12px; }
+  .sku-sub-row .sr-toggle           { position:sticky; left:0;    z-index:5; background:var(--surface) !important; width:40px; min-width:40px; }
+  .sku-sub-row .sr-sku              { position:sticky; left:40px; z-index:5; background:var(--surface) !important; min-width:140px; max-width:140px; width:140px; padding-left:20px !important; }
+  .sku-sub-row .sr-name             { position:sticky; left:180px; z-index:5; background:var(--surface) !important; min-width:220px; max-width:220px; width:220px; white-space:normal; word-break:break-word; font-size:11px; color:var(--muted); }
+  .sku-sub-row:hover td             { background:var(--surface2) !important; }
+
+  #topTable thead th:nth-child(1) { position:sticky; left:0;    z-index:20; background:var(--surface2); width:40px; min-width:40px; }
+  #topTable thead th:nth-child(2) { position:sticky; left:40px; z-index:20; background:var(--surface2); min-width:140px; max-width:140px; width:140px; }
+  #topTable thead th:nth-child(3) { position:sticky; left:180px; z-index:20; background:var(--surface2); min-width:220px; max-width:220px; width:220px; }
+
+  .stock-bar-wrap { display:flex; align-items:center; gap:8px; min-width:100px; }
+  .stock-bar { flex:1; height:6px; border-radius:4px; background:var(--surface2); overflow:hidden; min-width:40px; }
+  .stock-bar-fill { height:100%; border-radius:4px; transition:width .3s ease; }
+  .bar-red { background:var(--red); } .bar-yellow { background:var(--yellow); } .bar-green { background:var(--green); } .bar-blue { background:var(--blue); }
+  .toggle-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px; padding:0 4px; transition:transform .2s, color .2s; line-height:1; }
+  .toggle-btn.expanded { transform:rotate(90deg); color:var(--gold); }
+
+  .top-summary-panel { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-bottom:20px; }
+  .top-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; cursor:pointer; box-shadow:var(--shadow-sm); transition:transform .16s, border-color .16s, box-shadow .16s; position:relative; overflow:hidden; }
+  .top-summary-card:hover { transform:translateY(-2px); border-color:var(--gold); box-shadow:var(--shadow-md); }
+  .top-summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--gold); }
+  .top-summary-card .card-name { font-family:var(--font); font-weight:700; font-size:12px; color:var(--text); margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .top-summary-card .card-stock { font-family:var(--font); font-weight:800; font-size:25px; color:var(--green); margin-bottom:2px; letter-spacing:-0.5px; }
+  .top-summary-card .card-stock.low { color:var(--red); } .top-summary-card .card-stock.mid { color:var(--yellow); }
+  .top-summary-card .card-meta { font-size:10px; color:var(--muted); margin-top:4px; }
+  .top-summary-card .card-order { margin-top:6px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; display:inline-block; }
+  .card-order.needs  { background:var(--red-bg);    color:var(--red); }
+  .card-order.ok     { background:var(--green-bg);  color:var(--green); }
+  .card-order.op-warn { background:var(--red-bg); color:var(--red); border:1px solid rgba(225,29,72,0.3); margin-top:4px; }
+  .card-stats-row { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .card-stat-chip { background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:3px 8px; font-size:10px; color:var(--muted); }
+  .card-stat-chip span { color:var(--text); font-weight:700; }
+  .card-stat-chip.chip-warn { background:var(--red-bg); border-color:rgba(225,29,72,0.25); color:var(--red); }
+  .card-stat-chip.chip-warn span { color:var(--red); }
+
+  .reorder-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; position:relative; overflow:hidden; box-shadow:var(--shadow-sm); transition:transform .16s, border-color .16s, box-shadow .16s; }
+  .reorder-summary-card:hover { transform:translateY(-2px); border-color:var(--red); box-shadow:var(--shadow-md); }
+  .reorder-summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--red); }
+  .reorder-summary-card .rc-name { font-family:var(--font); font-weight:700; font-size:13px; color:var(--text); margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .reorder-summary-card .rc-qty  { font-family:var(--font); font-weight:800; font-size:28px; color:var(--red); margin-bottom:2px; letter-spacing:-0.5px; }
+  .reorder-summary-card .rc-meta { font-size:11px; color:var(--muted); margin-top:4px; }
+  .reorder-summary-card .rc-skus { font-size:10px; color:var(--muted); margin-top:6px; padding-top:6px; border-top:1px solid var(--border); }
+
+  .section-toggle-bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .view-btn { padding:7px 14px; border-radius:9px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-family:var(--font); font-size:12px; font-weight:600; cursor:pointer; transition:all .18s; }
+  .view-btn.active { border-color:var(--gold); color:var(--gold); background:var(--gold-bg); }
+  .view-btn.active-red { border-color:var(--red); color:var(--red); background:var(--red-bg); }
+
+  .modal-overlay { position:fixed; inset:0; background:rgba(8,12,22,0.6); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); z-index:999; display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn .2s ease; }
+  @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+  @keyframes slideUp { from{opacity:0;transform:translateY(24px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+  .modal-overlay.hidden { display:none !important; }
+  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:20px; width:100%; max-width:780px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-lg); animation:slideUp .25s ease; }
+  .modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .modal-title-group { flex:1; min-width:0; }
+  .modal-sku-badge { display:inline-block; background:var(--blue-bg); color:var(--accent2); border:1px solid rgba(37,99,235,0.25); border-radius:7px; font-size:11px; font-family:var(--font); font-weight:600; padding:3px 10px; margin-bottom:6px; }
+  .modal-product-name { font-family:var(--font); font-weight:700; font-size:18px; color:var(--text); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-0.3px; }
+  .modal-meta { font-size:11px; color:var(--muted); margin-top:4px; }
+  .modal-close { width:32px; height:32px; border-radius:9px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; }
+  .modal-close:hover { border-color:var(--red); color:var(--red); background:var(--red-bg); }
+  .modal-body { flex:1; overflow-y:auto; padding:20px 24px; }
+  .modal-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; gap:14px; }
+  .modal-loading .spinner { width:30px; height:30px; }
+  .modal-error { background:var(--red-bg); border:1px solid rgba(225,29,72,0.3); border-radius:10px; padding:16px 20px; color:var(--red); font-size:13px; text-align:center; }
+  .modal-summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .summary-chip { background:var(--surface2); border:1px solid var(--border); border-radius:11px; padding:10px 14px; flex:1; min-width:110px; }
+  .summary-chip-label { font-size:10px; letter-spacing:1.1px; text-transform:uppercase; color:var(--muted); margin-bottom:4px; font-weight:600; }
+  .summary-chip-value { font-family:var(--font); font-weight:700; font-size:20px; color:var(--text); letter-spacing:-0.3px; }
+  .modal-footer { padding:14px 24px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--surface2); }
+  .modal-footer-note { font-size:11px; color:var(--muted); }
+  .size-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .size-table thead th { background:var(--surface2); padding:9px 12px; text-align:left; font-family:var(--font); font-weight:600; font-size:11px; letter-spacing:0.4px; color:var(--muted); border-bottom:1px solid var(--border); white-space:nowrap; text-transform:uppercase; }
+  .size-table tbody tr { border-bottom:1px solid var(--border); transition:background .12s; }
+  .size-table tbody tr:hover { background:var(--blue-bg); }
+  .size-table tbody tr:last-child { border-bottom:none; }
+  .size-table tbody td { padding:10px 12px; color:var(--text); white-space:nowrap; }
+  .size-badge { display:inline-flex; align-items:center; justify-content:center; background:var(--blue-bg); color:var(--accent2); border:1px solid rgba(37,99,235,0.2); border-radius:7px; font-family:var(--font); font-weight:700; font-size:12px; padding:3px 10px; min-width:44px; }
+  .sales-bar-wrap { display:flex; align-items:center; gap:10px; }
+  .sales-bar { flex:1; height:6px; border-radius:4px; background:var(--surface2); overflow:hidden; min-width:50px; }
+  .sales-bar-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent),var(--accent2)); }
+  .sales-num { font-family:var(--font); font-weight:700; font-size:13px; color:var(--text); min-width:28px; text-align:right; }
+  .no-match-note { background:var(--yellow-bg); border:1px solid rgba(194,130,10,0.25); border-radius:9px; padding:10px 14px; font-size:11px; color:var(--yellow); margin-top:14px; }
+
+  @media(max-width:768px) {
+    main { padding:16px; } header { padding:0 16px; } .tabs { padding:0 16px; }
+    .stats-row { grid-template-columns:repeat(2,1fr); } .search-box { width:140px; }
+    .modal-box { max-width:100%; border-radius:16px; }
+    .top-summary-panel { grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div><div class="logo">Bunai IMS<span>Inventory Management System</span></div></div>
+  <div class="header-right">
+    <div class="today-badge" id="buildBadge" style="opacity:0.75;border-color:var(--accent);color:var(--accent);">build v7 · clean-ui</div>
+    <div class="today-badge" id="todayBadge">—</div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">
+      <div class="toggle-icon" id="themeIcon">☀️</div>
+      <span id="themeLabel">Light</span>
+    </button>
+    <button class="refresh-btn" id="refreshBtn" onclick="loadCurrentTab()">⟳ Refresh</button>
+    <button class="refresh-btn" id="exportAllBtn" onclick="exportAllCSV()" style="border-color:var(--accent2);background:var(--blue-bg);color:var(--accent2);" title="Download every tab as CSV files inside one ZIP (uses the filters currently applied)">⬇ Export All (ZIP)</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('dashboard',this)">📊 Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('tobeorder',this)">📦 To Be Order</button>
+  <button class="tab-btn" onclick="switchTab('salesrank',this)">🏆 Sales Rank</button>
+  <button class="tab-btn tab-gold" onclick="switchTab('topproducts',this)">⭐ Top Products</button>
+  <button class="tab-btn tab-red"  onclick="switchTab('topreorder',this)">🚨 Top Product To Be Order</button>
+  <button class="tab-btn tab-orange" onclick="switchTab('topskutobeorder',this)">📋 Top Product SKU To Be Order</button>
+</div>
+
+<main>
+
+  <!-- DASHBOARD TAB -->
+  <div class="tab-panel active" id="tab-dashboard">
+    <div class="filters">
+      <div class="filter-group"><span class="filter-label">From</span><input type="date" class="filter-input" id="dateFrom"></div>
+      <div class="filter-group"><span class="filter-label">To</span><input type="date" class="filter-input" id="dateTo"></div>
+      <div class="quick-btns">
+        <button class="quick-btn active" id="q7"  onclick="setQuick(7,this)">7D</button>
+        <button class="quick-btn" id="q14" onclick="setQuick(14,this)">14D</button>
+        <button class="quick-btn" id="q30" onclick="setQuick(30,this)">30D</button>
+        <button class="quick-btn" id="q90" onclick="setQuick(90,this)">90D</button>
+      </div>
+      <button class="refresh-btn" onclick="loadDashboard()" style="margin-left:4px;">Apply</button>
+      <div class="status-dropdown">
+        <select class="status-select" id="dashStatusFilter" onchange="onDashStatusChange(this)">
+          <option value="all">All SKUs</option>
+          <option value="critical">🔴 Critical (0–33%)</option>
+          <option value="low">🟡 Low (33–66%)</option>
+          <option value="good">🟢 Good (66–100%)</option>
+          <option value="excess">🔵 Excess (&gt;100%)</option>
+        </select>
+      </div>
+      <input type="text" class="search-box" id="skuSearch" placeholder="Search SKU / Product..." oninput="filterTable()">
+      <button class="refresh-btn" onclick="exportDashboardCSV()" style="border-color:var(--green);background:var(--green-bg);color:var(--green);" title="Download the rows shown below (current filter + search) as CSV">📥 Export CSV</button>
+    </div>
+    <div class="legend">
+      <div class="legend-item" onclick="setDashFilter('critical')"><div class="legend-dot" style="background:var(--red)"></div>Critical (0–33%)</div>
+      <div class="legend-item" onclick="setDashFilter('low')"><div class="legend-dot" style="background:var(--yellow)"></div>Low (33–66%)</div>
+      <div class="legend-item" onclick="setDashFilter('good')"><div class="legend-dot" style="background:var(--green)"></div>Good (66–100%)</div>
+      <div class="legend-item" onclick="setDashFilter('excess')"><div class="legend-dot" style="background:var(--blue)"></div>Excess (&gt;100%)</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card s-red"    id="sc-critical" onclick="setDashFilter('critical')"><div class="stat-label">Critical SKUs</div><div class="stat-value" id="statRed">—</div><div class="stat-sub">0–33% stock today</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-yellow" id="sc-low"      onclick="setDashFilter('low')">     <div class="stat-label">Low SKUs</div><div class="stat-value" id="statYellow">—</div><div class="stat-sub">33–66% stock today</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-green"  id="sc-good"     onclick="setDashFilter('good')">    <div class="stat-label">Good SKUs</div><div class="stat-value" id="statGreen">—</div><div class="stat-sub">66–100% stock today</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-blue"   id="sc-excess"   onclick="setDashFilter('excess')">  <div class="stat-label">Excess SKUs</div><div class="stat-value" id="statBlue">—</div><div class="stat-sub">&gt;100% stock today</div><div class="stat-click-hint">Click to filter ↓</div></div>
+    </div>
+    <div class="table-wrapper">
+      <div class="table-header-bar">
+        <span class="table-title">Stock Level Overview</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="dashActiveFilterBadge" class="hidden"></span>
+          <span class="row-count" id="rowCount">Loading...</span>
+        </div>
+      </div>
+      <div id="dashLoading" class="loading"><div class="spinner"></div><div class="loading-text">Fetching inventory data...</div></div>
+      <div id="dashError" class="error-box hidden"></div>
+      <div class="scroll-container hidden" id="dashTableWrap">
+        <table id="dashTable"><thead id="dashHead"></thead><tbody id="dashBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TO BE ORDER TAB -->
+  <div class="tab-panel" id="tab-tobeorder">
+    <div class="filters">
+      <div class="status-dropdown">
+        <select class="status-select" id="orderStatusFilter" onchange="onOrderStatusChange(this)">
+          <option value="all">All SKUs</option>
+          <option value="need_order">🔴 Needs Order</option>
+          <option value="ok">🟢 Stock OK</option>
+          <option value="no_stock">⚫ No Stock (0)</option>
+          <option value="has_stock">🟢 Has Stock</option>
+        </select>
+      </div>
+      <input type="text" class="search-box" id="orderSearch" placeholder="Search SKU / Product..." oninput="filterOrderTable()">
+      <button class="refresh-btn" onclick="exportOrderCSV()" style="border-color:var(--green);background:var(--green-bg);color:var(--green);" title="Download the rows shown below (current filter + search) as CSV">📥 Export CSV</button>
+      <span style="font-size:11px;color:var(--muted);">💡 Click cards to filter · Click SKU for sales details</span>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card s-blue"   id="osc-total"    onclick="setOrderFilter('all')">      <div class="stat-label">Total SKUs</div><div class="stat-value" id="orderStatSkus">—</div><div class="stat-sub">All results</div><div class="stat-click-hint">Click to show all</div></div>
+      <div class="stat-card s-yellow" id="osc-safety"   onclick="setOrderFilter('all')">      <div class="stat-label">Safety Factor Total</div><div class="stat-value" id="orderStatSafety">—</div><div class="stat-sub">Sum of safety factors</div></div>
+      <div class="stat-card s-green"  id="osc-stock"    onclick="setOrderFilter('has_stock')"><div class="stat-label">Today's Stock Total</div><div class="stat-value" id="orderStatStock">—</div><div class="stat-sub">Has stock</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-red"    id="osc-order"    onclick="setOrderFilter('need_order')"><div class="stat-label">To Be Order Total</div><div class="stat-value" id="orderStatOrder">—</div><div class="stat-sub">Needs ordering</div><div class="stat-click-hint">Click to filter ↓</div></div>
+    </div>
+    <div class="table-wrapper">
+      <div class="table-header-bar">
+        <span class="table-title">To Be Order — Today's Stock</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="orderActiveFilterBadge" class="hidden"></span>
+          <span class="row-count" id="orderRowCount">Loading...</span>
+        </div>
+      </div>
+      <div id="orderLoading" class="loading"><div class="spinner"></div><div class="loading-text">Fetching order data...</div></div>
+      <div id="orderError" class="error-box hidden"></div>
+      <div class="scroll-container hidden" id="orderTableWrap">
+        <table id="orderTable">
+          <thead><tr>
+            <th class="sticky-col">SKU</th>
+            <th class="sticky-col-2">Product Name</th>
+            <th>Lead Time</th>
+            <th class="sortable" id="th-safetyFactor" onclick="sortOrder('safetyFactor')">Safety Factor <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="th-todayStock"   onclick="sortOrder('todayStock')">Today's Stock <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="th-toBeOrder"    onclick="sortOrder('toBeOrder')">To Be Order <span class="sort-icon">⇅</span></th>
+          </tr></thead>
+          <tbody id="orderBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALES RANK TAB -->
+  <div class="tab-panel" id="tab-salesrank">
+    <div class="filters">
+      <div class="status-dropdown">
+        <select class="status-select" id="rankStatusFilter" onchange="onRankStatusChange(this)">
+          <option value="all">All SKUs</option>
+          <option value="need_order">🔴 Needs Reorder</option>
+          <option value="ok">🟢 Stock OK</option>
+          <option value="no_stock">⚫ No Stock (0)</option>
+          <option value="margin_good">💚 Margin ≥40%</option>
+          <option value="margin_mid">🟡 Margin 20–40%</option>
+          <option value="margin_low">🔴 Margin &lt;20%</option>
+        </select>
+      </div>
+      <input type="text" class="search-box" id="rankSearch" placeholder="Search SKU / Product..." oninput="filterRankTable()">
+      <button class="refresh-btn" onclick="exportRankCSV()" style="border-color:var(--green);background:var(--green-bg);color:var(--green);" title="Download the rows shown below (current filter + sort) as CSV">📥 Export CSV</button>
+      <span style="font-size:11px;color:var(--muted);">🏆 Last 45 days · Click cards to filter</span>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card s-blue"   id="rsc-skus"    onclick="setRankFilter('all')">          <div class="stat-label">Total SKUs</div><div class="stat-value" id="rankStatSkus">—</div><div class="stat-sub">Sold in last 45 days</div><div class="stat-click-hint">Click to show all</div></div>
+      <div class="stat-card s-green"  id="rsc-units"   onclick="setRankFilter('ok')">           <div class="stat-label">Total Units Sold</div><div class="stat-value" id="rankStatUnits">—</div><div class="stat-sub">Stock OK SKUs</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-orange" id="rsc-price"   onclick="setRankFilter('all')">          <div class="stat-label">Avg Sale Price</div><div class="stat-value" id="rankStatAvgPrice">—</div><div class="stat-sub">Across all SKUs</div></div>
+      <div class="stat-card s-red"    id="rsc-reorder" onclick="setRankFilter('need_order')">   <div class="stat-label">Need Reorder</div><div class="stat-value" id="rankStatReorder">—</div><div class="stat-sub">To Be Order &gt; 0</div><div class="stat-click-hint">Click to filter ↓</div></div>
+    </div>
+    <div class="table-wrapper">
+      <div class="table-header-bar">
+        <span class="table-title">Sales Rank — Last 45 Days</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="rankActiveFilterBadge" class="hidden"></span>
+          <span class="row-count" id="rankRowCount">Loading...</span>
+        </div>
+      </div>
+      <div id="rankLoading" class="loading"><div class="spinner"></div><div class="loading-text">Fetching sales rank data...</div></div>
+      <div id="rankError" class="error-box hidden"></div>
+      <div class="scroll-container hidden" id="rankTableWrap">
+        <table id="rankTable">
+          <thead><tr>
+            <th style="min-width:50px;text-align:center;">#</th>
+            <th class="sticky-col">SKU</th>
+            <th class="sticky-col-2">Product Name</th>
+            <th class="sortable" id="rth-totalSales" onclick="sortRank('totalSales')">Units Sold <span class="sort-icon">↓</span></th>
+            <th>Sizes</th>
+            <th class="sortable" id="rth-salePrice"  onclick="sortRank('salePrice')">Sale Price <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="rth-mrp"        onclick="sortRank('mrp')">MRP <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="rth-diff"       onclick="sortRank('diff')">Difference <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="rth-cost"       onclick="sortRank('cost')">Cost <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="rth-margin"     onclick="sortRank('margin')">Margin % <span class="sort-icon">⇅</span></th>
+            <th class="sortable" id="rth-todayStock" onclick="sortRank('todayStock')">Stock Today <span class="sort-icon">⇅</span></th>
+            <th>Lead Time</th>
+            <th>Safety Factor</th>
+            <th class="sortable" id="rth-toBeOrder"  onclick="sortRank('toBeOrder')">To Be Order <span class="sort-icon">⇅</span></th>
+          </tr></thead>
+          <tbody id="rankBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP PRODUCTS TAB -->
+  <div class="tab-panel" id="tab-topproducts">
+    <div class="filters">
+      <div class="status-dropdown">
+        <select class="status-select" id="topStatusFilter" onchange="onTopStatusChange(this)">
+          <option value="all">All Products</option>
+          <option value="need_order">🔴 Needs Reorder</option>
+          <option value="below_op">🚨 Below Order Point</option>
+          <option value="near_max">🔴 Stock Below Max−20</option>
+          <option value="ok">🟢 Stock OK</option>
+          <option value="critical">🔴 Critical Stock (0–33%)</option>
+          <option value="low">🟡 Low Stock (33–66%)</option>
+          <option value="good">🟢 Good Stock (66–100%)</option>
+          <option value="excess">🔵 Excess (&gt;100%)</option>
+        </select>
+      </div>
+      <input type="text" class="search-box" id="topSearch" placeholder="Search product..." oninput="filterTopProducts()">
+      <button class="refresh-btn" onclick="exportTopProductsCSV()" style="border-color:var(--green);background:var(--green-bg);color:var(--green);" title="Download SKU-level rows for the products shown (current filter + search) as CSV">📥 Export CSV</button>
+      <span style="font-size:11px;color:var(--muted);">⭐ Hero &amp; Star products · Order Point = Safety Stock + (Avg Daily Sale × Lead Time)</span>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card s-gold"   id="tsc-total"   onclick="setTopFilter('all')">         <div class="stat-label">Tagged Products</div><div class="stat-value" id="topStatTotal">—</div><div class="stat-sub">From Taging sheet</div><div class="stat-click-hint">Click to show all</div></div>
+      <div class="stat-card s-green"  id="tsc-stock"   onclick="setTopFilter('ok')">          <div class="stat-label">Total Stock</div><div class="stat-value" id="topStatStock">—</div><div class="stat-sub">Stock OK products</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-red"    id="tsc-order"   onclick="setTopFilter('below_op')">    <div class="stat-label">Below Order Point</div><div class="stat-value" id="topStatOrder">—</div><div class="stat-sub">Stock &lt; Order Point</div><div class="stat-click-hint">Click to filter ↓</div></div>
+      <div class="stat-card s-blue"   id="tsc-skus"    onclick="setTopFilter('all')">         <div class="stat-label">Total SKUs</div><div class="stat-value" id="topStatSkus">—</div><div class="stat-sub">Across all products</div><div class="stat-click-hint">Click to show all</div></div>
+    </div>
+    <div class="section-toggle-bar">
+      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">View:</span>
+      <button class="view-btn active" id="view-cards" onclick="setTopView('cards',this)">🗂 Cards</button>
+      <button class="view-btn" id="view-table" onclick="setTopView('table',this)">📋 Detailed Table</button>
+    </div>
+    <div id="topLoading" class="loading"><div class="spinner"></div><div class="loading-text">Fetching tagged products...</div></div>
+    <div id="topError" class="error-box hidden"></div>
+    <div id="topCardsView" class="hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <span id="topActiveFilterBadge" class="hidden"></span>
+      </div>
+      <div class="top-summary-panel" id="topSummaryPanel"></div>
+    </div>
+    <div id="topTableView" class="hidden">
+      <div class="table-wrapper">
+        <div class="table-header-bar">
+          <span class="table-title">Top Products — Hero &amp; Star IMS</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="topActiveFilterBadge2" class="hidden"></span>
+            <span class="row-count" id="topRowCount">—</span>
+          </div>
+        </div>
+        <div class="scroll-container" style="height:calc(100vh - 460px); overflow-x:auto; overflow-y:auto;">
+          <table id="topTable">
+            <thead id="topTableHead"><tr>
+              <th>⭐</th>
+              <th>SKU</th>
+              <th>Product Name</th>
+              <th>Lead Time</th><th>Safety Stock</th><th>Max Level</th>
+              <th>Today Stock</th><th>Stock %</th><th>To Be Order</th>
+              <th>Avg Daily Sale</th><th>Order Point</th>
+            </tr></thead>
+            <tbody id="topBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP PRODUCT TO BE ORDER TAB -->
+  <div class="tab-panel" id="tab-topreorder">
+    <div class="filters">
+      <div class="filter-group">
+        <span class="filter-label">Buffer (units below OP)</span>
+        <input type="number" class="filter-input buffer-input" id="treBuffer" value="20" min="0" max="9999" onchange="renderTopReorder()" oninput="renderTopReorder()">
+      </div>
+      <div class="quick-btns">
+        <button class="quick-btn" onclick="setTreBuffer(0,this)">0</button>
+        <button class="quick-btn" onclick="setTreBuffer(10,this)">10</button>
+        <button class="quick-btn active" id="tre-q20" onclick="setTreBuffer(20,this)">20</button>
+        <button class="quick-btn" onclick="setTreBuffer(50,this)">50</button>
+        <button class="quick-btn" onclick="setTreBuffer(100,this)">100</button>
+      </div>
+      <div class="status-dropdown">
+        <select class="status-select" id="treViewMode" onchange="renderTopReorder()">
+          <option value="sku">📋 SKU-wise List</option>
+          <option value="product">🗂 Group by Product</option>
+        </select>
+      </div>
+      <input type="text" class="search-box" id="treSearch" placeholder="Search SKU / Product..." oninput="renderTopReorder()">
+      <button class="refresh-btn" id="treExportBtn" onclick="exportTopReorderCSV()" style="border-color:var(--red);background:rgba(224,45,61,0.1);color:var(--red);">📥 Export CSV</button>
+      <span style="font-size:11px;color:var(--red);font-weight:600;">🚨 Shows SKUs where Stock ≤ (Order Point − Buffer) · Qty = OP − Stock</span>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card s-red">
+        <div class="stat-label">Products Need Order</div>
+        <div class="stat-value" id="treStatProducts">—</div>
+        <div class="stat-sub">Hero &amp; Star products</div>
+      </div>
+      <div class="stat-card s-orange">
+        <div class="stat-label">SKUs Below Threshold</div>
+        <div class="stat-value" id="treStatSkus">—</div>
+        <div class="stat-sub">Stock ≤ OP − Buffer</div>
+      </div>
+      <div class="stat-card s-red">
+        <div class="stat-label">Total Qty to Order</div>
+        <div class="stat-value" id="treStatQty">—</div>
+        <div class="stat-sub">To reach Order Point</div>
+      </div>
+      <div class="stat-card s-yellow">
+        <div class="stat-label">Zero Stock SKUs</div>
+        <div class="stat-value" id="treStatZero">—</div>
+        <div class="stat-sub">🚨 Most critical</div>
+      </div>
+    </div>
+
+    <div id="treLoading" class="loading"><div class="spinner"></div><div class="loading-text">Fetching reorder data...</div></div>
+    <div id="treError" class="error-box hidden"></div>
+    <div id="treEmpty" class="hidden" style="text-align:center;padding:60px 20px;color:var(--green);font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:16px;">
+      ✅ All Hero &amp; Star products are healthy! No SKU has fallen below (Order Point − Buffer).
+    </div>
+
+    <div id="treCardsView" class="hidden" style="margin-bottom:20px;">
+      <div class="top-summary-panel" id="treProductCards"></div>
+    </div>
+
+    <div class="table-wrapper hidden" id="treTableWrap">
+      <div class="table-header-bar">
+        <span class="table-title" id="treTableTitle">SKUs to Reorder — Sorted by Qty to Order</span>
+        <span class="row-count" id="treRowCount">—</span>
+      </div>
+      <div class="scroll-container">
+        <table id="treTable">
+          <thead><tr>
+            <th class="sticky-col">SKU</th>
+            <th class="sticky-col-2">Product Name</th>
+            <th>Today Stock</th>
+            <th>Safety Stock</th>
+            <th>Lead Time</th>
+            <th>Avg Daily Sale</th>
+            <th>Order Point</th>
+            <th>Shortfall</th>
+            <th>Qty to Order</th>
+          </tr></thead>
+          <tbody id="treBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP PRODUCT SKU TO BE ORDER TAB -->
+  <div class="tab-panel" id="tab-topskutobeorder">
+    <div class="filters">
+      <div class="filter-group">
+        <span class="filter-label">Product Total ≥</span>
+        <input type="number" class="filter-input threshold-input" id="tbsThreshold" value="20" min="1" max="9999" onchange="renderTopSkuToBeOrder()" oninput="renderTopSkuToBeOrder()">
+      </div>
+      <div class="quick-btns">
+        <button class="quick-btn" onclick="setTbsThreshold(1,this)">1+</button>
+        <button class="quick-btn" onclick="setTbsThreshold(5,this)">5+</button>
+        <button class="quick-btn" onclick="setTbsThreshold(10,this)">10+</button>
+        <button class="quick-btn active" id="tbs-q20" onclick="setTbsThreshold(20,this)">20+</button>
+        <button class="quick-btn" onclick="setTbsThreshold(50,this)">50+</button>
+        <button class="quick-btn" onclick="setTbsThreshold(100,this)">100+</button>
+      </div>
+      <button class="view-btn" id="tbsExpandAllBtn" onclick="toggleAllTbsGroups()" style="border-color:var(--orange);color:var(--orange);background:var(--orange-bg);">⬇ Expand All</button>
+      <input type="text" class="search-box" id="tbsSearch" placeholder="Search SKU / Product..." oninput="renderTopSkuToBeOrder()">
+      <button class="refresh-btn" id="tbsExportBtn" onclick="exportTopSkuTbsCSV()" style="border-color:var(--orange);background:rgba(212,88,10,0.1);color:var(--orange);">📥 Export CSV</button>
+      <span style="font-size:11px;color:var(--orange);font-weight:600;">📋 Click product to see its SKUs · Only products with Total TBO ≥ Threshold</span>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card s-orange">
+        <div class="stat-label">Products to Order</div>
+        <div class="stat-value" id="tbsStatProducts">—</div>
+        <div class="stat-sub">Total TBO ≥ Threshold</div>
+      </div>
+      <div class="stat-card s-red">
+        <div class="stat-label">Total SKUs</div>
+        <div class="stat-value" id="tbsStatSkus">—</div>
+        <div class="stat-sub">Across matching products</div>
+      </div>
+      <div class="stat-card s-orange">
+        <div class="stat-label">Total To Be Order</div>
+        <div class="stat-value" id="tbsStatQty">—</div>
+        <div class="stat-sub">Sum across all SKUs</div>
+      </div>
+      <div class="stat-card s-yellow">
+        <div class="stat-label">Zero Stock SKUs</div>
+        <div class="stat-value" id="tbsStatZero">—</div>
+        <div class="stat-sub">🚨 Most critical</div>
+      </div>
+    </div>
+
+    <div id="tbsLoading" class="loading"><div class="spinner"></div><div class="loading-text">Fetching SKU reorder data...</div></div>
+    <div id="tbsError" class="error-box hidden"></div>
+    <div id="tbsEmpty" class="hidden" style="text-align:center;padding:60px 20px;color:var(--green);font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:16px;">
+      ✅ No product has Total To Be Order above the threshold!
+    </div>
+
+    <div id="tbsCardsView" class="hidden" style="margin-bottom:20px;">
+      <div class="top-summary-panel" id="tbsProductCards"></div>
+    </div>
+
+    <div class="table-wrapper hidden" id="tbsTableWrap">
+      <div class="table-header-bar">
+        <span class="table-title" id="tbsTableTitle">Products To Be Order — Click to Expand</span>
+        <span class="row-count" id="tbsRowCount">—</span>
+      </div>
+      <div class="scroll-container">
+        <table id="tbsTable">
+          <thead><tr>
+            <th style="width:40px;"></th>
+            <th class="sticky-col" style="left:40px !important;">SKU</th>
+            <th class="sticky-col-2" style="left:180px !important;">Product Name</th>
+            <th>Size</th>
+            <th>Today Stock</th>
+            <th>Safety Stock</th>
+            <th>Max Level</th>
+            <th>Lead Time</th>
+            <th>Avg Daily Sale</th>
+            <th>To Be Order</th>
+          </tr></thead>
+          <tbody id="tbsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="modal-overlay hidden" id="salesModal" onclick="handleModalOverlayClick(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <div class="modal-sku-badge" id="modalSkuBadge">SKU</div>
+        <div class="modal-product-name" id="modalProductName">Product Name</div>
+        <div class="modal-meta" id="modalMeta">Loading…</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="modal-loading" id="modalLoading"><div class="spinner"></div><div class="loading-text" style="font-size:13px;color:var(--muted);">Fetching sales data...</div></div>
+      <div class="modal-error hidden" id="modalError"></div>
+      <div class="hidden" id="modalContent"></div>
+    </div>
+    <div class="modal-footer">
+      <span class="modal-footer-note" id="modalFooterNote">Sales data · Last 45 days</span>
+      <button class="refresh-btn" onclick="reloadModal()">⟳ Refresh</button>
+    </div>
+  </div>
+</div>
+<script>
+  let dashData      = null;
+  let orderData     = null;
+  let rankData      = null;
+  let topData       = null;
+  let currentTab    = 'dashboard';
+  let isDark        = false;
+  let _modalSku = '', _modalProductName = '';
+  let currentTopView = 'cards';
+
+  let dashStatusFilter  = 'all';
+  let orderStatusFilter = 'all';
+  let rankStatusFilter  = 'all';
+  let topStatusFilter   = 'all';
+
+  function toggleTheme() {
+    isDark = !isDark;
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : '');
+    document.getElementById('themeIcon').textContent  = isDark ? '🌙' : '☀️';
+    document.getElementById('themeLabel').textContent = isDark ? 'Dark' : 'Light';
+  }
+
+  function todayStr()    { return new Date().toISOString().split('T')[0]; }
+  function daysAgoStr(n) { const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().split('T')[0]; }
+  function formatDate(str) { const d=new Date(str+'T00:00:00'); return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}); }
+  function fmt(n)  { return (n||0).toLocaleString('en-IN'); }
+  function fmtRs(n){ return n ? '₹'+Number(n).toLocaleString('en-IN') : '—'; }
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  window.onload = function() {
+    document.getElementById('todayBadge').textContent = new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    document.getElementById('dateTo').value   = daysAgoStr(1);
+    document.getElementById('dateFrom').value = daysAgoStr(7);
+    loadDashboard();
+  };
+
+  function switchTab(tab, btn) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-'+tab).classList.add('active');
+    if (tab==='tobeorder'   && !orderData) loadOrderData();
+    if (tab==='salesrank'   && !rankData)  loadRankData();
+    if (tab==='topproducts' && !topData)   loadTopProducts();
+    if (tab==='topreorder') {
+      if (!topData) loadTopProducts();
+      else renderTopReorder();
+    }
+    if (tab==='topskutobeorder') {
+      if (!topData) loadTopProducts();
+      else renderTopSkuToBeOrder();
+    }
+  }
+
+  function loadCurrentTab() {
+    if (currentTab==='dashboard')      loadDashboard();
+    else if (currentTab==='tobeorder')    loadOrderData();
+    else if (currentTab==='salesrank')    loadRankData();
+    else if (currentTab==='topproducts'){ topData=null; loadTopProducts(); }
+    else if (currentTab==='topreorder') { topData=null; loadTopProducts(); }
+    else if (currentTab==='topskutobeorder') { topData=null; loadTopProducts(); }
+  }
+
+  function setQuick(days, btn) {
+    document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('dateTo').value   = daysAgoStr(1);
+    document.getElementById('dateFrom').value = daysAgoStr(days);
+    loadDashboard();
+  }
+
+  // DASHBOARD
+  function loadDashboard() {
+    const from = document.getElementById('dateFrom').value;
+    const to   = document.getElementById('dateTo').value;
+    if (!from||!to) return;
+    document.getElementById('dashLoading').classList.remove('hidden');
+    document.getElementById('dashTableWrap').classList.add('hidden');
+    document.getElementById('dashError').classList.add('hidden');
+    document.getElementById('refreshBtn').disabled = true;
+    google.script.run.withSuccessHandler(onDashData).withFailureHandler(onDashError).getDashboardData(from,to);
+  }
+
+  function onDashData(result) {
+    document.getElementById('refreshBtn').disabled = false;
+    document.getElementById('dashLoading').classList.add('hidden');
+    if (!result.success) { document.getElementById('dashError').textContent='❌ '+result.error; document.getElementById('dashError').classList.remove('hidden'); return; }
+    dashData = result;
+    renderDashboard();
+  }
+
+  function onDashError(err) {
+    document.getElementById('refreshBtn').disabled = false;
+    document.getElementById('dashLoading').classList.add('hidden');
+    document.getElementById('dashError').textContent='❌ '+err.message;
+    document.getElementById('dashError').classList.remove('hidden');
+  }
+
+  function getStockClass(stock, maxLevel) {
+    if (maxLevel<=0) return stock===0 ? 'stock-zero' : 'stock-green';
+    if (stock===0) return 'stock-zero';
+    const p = stock/maxLevel;
+    if (p<=0.33) return 'stock-red';
+    if (p<=0.66) return 'stock-yellow';
+    if (p<=1.00) return 'stock-green';
+    return 'stock-blue';
+  }
+
+  function getStatusFromClass(cls) {
+    if (cls==='stock-red'||cls==='stock-zero') return 'critical';
+    if (cls==='stock-yellow') return 'low';
+    if (cls==='stock-green')  return 'good';
+    if (cls==='stock-blue')   return 'excess';
+    return 'good';
+  }
+
+  function setDashFilter(val) {
+    dashStatusFilter = dashStatusFilter === val ? 'all' : val;
+    document.getElementById('dashStatusFilter').value = dashStatusFilter;
+    updateDashDropdownStyle();
+    updateDashCardHighlight();
+    renderDashboard();
+  }
+
+  function onDashStatusChange(sel) {
+    dashStatusFilter = sel.value;
+    updateDashDropdownStyle();
+    updateDashCardHighlight();
+    renderDashboard();
+  }
+
+  function updateDashDropdownStyle() {
+    const sel = document.getElementById('dashStatusFilter');
+    sel.className = 'status-select';
+    if (dashStatusFilter==='critical') sel.classList.add('filter-red');
+    else if (dashStatusFilter==='low') sel.classList.add('filter-yellow');
+    else if (dashStatusFilter==='good') sel.classList.add('filter-green');
+    else if (dashStatusFilter==='excess') sel.classList.add('filter-blue');
+  }
+
+  function updateDashCardHighlight() {
+    ['critical','low','good','excess'].forEach(f => {
+      const el = document.getElementById('sc-'+f);
+      if (el) el.classList.toggle('active-filter', dashStatusFilter===f);
+    });
+  }
+
+  function renderDashboard() {
+    if (!dashData) return;
+    const {dates, skus} = dashData;
+    const search = document.getElementById('skuSearch').value.toLowerCase();
+
+    let statDate = dates[dates.length-1];
+    for (let i=dates.length-1;i>=0;i--) {
+      if (skus.some(s=>(s.stockByDate[dates[i]]||0)>0)) { statDate=dates[i]; break; }
+    }
+
+    let cR=0,cY=0,cG=0,cB=0;
+    for (const s of skus) {
+      if (!statDate) break;
+      const cls = getStockClass(s.stockByDate[statDate]||0, s.maxLevel);
+      if (cls==='stock-red'||cls==='stock-zero') cR++;
+      else if (cls==='stock-yellow') cY++;
+      else if (cls==='stock-green')  cG++;
+      else cB++;
+    }
+    document.getElementById('statRed').textContent    = cR;
+    document.getElementById('statYellow').textContent = cY;
+    document.getElementById('statGreen').textContent  = cG;
+    document.getElementById('statBlue').textContent   = cB;
+
+    const filtered = skus.filter(s => {
+      const matchSearch = !search || s.sku.toLowerCase().includes(search) || s.productName.toLowerCase().includes(search);
+      if (!matchSearch) return false;
+      if (dashStatusFilter === 'all') return true;
+      const cls = getStockClass(s.stockByDate[statDate]||0, s.maxLevel);
+      const status = getStatusFromClass(cls);
+      return status === dashStatusFilter;
+    });
+
+    const badge = document.getElementById('dashActiveFilterBadge');
+    if (dashStatusFilter !== 'all') {
+      const labels = {critical:'🔴 Critical',low:'🟡 Low',good:'🟢 Good',excess:'🔵 Excess'};
+      const colors = {critical:'var(--red)',low:'var(--yellow)',good:'var(--green)',excess:'var(--blue)'};
+      const bgs    = {critical:'var(--red-bg)',low:'var(--yellow-bg)',good:'var(--green-bg)',excess:'var(--blue-bg)'};
+      badge.innerHTML = `<span class="active-filter-badge" style="background:${bgs[dashStatusFilter]};color:${colors[dashStatusFilter]};border:1px solid ${colors[dashStatusFilter]}40" onclick="setDashFilter('${dashStatusFilter}')">${labels[dashStatusFilter]} ✕</span>`;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+
+    let headHtml = '<tr><th class="sticky-col">SKU</th><th class="sticky-col-2">Product Name</th><th class="sticky-col-3">Max Level</th>';
+    for (const d of dates) headHtml += `<th>${formatDate(d)}</th>`;
+    headHtml += '</tr>';
+    document.getElementById('dashHead').innerHTML = headHtml;
+
+    let rows='';
+    for (const s of filtered) {
+      rows+=`<tr><td class="sticky-col" style="font-weight:500;color:var(--accent2)">${s.sku}</td><td class="sticky-col-2">${s.productName}</td><td class="sticky-col-3 max-level">${s.maxLevel||'—'}</td>`;
+      for (const d of dates) {
+        const stock = s.stockByDate[d]!==undefined ? s.stockByDate[d] : 0;
+        rows+=`<td><span class="stock-cell ${getStockClass(stock,s.maxLevel)}">${stock}</span></td>`;
+      }
+      rows+='</tr>';
+    }
+    document.getElementById('dashBody').innerHTML = rows||'<tr><td colspan="100" style="text-align:center;color:var(--muted);padding:40px">No SKUs found</td></tr>';
+    document.getElementById('rowCount').textContent = filtered.length+' SKUs · '+dates.length+' dates';
+    document.getElementById('dashTableWrap').classList.remove('hidden');
+  }
+
+  function filterTable() { if (dashData) renderDashboard(); }
+
+  // TO BE ORDER
+  let orderSortCol=null, orderSortDir=0;
+
+  function loadOrderData() {
+    document.getElementById('orderLoading').classList.remove('hidden');
+    document.getElementById('orderTableWrap').classList.add('hidden');
+    document.getElementById('orderError').classList.add('hidden');
+    google.script.run.withSuccessHandler(onOrderData).withFailureHandler(onOrderError).getToBeOrderData();
+  }
+
+  function onOrderData(result) {
+    document.getElementById('orderLoading').classList.add('hidden');
+    if (!result.success) { document.getElementById('orderError').textContent='❌ '+result.error; document.getElementById('orderError').classList.remove('hidden'); return; }
+    orderData=result; orderSortCol=null; orderSortDir=0; renderOrderTable();
+  }
+
+  function onOrderError(err) {
+    document.getElementById('orderLoading').classList.add('hidden');
+    document.getElementById('orderError').textContent='❌ '+err.message;
+    document.getElementById('orderError').classList.remove('hidden');
+  }
+
+  function setOrderFilter(val) {
+    orderStatusFilter = orderStatusFilter === val ? 'all' : val;
+    document.getElementById('orderStatusFilter').value = orderStatusFilter;
+    updateOrderDropdownStyle();
+    updateOrderCardHighlight();
+    renderOrderTable();
+  }
+
+  function onOrderStatusChange(sel) {
+    orderStatusFilter = sel.value;
+    updateOrderDropdownStyle();
+    updateOrderCardHighlight();
+    renderOrderTable();
+  }
+
+  function updateOrderDropdownStyle() {
+    const sel = document.getElementById('orderStatusFilter');
+    sel.className = 'status-select';
+    if (orderStatusFilter==='need_order') sel.classList.add('filter-red');
+    else if (orderStatusFilter==='ok')       sel.classList.add('filter-green');
+    else if (orderStatusFilter==='no_stock') sel.classList.add('filter-red');
+    else if (orderStatusFilter==='has_stock') sel.classList.add('filter-green');
+  }
+
+  function updateOrderCardHighlight() {
+    document.getElementById('osc-stock').classList.toggle('active-filter', orderStatusFilter==='has_stock');
+    document.getElementById('osc-order').classList.toggle('active-filter', orderStatusFilter==='need_order');
+    document.getElementById('osc-total').classList.toggle('active-filter', orderStatusFilter==='all');
+  }
+
+  function sortOrder(col) {
+    if (orderSortCol===col) { if (orderSortDir===1) orderSortDir=-1; else if (orderSortDir===-1){orderSortDir=0;orderSortCol=null;} else orderSortDir=1; }
+    else { orderSortCol=col; orderSortDir=1; }
+    renderOrderTable();
+  }
+
+  function renderOrderTable() {
+    if (!orderData) return;
+    const search = document.getElementById('orderSearch').value.toLowerCase();
+
+    let filtered = orderData.orders.filter(o => {
+      const matchSearch = !search || o.sku.toLowerCase().includes(search) || o.productName.toLowerCase().includes(search);
+      if (!matchSearch) return false;
+      if (orderStatusFilter==='all')       return true;
+      if (orderStatusFilter==='need_order') return o.toBeOrder > 0;
+      if (orderStatusFilter==='ok')         return o.toBeOrder === 0;
+      if (orderStatusFilter==='no_stock')   return o.todayStock === 0;
+      if (orderStatusFilter==='has_stock')  return o.todayStock > 0;
+      return true;
+    });
+
+    if (orderSortCol && orderSortDir!==0) {
+      const col=orderSortCol, dir=orderSortDir;
+      filtered=[...filtered].sort((a,b)=>(dir===1?1:-1)*((parseFloat(a[col])||0)-(parseFloat(b[col])||0)));
+    }
+
+    ['safetyFactor','todayStock','toBeOrder'].forEach(col=>{
+      const th=document.getElementById('th-'+col); if(!th) return;
+      th.classList.remove('sort-asc','sort-desc');
+      const icon=th.querySelector('.sort-icon');
+      if (orderSortCol===col&&orderSortDir===1){th.classList.add('sort-asc');icon.textContent='↑';}
+      else if (orderSortCol===col&&orderSortDir===-1){th.classList.add('sort-desc');icon.textContent='↓';}
+      else icon.textContent='⇅';
+    });
+
+    const allOrders = orderData.orders;
+    const tS  = allOrders.reduce((s,o)=>s+(parseFloat(o.safetyFactor)||0),0);
+    const tSt = allOrders.reduce((s,o)=>s+o.todayStock,0);
+    const tO  = allOrders.filter(o=>o.toBeOrder>0).length;
+    document.getElementById('orderStatSkus').textContent   = fmt(allOrders.length);
+    document.getElementById('orderStatSafety').textContent = fmt(Math.round(tS));
+    document.getElementById('orderStatStock').textContent  = fmt(tSt);
+    document.getElementById('orderStatOrder').textContent  = fmt(tO);
+
+    const badge = document.getElementById('orderActiveFilterBadge');
+    const orderFilterLabels = {need_order:'🔴 Needs Order',ok:'🟢 Stock OK',no_stock:'⚫ No Stock',has_stock:'🟢 Has Stock'};
+    if (orderStatusFilter !== 'all') {
+      badge.innerHTML = `<span class="active-filter-badge" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red)40" onclick="setOrderFilter('${orderStatusFilter}')">${orderFilterLabels[orderStatusFilter]||orderStatusFilter} ✕</span>`;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+
+    let rows='';
+    for (const o of filtered) {
+      const needsOrder=o.toBeOrder>0;
+      rows+=`<tr>
+        <td class="sticky-col"><span class="sku-link" style="font-weight:500;color:var(--accent2);" onclick="openSalesModal('${escHtml(o.sku)}','${escHtml(o.productName)}')">${escHtml(o.sku)}</span></td>
+        <td class="sticky-col-2">${escHtml(o.productName)}</td>
+        <td>${o.leadTime||'—'}</td>
+        <td>${o.safetyFactor||'—'}</td>
+        <td><span class="stock-cell ${o.todayStock>0?'stock-green':'stock-zero'}">${o.todayStock}</span></td>
+        <td><span class="order-badge ${needsOrder?'order-needed':'order-ok'}">${needsOrder?'⚠ '+o.toBeOrder:'✓ OK'}</span></td>
+      </tr>`;
+    }
+    document.getElementById('orderBody').innerHTML = rows||'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">No SKUs found</td></tr>';
+    document.getElementById('orderRowCount').textContent = filtered.length+' SKUs';
+    document.getElementById('orderTableWrap').classList.remove('hidden');
+  }
+
+  function filterOrderTable() { if (orderData) renderOrderTable(); }
+
+  // SALES RANK
+  let rankSortCol='totalSales', rankSortDir=-1;
+
+  function loadRankData() {
+    document.getElementById('rankLoading').classList.remove('hidden');
+    document.getElementById('rankTableWrap').classList.add('hidden');
+    document.getElementById('rankError').classList.add('hidden');
+    google.script.run.withSuccessHandler(onRankData).withFailureHandler(onRankError).getSalesRankData();
+  }
+
+  function onRankData(result) {
+    document.getElementById('rankLoading').classList.add('hidden');
+    if (!result.success) { document.getElementById('rankError').textContent='❌ '+result.error; document.getElementById('rankError').classList.remove('hidden'); return; }
+    rankData=result; renderRankTable();
+  }
+
+  function onRankError(err) {
+    document.getElementById('rankLoading').classList.add('hidden');
+    document.getElementById('rankError').textContent='❌ '+err.message;
+    document.getElementById('rankError').classList.remove('hidden');
+  }
+
+  function setRankFilter(val) {
+    rankStatusFilter = rankStatusFilter === val ? 'all' : val;
+    document.getElementById('rankStatusFilter').value = rankStatusFilter;
+    updateRankDropdownStyle();
+    updateRankCardHighlight();
+    renderRankTable();
+  }
+
+  function onRankStatusChange(sel) {
+    rankStatusFilter = sel.value;
+    updateRankDropdownStyle();
+    updateRankCardHighlight();
+    renderRankTable();
+  }
+
+  function updateRankDropdownStyle() {
+    const sel = document.getElementById('rankStatusFilter');
+    sel.className = 'status-select';
+    if (rankStatusFilter==='need_order')   sel.classList.add('filter-red');
+    else if (rankStatusFilter==='ok')           sel.classList.add('filter-green');
+    else if (rankStatusFilter==='no_stock')     sel.classList.add('filter-red');
+    else if (rankStatusFilter==='margin_good')  sel.classList.add('filter-green');
+    else if (rankStatusFilter==='margin_mid')   sel.classList.add('filter-yellow');
+    else if (rankStatusFilter==='margin_low')   sel.classList.add('filter-red');
+  }
+
+  function updateRankCardHighlight() {
+    document.getElementById('rsc-reorder').classList.toggle('active-filter', rankStatusFilter==='need_order');
+    document.getElementById('rsc-units').classList.toggle('active-filter',   rankStatusFilter==='ok');
+    document.getElementById('rsc-skus').classList.toggle('active-filter',    rankStatusFilter==='all');
+  }
+
+  function sortRank(col) {
+    if (rankSortCol===col) rankSortDir *= -1;
+    else { rankSortCol=col; rankSortDir=-1; }
+    renderRankTable();
+  }
+
+  function getMargin(salePrice, cost) {
+    if (!salePrice||!cost) return null;
+    return ((salePrice-cost)/salePrice*100);
+  }
+
+  function renderRankTable() {
+    if (!rankData) return;
+    const search = document.getElementById('rankSearch').value.toLowerCase();
+
+    let filtered = rankData.items.filter(i => {
+      const matchSearch = !search || i.sku.toLowerCase().includes(search) || i.productName.toLowerCase().includes(search);
+      if (!matchSearch) return false;
+      if (rankStatusFilter==='all')         return true;
+      if (rankStatusFilter==='need_order')   return i.toBeOrder > 0;
+      if (rankStatusFilter==='ok')           return i.toBeOrder === 0;
+      if (rankStatusFilter==='no_stock')     return (i.todayStock===0||i.todayStock===null);
+      const m = getMargin(i.salePrice, i.cost);
+      if (rankStatusFilter==='margin_good')  return m !== null && m >= 40;
+      if (rankStatusFilter==='margin_mid')   return m !== null && m >= 20 && m < 40;
+      if (rankStatusFilter==='margin_low')   return m !== null && m < 20;
+      return true;
+    });
+
+    const col=rankSortCol, dir=rankSortDir;
+    filtered=[...filtered].sort((a,b)=>{
+      let va,vb;
+      if (col==='margin') { va=getMargin(a.salePrice,a.cost)??-999; vb=getMargin(b.salePrice,b.cost)??-999; }
+      else if (col==='diff') { va=(a.mrp&&a.salePrice)?(a.mrp-a.salePrice):-999999; vb=(b.mrp&&b.salePrice)?(b.mrp-b.salePrice):-999999; }
+      else { va=parseFloat(a[col])||0; vb=parseFloat(b[col])||0; }
+      return dir*(vb-va);
+    });
+
+    ['totalSales','salePrice','mrp','diff','cost','margin','todayStock','toBeOrder'].forEach(c=>{
+      const th=document.getElementById('rth-'+c); if(!th) return;
+      th.classList.remove('sort-asc','sort-desc');
+      const icon=th.querySelector('.sort-icon');
+      if(rankSortCol===c){th.classList.add(rankSortDir===-1?'sort-desc':'sort-asc');icon.textContent=rankSortDir===-1?'↓':'↑';}
+      else icon.textContent='⇅';
+    });
+
+    const all = rankData.items;
+    const totalUnits  = all.reduce((s,i)=>s+i.totalSales,0);
+    const avgPriceArr = all.filter(i=>i.salePrice);
+    const avgPrice    = avgPriceArr.length ? avgPriceArr.reduce((s,i)=>s+i.salePrice,0)/avgPriceArr.length : 0;
+    const needReorder = all.filter(i=>i.toBeOrder>0).length;
+    document.getElementById('rankStatSkus').textContent     = fmt(all.length);
+    document.getElementById('rankStatUnits').textContent    = fmt(totalUnits);
+    document.getElementById('rankStatAvgPrice').textContent = avgPrice?'₹'+Math.round(avgPrice).toLocaleString('en-IN'):'—';
+    document.getElementById('rankStatReorder').textContent  = fmt(needReorder);
+
+    const badge = document.getElementById('rankActiveFilterBadge');
+    const rankFilterLabels = {need_order:'🔴 Needs Reorder',ok:'🟢 Stock OK',no_stock:'⚫ No Stock',margin_good:'💚 Margin ≥40%',margin_mid:'🟡 Margin 20–40%',margin_low:'🔴 Margin <20%'};
+    if (rankStatusFilter !== 'all') {
+      badge.innerHTML = `<span class="active-filter-badge" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red)40" onclick="setRankFilter('${rankStatusFilter}')">${rankFilterLabels[rankStatusFilter]||rankStatusFilter} ✕</span>`;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+
+    let rows='';
+    filtered.forEach((item,idx)=>{
+      const margin = getMargin(item.salePrice, item.cost);
+      const marginHtml = margin===null ? `<span class="margin-na">—</span>`
+        : `<span class="margin-badge ${margin>=40?'margin-good':margin>=20?'margin-mid':'margin-low'}">${margin.toFixed(1)}%</span>`;
+      const mrpHtml = item.mrp ? fmtRs(item.mrp) : '<span style="color:var(--muted)">—</span>';
+      let diffHtml;
+      if (item.mrp&&item.salePrice) {
+        const diff=item.mrp-item.salePrice;
+        diffHtml=`<span style="color:${diff>0?'var(--green)':diff<0?'var(--red)':'var(--muted)'};font-weight:600;">${diff>0?'+':''}${fmtRs(Math.round(diff))}</span>`;
+      } else diffHtml='<span style="color:var(--muted)">—</span>';
+      const sizePills=item.sizes.map(s=>`<span class="size-pill">${escHtml(s.size)}<span class="size-pill-count">×${s.count}</span></span>`).join('');
+      const stockVal=item.todayStock;
+      const stockHtml=stockVal===null?'<span style="color:var(--muted)">—</span>':`<span class="stock-cell ${stockVal>0?'stock-green':'stock-zero'}">${fmt(stockVal)}</span>`;
+      const orderHtml=item.toBeOrder>0?`<span class="order-badge order-needed">⚠ ${item.toBeOrder}</span>`:`<span class="order-badge order-ok">✓ OK</span>`;
+      rows+=`<tr>
+        <td style="text-align:center;color:var(--muted);font-family:var(--font);font-weight:700;font-size:13px;">${idx+1}</td>
+        <td class="sticky-col"><span class="sku-link" style="font-weight:500;color:var(--accent2);" onclick="openSalesModal('${escHtml(item.sku)}','${escHtml(item.productName)}')">${escHtml(item.sku)}</span></td>
+        <td class="sticky-col-2">${escHtml(item.productName)}</td>
+        <td><span style="font-family:var(--font);font-weight:800;font-size:15px;">${fmt(item.totalSales)}</span></td>
+        <td><div class="size-pills">${sizePills}</div></td>
+        <td>${item.salePrice?fmtRs(Math.round(item.salePrice)):'<span style="color:var(--muted)">—</span>'}</td>
+        <td>${mrpHtml}</td>
+        <td>${diffHtml}</td>
+        <td>${item.cost?fmtRs(item.cost):'<span style="color:var(--muted)">—</span>'}</td>
+        <td>${marginHtml}</td>
+        <td>${stockHtml}</td>
+        <td style="color:var(--muted)">${item.leadTime||'—'}</td>
+        <td style="color:var(--muted)">${item.safetyFactor||'—'}</td>
+        <td>${orderHtml}</td>
+      </tr>`;
+    });
+    document.getElementById('rankBody').innerHTML=rows||'<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:40px">No SKUs found</td></tr>';
+    document.getElementById('rankRowCount').textContent=filtered.length+' SKUs · Last 45 days';
+    document.getElementById('rankTableWrap').classList.remove('hidden');
+  }
+
+  function filterRankTable() { if (rankData) renderRankTable(); }
+
+  // TOP PRODUCTS
+  function loadTopProducts() {
+    document.getElementById('topLoading').classList.remove('hidden');
+    document.getElementById('topCardsView').classList.add('hidden');
+    document.getElementById('topTableView').classList.add('hidden');
+    document.getElementById('topError').classList.add('hidden');
+    const treL = document.getElementById('treLoading');
+    if (treL) treL.classList.remove('hidden');
+    ['treTableWrap','treCardsView','treEmpty','treError'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    const tbsL = document.getElementById('tbsLoading');
+    if (tbsL) tbsL.classList.remove('hidden');
+    ['tbsTableWrap','tbsCardsView','tbsEmpty','tbsError'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    google.script.run.withSuccessHandler(onTopData).withFailureHandler(onTopError).getTopProductsData();
+  }
+
+  function onTopData(result) {
+    document.getElementById('topLoading').classList.add('hidden');
+    const treL = document.getElementById('treLoading');
+    if (treL) treL.classList.add('hidden');
+    const tbsL = document.getElementById('tbsLoading');
+    if (tbsL) tbsL.classList.add('hidden');
+    if (!result.success) {
+      document.getElementById('topError').textContent='❌ '+result.error;
+      document.getElementById('topError').classList.remove('hidden');
+      const treErr = document.getElementById('treError');
+      if (treErr) { treErr.textContent='❌ '+result.error; treErr.classList.remove('hidden'); }
+      const tbsErr = document.getElementById('tbsError');
+      if (tbsErr) { tbsErr.textContent='❌ '+result.error; tbsErr.classList.remove('hidden'); }
+      return;
+    }
+    topData=result;
+    renderTopProducts();
+    if (document.getElementById('treBuffer')) renderTopReorder();
+    if (document.getElementById('tbsThreshold')) renderTopSkuToBeOrder();
+  }
+
+  function onTopError(err) {
+    document.getElementById('topLoading').classList.add('hidden');
+    const treL = document.getElementById('treLoading');
+    if (treL) treL.classList.add('hidden');
+    const tbsL = document.getElementById('tbsLoading');
+    if (tbsL) tbsL.classList.add('hidden');
+    document.getElementById('topError').textContent='❌ '+err.message;
+    document.getElementById('topError').classList.remove('hidden');
+    const treErr = document.getElementById('treError');
+    if (treErr) { treErr.textContent='❌ '+err.message; treErr.classList.remove('hidden'); }
+    const tbsErr = document.getElementById('tbsError');
+    if (tbsErr) { tbsErr.textContent='❌ '+err.message; tbsErr.classList.remove('hidden'); }
+  }
+
+  function getTopStockStatus(p) {
+    const pct = p.totalMaxLevel>0 ? (p.totalStock/p.totalMaxLevel)*100 : 0;
+    if (pct===0)  return 'critical';
+    if (pct<=33)  return 'critical';
+    if (pct<=66)  return 'low';
+    if (pct<=100) return 'good';
+    return 'excess';
+  }
+
+  function setTopFilter(val) {
+    topStatusFilter = topStatusFilter === val ? 'all' : val;
+    document.getElementById('topStatusFilter').value = topStatusFilter;
+    updateTopDropdownStyle();
+    updateTopCardHighlight();
+    renderTopProducts();
+  }
+
+  function onTopStatusChange(sel) {
+    topStatusFilter = sel.value;
+    updateTopDropdownStyle();
+    updateTopCardHighlight();
+    renderTopProducts();
+  }
+
+  function updateTopDropdownStyle() {
+    const sel = document.getElementById('topStatusFilter');
+    sel.className = 'status-select';
+    if (['need_order','below_op','critical','low','near_max'].includes(topStatusFilter)) sel.classList.add('filter-red');
+    else if (['ok','good'].includes(topStatusFilter)) sel.classList.add('filter-green');
+    else if (topStatusFilter==='excess') sel.classList.add('filter-blue');
+  }
+
+  function updateTopCardHighlight() {
+    document.getElementById('tsc-order').classList.toggle('active-filter', topStatusFilter==='below_op');
+    document.getElementById('tsc-stock').classList.toggle('active-filter', topStatusFilter==='ok');
+    document.getElementById('tsc-total').classList.toggle('active-filter', topStatusFilter==='all');
+  }
+
+  function setTopView(view, btn) {
+    currentTopView=view;
+    document.querySelectorAll('#tab-topproducts .view-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    if (!topData) return;
+    document.getElementById('topCardsView').classList.toggle('hidden', view!=='cards');
+    document.getElementById('topTableView').classList.toggle('hidden', view!=='table');
+  }
+
+  function filterTopProducts() { if (topData) renderTopProducts(); }
+
+  function renderTopProducts() {
+    if (!topData) return;
+    const search = document.getElementById('topSearch').value.toLowerCase();
+    const allProducts = topData.products;
+
+    const filtered = allProducts.filter(p => {
+      const matchSearch = !search || p.productName.toLowerCase().includes(search) || p.skus.some(s=>s.sku.toLowerCase().includes(search));
+      if (!matchSearch) return false;
+      if (topStatusFilter==='all')       return true;
+      if (topStatusFilter==='need_order') return p.totalToBeOrder > 0;
+      if (topStatusFilter==='below_op')   return p.anyBelowOrderPoint;
+      if (topStatusFilter==='near_max')    return p.anyNearMaxAlert;
+      if (topStatusFilter==='ok')         return p.totalToBeOrder === 0 && !p.anyBelowOrderPoint;
+      const status = getTopStockStatus(p);
+      if (topStatusFilter==='critical') return status==='critical';
+      if (topStatusFilter==='low')      return status==='low';
+      if (topStatusFilter==='good')     return status==='good';
+      if (topStatusFilter==='excess')   return status==='excess';
+      return true;
+    });
+
+    const totalStock        = allProducts.reduce((s,p)=>s+p.totalStock,0);
+    const belowOrderPtCount = allProducts.filter(p=>p.anyBelowOrderPoint).length;
+    const totalSkus         = allProducts.reduce((s,p)=>s+p.skus.length,0);
+    document.getElementById('topStatTotal').textContent = fmt(allProducts.length);
+    document.getElementById('topStatStock').textContent = fmt(totalStock);
+    document.getElementById('topStatOrder').textContent = fmt(belowOrderPtCount);
+    document.getElementById('topStatSkus').textContent  = fmt(totalSkus);
+
+    const topFilterLabels = {need_order:'🔴 Needs Reorder',below_op:'🚨 Below Order Point',near_max:'🔴 Stock Below Max−20',ok:'🟢 Stock OK',critical:'🔴 Critical',low:'🟡 Low',good:'🟢 Good',excess:'🔵 Excess'};
+    [document.getElementById('topActiveFilterBadge'), document.getElementById('topActiveFilterBadge2')].forEach(badge=>{
+      if (!badge) return;
+      if (topStatusFilter!=='all') {
+        badge.innerHTML=`<span class="active-filter-badge" style="background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold)40" onclick="setTopFilter('${topStatusFilter}')">${topFilterLabels[topStatusFilter]||topStatusFilter} ✕</span>`;
+        badge.classList.remove('hidden');
+      } else badge.classList.add('hidden');
+    });
+
+    let cardsHtml='';
+    for (const p of filtered) {
+      const pct       = p.totalMaxLevel>0 ? Math.round((p.totalStock/p.totalMaxLevel)*100) : 0;
+      const stockClass = pct===0?'low':pct<=33?'low':pct<=66?'mid':'';
+      const orderClass = p.totalToBeOrder>0 ? 'needs' : 'ok';
+      const orderLabel = p.totalToBeOrder>0 ? `⚠ Order ${p.totalToBeOrder}` : '✓ Stock OK';
+
+      const avgSaleLabel  = p.totalAvgDailySales > 0 ? p.totalAvgDailySales.toFixed(1)+' units/day' : '—';
+      const opLabel       = p.totalOrderPoint > 0 ? fmt(p.totalOrderPoint) : '—';
+      const opWarnHtml    = p.anyBelowOrderPoint
+        ? `<div class="card-order op-warn">🚨 Below Order Point</div>`
+        : '';
+      const nearMaxWarnHtml = p.anyNearMaxAlert
+        ? `<div class="card-order op-warn" style="margin-top:3px;">🔴 Stock Below Max−20 → Order Now</div>`
+        : '';
+
+      cardsHtml+=`<div class="top-summary-card" onclick="scrollToProduct('${escHtml(p.productName)}')">
+        <div class="card-name" title="${escHtml(p.productName)}">⭐ ${escHtml(p.productName)}</div>
+        <div class="card-stock ${stockClass}">${fmt(p.totalStock)}</div>
+        <div class="card-meta">${p.skus.length} SKU${p.skus.length>1?'s':''} · Max Level: ${fmt(p.totalMaxLevel)} · ${pct}%</div>
+        <div class="card-stats-row">
+          <div class="card-stat-chip">Avg Sale <span>${avgSaleLabel}</span></div>
+          <div class="card-stat-chip ${p.anyBelowOrderPoint?'chip-warn':''}">Order Pt <span>${opLabel}</span></div>
+        </div>
+        <div class="card-order ${orderClass}">${orderLabel}</div>
+        ${opWarnHtml}
+        ${nearMaxWarnHtml}
+      </div>`;
+    }
+    document.getElementById('topSummaryPanel').innerHTML=cardsHtml||'<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px">No products match this filter</div>';
+
+    const dates = topData.recentDates || [];
+    const fixedColHeaders = ['⭐','SKU','Product Name','Lead Time','Safety Stock','Max Level','Today Stock','Stock %','To Be Order','Avg Daily Sale','Order Point'];
+    let theadHtml = '<tr>';
+    fixedColHeaders.forEach(h=>{ theadHtml+=`<th>${h}</th>`; });
+    dates.forEach(d=>{ theadHtml+=`<th style="min-width:70px;text-align:center;">${formatDate(d)}</th>`; });
+    theadHtml += '</tr>';
+    document.getElementById('topTableHead').innerHTML = theadHtml;
+
+    const totalCols = fixedColHeaders.length + dates.length;
+
+    let tableRows='';
+    let pIdx=0;
+    for (const p of filtered) {
+      pIdx++;
+      const orderClass   = p.totalToBeOrder>0 ? 'order-needed' : 'order-ok';
+      const orderLabel   = p.totalToBeOrder>0 ? `⚠ ${p.totalToBeOrder}` : '✓ OK';
+      const opWarnGroup  = p.anyBelowOrderPoint
+        ? `&nbsp;<span class="op-alert" style="font-size:10px;padding:2px 7px;">🚨 Below OP</span>` : '';
+      const nearMaxGroup = p.anyNearMaxAlert
+        ? `&nbsp;<span class="op-alert" style="font-size:10px;padding:2px 7px;background:rgba(224,45,61,0.2);">🔴 Order Now</span>` : '';
+
+      const groupDateTotals = {};
+      dates.forEach(d=>{
+        groupDateTotals[d] = p.skus.reduce((s,sk)=>s+((sk.stockHistory&&sk.stockHistory[d])||0),0);
+      });
+
+      let groupDateCells='';
+      dates.forEach(d=>{
+        const v   = groupDateTotals[d];
+        const cls = p.totalMaxLevel>0 ? getStockClass(v,p.totalMaxLevel) : (v>0?'stock-green':'stock-zero');
+        groupDateCells+=`<td style="text-align:center;"><span class="stock-cell ${cls}" style="min-width:50px;">${fmt(v)}</span></td>`;
+      });
+
+      const grpAvgSale = p.totalAvgDailySales>0 ? `<span class="avg-sale-badge">${p.totalAvgDailySales.toFixed(1)}/day</span>` : '<span style="color:var(--muted)">—</span>';
+      const grpOpHtml  = p.totalOrderPoint>0
+        ? `<span class="${p.anyBelowOrderPoint?'op-alert':'op-safe'}">${p.anyBelowOrderPoint?'🚨 ':''}${fmt(p.totalOrderPoint)}</span>`
+        : '<span style="color:var(--muted)">—</span>';
+
+      tableRows+=`<tr class="product-group-header" id="pg-${pIdx}">
+        <td class="pg-toggle"><button class="toggle-btn expanded" id="tog-${pIdx}" onclick="toggleGroup(${pIdx},${totalCols})">▶</button></td>
+        <td class="pg-name" colspan="2">
+          <div class="product-group-name">
+            ⭐ <span>${escHtml(p.productName)}</span>
+            <span class="product-group-badge">${p.skus.length} SKU${p.skus.length>1?'s':''}</span>
+          </div>
+        </td>
+        <td class="pg-summary" colspan="4">Stock: <b style="color:var(--text)">${fmt(p.totalStock)}</b> &nbsp;·&nbsp; Max: <b style="color:var(--text)">${fmt(p.totalMaxLevel)}</b> &nbsp;·&nbsp; <span class="order-badge ${orderClass}" style="display:inline-flex;">${orderLabel}</span>${opWarnGroup}${nearMaxGroup}</td>
+        <td></td>
+        <td>${grpAvgSale}</td>
+        <td>${grpOpHtml}</td>
+        ${groupDateCells}
+      </tr>`;
+
+      for (const skuObj of p.skus) {
+        const pct      = skuObj.maxLevel>0 ? Math.round((skuObj.todayStock/skuObj.maxLevel)*100) : 0;
+        const stockCls = getStockClass(skuObj.todayStock, skuObj.maxLevel);
+        const barCls   = pct===0?'bar-red':pct<=33?'bar-red':pct<=66?'bar-yellow':pct<=100?'bar-green':'bar-blue';
+        const orderHtml= skuObj.toBeOrder>0 ? `<span class="order-badge order-needed">⚠ ${skuObj.toBeOrder}</span>` : `<span class="order-badge order-ok">✓ OK</span>`;
+
+        const skuAvgHtml = skuObj.avgDailySales>0
+          ? `<span class="avg-sale-badge">${skuObj.avgDailySales.toFixed(1)}/day</span>`
+          : '<span style="color:var(--muted);font-size:11px;">—</span>';
+
+        let skuOpHtml;
+        if (skuObj.orderPoint > 0) {
+          if (skuObj.belowOrderPoint) {
+            skuOpHtml = `<span class="op-alert">🚨 ${fmt(skuObj.orderPoint)}</span>`;
+          } else {
+            skuOpHtml = `<span class="op-safe">${fmt(skuObj.orderPoint)}</span>`;
+          }
+        } else {
+          skuOpHtml = '<span class="op-na">—</span>';
+        }
+
+        let skuDateCells='';
+        dates.forEach(d=>{
+          const v   = (skuObj.stockHistory&&skuObj.stockHistory[d]!==undefined) ? skuObj.stockHistory[d] : 0;
+          const cls = getStockClass(v, skuObj.maxLevel);
+          skuDateCells+=`<td style="text-align:center;"><span class="stock-cell ${cls}" style="min-width:50px;font-size:11px;">${fmt(v)}</span></td>`;
+        });
+
+        tableRows+=`<tr class="sku-sub-row group-rows-${pIdx}">
+          <td class="sr-toggle"></td>
+          <td class="sr-sku"><span class="sku-link" style="font-weight:500;color:var(--accent2);" onclick="openSalesModal('${escHtml(skuObj.sku)}','${escHtml(p.productName)}')">${escHtml(skuObj.sku)}</span></td>
+          <td class="sr-name">${escHtml(p.productName)}</td>
+          <td style="color:var(--muted)">${skuObj.leadTime||'—'}</td>
+          <td style="color:var(--muted)">${fmt(skuObj.safetyStock)||'—'}</td>
+          <td style="color:var(--muted)">${fmt(skuObj.maxLevel)||'—'}</td>
+          <td><span class="stock-cell ${stockCls}">${fmt(skuObj.todayStock)}</span>${skuObj.nearMaxAlert ? `&nbsp;<span class="op-alert" style="font-size:10px;padding:2px 7px;vertical-align:middle;">🔴 Order Now</span>` : ''}</td>
+          <td><div class="stock-bar-wrap"><div class="stock-bar"><div class="stock-bar-fill ${barCls}" style="width:${Math.min(pct,100)}%"></div></div><span style="font-size:11px;color:var(--muted);min-width:36px;">${pct}%</span></div></td>
+          <td>${orderHtml}</td>
+          <td>${skuAvgHtml}</td>
+          <td>${skuOpHtml}</td>
+          ${skuDateCells}
+        </tr>`;
+      }
+    }
+    document.getElementById('topBody').innerHTML=tableRows||`<tr><td colspan="${totalCols}" style="text-align:center;color:var(--muted);padding:40px">No products match this filter</td></tr>`;
+    document.getElementById('topRowCount').textContent=filtered.length+' products · '+filtered.reduce((s,p)=>s+p.skus.length,0)+' SKUs · '+dates.length+' dates';
+
+    document.getElementById('topCardsView').classList.toggle('hidden', currentTopView!=='cards');
+    document.getElementById('topTableView').classList.toggle('hidden', currentTopView!=='table');
+  }
+
+  function toggleGroup(idx, totalCols) {
+    const rows=document.querySelectorAll(`.group-rows-${idx}`);
+    const btn=document.getElementById(`tog-${idx}`);
+    const isExp=btn.classList.contains('expanded');
+    rows.forEach(r=>r.style.display=isExp?'none':'');
+    btn.classList.toggle('expanded',!isExp);
+  }
+
+  function scrollToProduct(name) {
+    setTopView('table', document.getElementById('view-table'));
+    setTimeout(()=>{
+      document.querySelectorAll('#topBody tr.product-group-header').forEach(row=>{
+        if (row.textContent.includes(name)) {
+          row.scrollIntoView({behavior:'smooth',block:'center'});
+          row.style.outline='2px solid var(--gold)';
+          setTimeout(()=>row.style.outline='',2000);
+        }
+      });
+    },100);
+  }
+
+  // TOP PRODUCT TO BE ORDER
+  function setTreBuffer(val, btn) {
+    document.getElementById('treBuffer').value = val;
+    document.querySelectorAll('#tab-topreorder .quick-btn').forEach(b=>b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderTopReorder();
+  }
+
+  function renderTopReorder() {
+    if (!topData) return;
+
+    const buffer = Math.max(0, parseInt(document.getElementById('treBuffer').value) || 0);
+    const search = document.getElementById('treSearch').value.toLowerCase();
+    const viewMode = document.getElementById('treViewMode').value;
+
+    const allItems = [];
+    for (const p of topData.products) {
+      for (const sku of p.skus) {
+        if (sku.orderPoint <= 0) continue;
+        const threshold = sku.orderPoint - buffer;
+        if (sku.todayStock <= threshold) {
+          allItems.push({
+            sku: sku.sku,
+            productName: p.productName,
+            todayStock: sku.todayStock,
+            safetyStock: sku.safetyStock,
+            leadTime: sku.leadTime,
+            avgDailySales: sku.avgDailySales || 0,
+            orderPoint: sku.orderPoint,
+            shortfall: sku.orderPoint - sku.todayStock,
+            qtyToOrder: sku.orderPoint - sku.todayStock
+          });
+        }
+      }
+    }
+
+    const productsSet     = new Set(allItems.map(i => i.productName));
+    const totalQty        = allItems.reduce((s,i)=>s+i.qtyToOrder, 0);
+    const zeroStockCount  = allItems.filter(i=>i.todayStock===0).length;
+
+    document.getElementById('treStatProducts').textContent = fmt(productsSet.size);
+    document.getElementById('treStatSkus').textContent     = fmt(allItems.length);
+    document.getElementById('treStatQty').textContent      = fmt(totalQty);
+    document.getElementById('treStatZero').textContent     = fmt(zeroStockCount);
+
+    if (allItems.length === 0) {
+      document.getElementById('treEmpty').classList.remove('hidden');
+      document.getElementById('treTableWrap').classList.add('hidden');
+      document.getElementById('treCardsView').classList.add('hidden');
+      document.getElementById('treRowCount').textContent = '0 SKUs';
+      return;
+    }
+    document.getElementById('treEmpty').classList.add('hidden');
+
+    const filtered = search
+      ? allItems.filter(i => i.sku.toLowerCase().includes(search) || i.productName.toLowerCase().includes(search))
+      : allItems;
+
+    filtered.sort((a,b) => b.qtyToOrder - a.qtyToOrder);
+
+    if (viewMode === 'product') {
+      const productMap = {};
+      for (const item of filtered) {
+        if (!productMap[item.productName]) {
+          productMap[item.productName] = { name: item.productName, items: [], totalQty: 0, totalShortfall: 0 };
+        }
+        productMap[item.productName].items.push(item);
+        productMap[item.productName].totalQty       += item.qtyToOrder;
+        productMap[item.productName].totalShortfall += item.shortfall;
+      }
+      const products = Object.values(productMap).sort((a,b)=>b.totalQty - a.totalQty);
+
+      let cardsHtml = '';
+      for (const prod of products) {
+        const skusList = prod.items.map(i=>`<span style="font-family:var(--font);font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:4px;margin-right:3px;">${escHtml(i.sku)}</span>`).join(' ');
+        cardsHtml += `<div class="reorder-summary-card">
+          <div class="rc-name" title="${escHtml(prod.name)}">🚨 ${escHtml(prod.name)}</div>
+          <div class="rc-qty">${fmt(prod.totalQty)}</div>
+          <div class="rc-meta">${prod.items.length} SKU${prod.items.length>1?'s':''} below threshold · Shortfall: <b style="color:var(--red)">${fmt(prod.totalShortfall)}</b></div>
+          <div class="rc-skus">${skusList}</div>
+        </div>`;
+      }
+      document.getElementById('treProductCards').innerHTML = cardsHtml || '<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px;grid-column:1/-1;">No products match search</div>';
+      document.getElementById('treCardsView').classList.remove('hidden');
+
+      document.getElementById('treTableTitle').textContent = 'SKUs to Reorder — Grouped by Product';
+      let rows = '';
+      let pIdx = 0;
+      for (const prod of products) {
+        pIdx++;
+        rows += `<tr class="product-group-header">
+          <td class="pg-toggle" style="background:linear-gradient(90deg,rgba(224,45,61,0.08),rgba(224,45,61,0.04)) !important;border-top:2px solid rgba(224,45,61,0.25) !important;"></td>
+          <td class="pg-name" colspan="2" style="background:linear-gradient(90deg,rgba(224,45,61,0.08),rgba(224,45,61,0.04)) !important;">
+            <div class="product-group-name" style="color:var(--red)">
+              🚨 <span>${escHtml(prod.name)}</span>
+              <span class="product-group-badge" style="background:var(--red-bg);color:var(--red);border-color:rgba(224,45,61,0.3);">${prod.items.length} SKU${prod.items.length>1?'s':''}</span>
+            </div>
+          </td>
+          <td colspan="5" style="background:linear-gradient(90deg,rgba(224,45,61,0.08),rgba(224,45,61,0.04)) !important;color:var(--muted);font-size:11px;">Total Shortfall: <b style="color:var(--red)">${fmt(prod.totalShortfall)}</b></td>
+          <td style="background:linear-gradient(90deg,rgba(224,45,61,0.08),rgba(224,45,61,0.04)) !important;"><span class="qty-order-badge">⚠ ${fmt(prod.totalQty)}</span></td>
+        </tr>`;
+        for (const item of prod.items) {
+          rows += buildTreRow(item, true);
+        }
+      }
+      document.getElementById('treBody').innerHTML = rows;
+    }
+    else {
+      document.getElementById('treCardsView').classList.add('hidden');
+      document.getElementById('treTableTitle').textContent = 'SKUs to Reorder — Sorted by Qty to Order';
+      let rows = '';
+      for (const item of filtered) {
+        rows += buildTreRow(item, false);
+      }
+      document.getElementById('treBody').innerHTML = rows || `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">No SKUs match the search</td></tr>`;
+    }
+
+    document.getElementById('treRowCount').textContent = filtered.length + ' SKUs · Buffer = ' + buffer + ' units';
+    document.getElementById('treTableWrap').classList.remove('hidden');
+  }
+
+  function buildTreRow(item, isGrouped) {
+    const stockCls = item.todayStock === 0 ? 'stock-zero' : 'stock-red';
+    const avgHtml = item.avgDailySales > 0
+      ? `<span class="avg-sale-badge">${item.avgDailySales.toFixed(1)}/day</span>`
+      : '<span style="color:var(--muted)">—</span>';
+    const skuCellStyle = isGrouped ? 'padding-left:24px !important;' : '';
+    return `<tr>
+      <td class="sticky-col" style="${skuCellStyle}"><span class="sku-link" style="font-weight:500;color:var(--accent2);" onclick="openSalesModal('${escHtml(item.sku)}','${escHtml(item.productName)}')">${escHtml(item.sku)}</span></td>
+      <td class="sticky-col-2">${escHtml(item.productName)}</td>
+      <td><span class="stock-cell ${stockCls}">${fmt(item.todayStock)}</span></td>
+      <td style="color:var(--muted)">${fmt(item.safetyStock) || '—'}</td>
+      <td style="color:var(--muted)">${item.leadTime || '—'}</td>
+      <td>${avgHtml}</td>
+      <td><span class="op-safe">${fmt(item.orderPoint)}</span></td>
+      <td><span class="shortfall-badge">−${fmt(item.shortfall)}</span></td>
+      <td><span class="qty-order-badge">⚠ ${fmt(item.qtyToOrder)}</span></td>
+    </tr>`;
+  }
+
+  function csvEscape(val) {
+    if (val === null || val === undefined) return '';
+    const s = String(val);
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  CSV / ZIP EXPORT  (respects the filter currently applied on each tab)
+  // ═══════════════════════════════════════════════════════════════════
+  function tsStr() {
+    const n = new Date(), p = x => String(x).padStart(2,'0');
+    return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}_${p(n.getHours())}${p(n.getMinutes())}`;
+  }
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+  function downloadCSV(csv, filename) {
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), filename);
+  }
+
+  // ── DASHBOARD CSV (same filter + search as the visible table) ──
+  function buildDashboardCSV() {
+    if (!dashData) return null;
+    const { dates, skus } = dashData;
+    const search = (document.getElementById('skuSearch').value || '').toLowerCase();
+    let statDate = dates[dates.length-1];
+    for (let i=dates.length-1;i>=0;i--) {
+      if (skus.some(s=>(s.stockByDate[dates[i]]||0)>0)) { statDate=dates[i]; break; }
+    }
+    const statusLabel = {critical:'Critical (0-33%)',low:'Low (33-66%)',good:'Good (66-100%)',excess:'Excess (>100%)'};
+    const filtered = skus.filter(s => {
+      const matchSearch = !search || s.sku.toLowerCase().includes(search) || s.productName.toLowerCase().includes(search);
+      if (!matchSearch) return false;
+      if (dashStatusFilter === 'all') return true;
+      const cls = getStockClass(s.stockByDate[statDate]||0, s.maxLevel);
+      return getStatusFromClass(cls) === dashStatusFilter;
+    });
+    if (!filtered.length) return null;
+    const headers = ['SKU','Product Name','Max Level','Status (latest day)', ...dates.map(d=>formatDate(d))];
+    const rows = [headers.map(csvEscape).join(',')];
+    for (const s of filtered) {
+      const cls = getStockClass(s.stockByDate[statDate]||0, s.maxLevel);
+      const row = [s.sku, s.productName, s.maxLevel||'', statusLabel[getStatusFromClass(cls)]||''];
+      for (const d of dates) row.push(s.stockByDate[d]!==undefined ? s.stockByDate[d] : 0);
+      rows.push(row.map(csvEscape).join(','));
+    }
+    return '\uFEFF' + rows.join('\r\n');
+  }
+  function exportDashboardCSV() {
+    if (!dashData) { alert('⚠ Data not loaded yet. Press Apply / Refresh first.'); return; }
+    const csv = buildDashboardCSV();
+    if (!csv) { alert('⚠ No SKUs to export with the current filter.'); return; }
+    downloadCSV(csv, `IMS_Dashboard_${tsStr()}.csv`);
+  }
+
+  // ── TO BE ORDER CSV ──
+  function buildOrderCSV() {
+    if (!orderData) return null;
+    const search = (document.getElementById('orderSearch').value || '').toLowerCase();
+    let filtered = orderData.orders.filter(o => {
+      const matchSearch = !search || o.sku.toLowerCase().includes(search) || o.productName.toLowerCase().includes(search);
+      if (!matchSearch) return false;
+      if (orderStatusFilter==='all')        return true;
+      if (orderStatusFilter==='need_order') return o.toBeOrder > 0;
+      if (orderStatusFilter==='ok')         return o.toBeOrder === 0;
+      if (orderStatusFilter==='no_stock')   return o.todayStock === 0;
+      if (orderStatusFilter==='has_stock')  return o.todayStock > 0;
+      return true;
+    });
+    if (orderSortCol && orderSortDir!==0) {
+      const col=orderSortCol, dir=orderSortDir;
+      filtered=[...filtered].sort((a,b)=>(dir===1?1:-1)*((parseFloat(a[col])||0)-(parseFloat(b[col])||0)));
+    }
+    if (!filtered.length) return null;
+    const headers = ['SKU','Product Name','Lead Time','Safety Factor',"Today's Stock",'To Be Order'];
+    const rows = [headers.map(csvEscape).join(',')];
+    for (const o of filtered) {
+      rows.push([o.sku,o.productName,o.leadTime||'',o.safetyFactor||'',o.todayStock,o.toBeOrder].map(csvEscape).join(','));
+    }
+    const totalTBO = filtered.reduce((s,o)=>s+(o.toBeOrder||0),0);
+    rows.push('');
+    rows.push(['TOTAL','','','','',totalTBO].map(csvEscape).join(','));
+    return '\uFEFF' + rows.join('\r\n');
+  }
+  function exportOrderCSV() {
+    if (!orderData) { alert('⚠ Data not loaded yet. Press Refresh first.'); return; }
+    const csv = buildOrderCSV();
+    if (!csv) { alert('⚠ No SKUs to export with the current filter.'); return; }
+    downloadCSV(csv, `IMS_ToBeOrder_${tsStr()}.csv`);
+  }
+
+  // ── SALES RANK CSV ──
+  function buildRankCSV() {
+    if (!rankData) return null;
+    const search = (document.getElementById('rankSearch').value || '').toLowerCase();
+    let filtered = rankData.items.filter(i => {
+      const matchSearch = !search || i.sku.toLowerCase().includes(search) || i.productName.toLowerCase().includes(search);
+      if (!matchSearch) return false;
+      if (rankStatusFilter==='all')        return true;
+      if (rankStatusFilter==='need_order')  return i.toBeOrder > 0;
+      if (rankStatusFilter==='ok')          return i.toBeOrder === 0;
+      if (rankStatusFilter==='no_stock')    return (i.todayStock===0||i.todayStock===null);
+      const m = getMargin(i.salePrice, i.cost);
+      if (rankStatusFilter==='margin_good') return m !== null && m >= 40;
+      if (rankStatusFilter==='margin_mid')  return m !== null && m >= 20 && m < 40;
+      if (rankStatusFilter==='margin_low')  return m !== null && m < 20;
+      return true;
+    });
+    const col=rankSortCol, dir=rankSortDir;
+    filtered=[...filtered].sort((a,b)=>{
+      let va,vb;
+      if (col==='margin') { va=getMargin(a.salePrice,a.cost)??-999; vb=getMargin(b.salePrice,b.cost)??-999; }
+      else if (col==='diff') { va=(a.mrp&&a.salePrice)?(a.mrp-a.salePrice):-999999; vb=(b.mrp&&b.salePrice)?(b.mrp-b.salePrice):-999999; }
+      else { va=parseFloat(a[col])||0; vb=parseFloat(b[col])||0; }
+      return dir*(vb-va);
+    });
+    if (!filtered.length) return null;
+    const headers = ['Rank','SKU','Product Name','Units Sold','Sizes','Sale Price','MRP','Difference','Cost','Margin %','Stock Today','Lead Time','Safety Factor','To Be Order'];
+    const rows = [headers.map(csvEscape).join(',')];
+    filtered.forEach((item,idx)=>{
+      const margin = getMargin(item.salePrice, item.cost);
+      const sizes = (item.sizes||[]).map(s=>`${s.size}x${s.count}`).join('; ');
+      const diff = (item.mrp&&item.salePrice)?(item.mrp-item.salePrice):'';
+      rows.push([
+        idx+1, item.sku, item.productName, item.totalSales, sizes,
+        item.salePrice||'', item.mrp||'', diff, item.cost||'',
+        margin===null?'':margin.toFixed(1),
+        (item.todayStock===null?'':item.todayStock),
+        item.leadTime||'', item.safetyFactor||'', item.toBeOrder
+      ].map(csvEscape).join(','));
+    });
+    return '\uFEFF' + rows.join('\r\n');
+  }
+  function exportRankCSV() {
+    if (!rankData) { alert('⚠ Data not loaded yet. Press Refresh first.'); return; }
+    const csv = buildRankCSV();
+    if (!csv) { alert('⚠ No SKUs to export with the current filter.'); return; }
+    downloadCSV(csv, `IMS_SalesRank_${tsStr()}.csv`);
+  }
+
+  // ── TOP PRODUCTS CSV (SKU-level, same filter as the cards/table) ──
+  function buildTopProductsCSV() {
+    if (!topData) return null;
+    const search = (document.getElementById('topSearch').value || '').toLowerCase();
+    const allProducts = topData.products;
+    const filtered = allProducts.filter(p => {
+      const matchSearch = !search || p.productName.toLowerCase().includes(search) || p.skus.some(s=>s.sku.toLowerCase().includes(search));
+      if (!matchSearch) return false;
+      if (topStatusFilter==='all')        return true;
+      if (topStatusFilter==='need_order')  return p.totalToBeOrder > 0;
+      if (topStatusFilter==='below_op')    return p.anyBelowOrderPoint;
+      if (topStatusFilter==='near_max')    return p.anyNearMaxAlert;
+      if (topStatusFilter==='ok')          return p.totalToBeOrder === 0 && !p.anyBelowOrderPoint;
+      const status = getTopStockStatus(p);
+      if (topStatusFilter==='critical') return status==='critical';
+      if (topStatusFilter==='low')      return status==='low';
+      if (topStatusFilter==='good')     return status==='good';
+      if (topStatusFilter==='excess')   return status==='excess';
+      return true;
+    });
+    if (!filtered.length) return null;
+    const dates = topData.recentDates || [];
+    const headers = ['Product Name','SKU','Size','Lead Time','Safety Stock','Max Level','Today Stock','Stock %','To Be Order','Avg Daily Sale','Order Point','Below Order Point', ...dates.map(d=>formatDate(d))];
+    const rows = [headers.map(csvEscape).join(',')];
+    for (const p of filtered) {
+      for (const sk of p.skus) {
+        const pct = sk.maxLevel>0 ? Math.round((sk.todayStock/sk.maxLevel)*100) : 0;
+        const row = [
+          p.productName, sk.sku, sk.size||'', sk.leadTime||'', sk.safetyStock, sk.maxLevel,
+          sk.todayStock, pct+'%', sk.toBeOrder, (sk.avgDailySales||0).toFixed(2),
+          sk.orderPoint||0, sk.belowOrderPoint?'Yes':'No'
+        ];
+        for (const d of dates) row.push((sk.stockHistory && sk.stockHistory[d]!==undefined) ? sk.stockHistory[d] : 0);
+        rows.push(row.map(csvEscape).join(','));
+      }
+    }
+    return '\uFEFF' + rows.join('\r\n');
+  }
+  function exportTopProductsCSV() {
+    if (!topData) { alert('⚠ Data not loaded yet. Press Refresh first.'); return; }
+    const csv = buildTopProductsCSV();
+    if (!csv) { alert('⚠ No products to export with the current filter.'); return; }
+    downloadCSV(csv, `IMS_TopProducts_${tsStr()}.csv`);
+  }
+
+  // ── String builders for the two tabs that already have an export button
+  //    (used by "Export All" so the ZIP includes every tab) ──
+  function buildTopReorderCSV() {
+    if (!topData) return null;
+    const buffer = Math.max(0, parseInt(document.getElementById('treBuffer').value) || 0);
+    const search = (document.getElementById('treSearch').value || '').toLowerCase();
+    const allItems = [];
+    for (const p of topData.products) {
+      for (const sku of p.skus) {
+        if (sku.orderPoint <= 0) continue;
+        if (sku.todayStock <= (sku.orderPoint - buffer)) {
+          allItems.push({ sku:sku.sku, productName:p.productName, todayStock:sku.todayStock,
+            safetyStock:sku.safetyStock, leadTime:sku.leadTime, avgDailySales:sku.avgDailySales||0,
+            orderPoint:sku.orderPoint, shortfall:sku.orderPoint-sku.todayStock, qtyToOrder:sku.orderPoint-sku.todayStock });
+        }
+      }
+    }
+    const filtered = search ? allItems.filter(i => i.sku.toLowerCase().includes(search) || i.productName.toLowerCase().includes(search)) : allItems;
+    if (filtered.length === 0) return null;
+    filtered.sort((a,b) => b.qtyToOrder - a.qtyToOrder);
+    const headers = ['SKU','Product Name','Today Stock','Safety Stock','Lead Time','Avg Daily Sale','Order Point','Shortfall','Qty to Order'];
+    const rows = [headers.map(csvEscape).join(',')];
+    for (const item of filtered) {
+      rows.push([item.sku,item.productName,item.todayStock,item.safetyStock,item.leadTime,item.avgDailySales.toFixed(2),item.orderPoint,item.shortfall,item.qtyToOrder].map(csvEscape).join(','));
+    }
+    const totalQty = filtered.reduce((s,i)=>s+i.qtyToOrder, 0);
+    rows.push('');
+    rows.push(['TOTAL','','','','','','','',totalQty].map(csvEscape).join(','));
+    return '\uFEFF' + rows.join('\r\n');
+  }
+  function buildTopSkuTbsCSV() {
+    if (!topData) return null;
+    const threshold = Math.max(1, parseInt(document.getElementById('tbsThreshold').value) || 1);
+    const search = (document.getElementById('tbsSearch').value || '').toLowerCase();
+    const productGroups = [];
+    for (const p of topData.products) {
+      const productTotalTBO = p.totalToBeOrder || 0;
+      const productRawTBO   = (typeof p.rawTotalToBeOrder === 'number' ? p.rawTotalToBeOrder : productTotalTBO);
+      if (productRawTBO < threshold) continue;
+      const skusToOrder = [];
+      for (const sku of p.skus) {
+        if ((sku.toBeOrder || 0) <= 0) continue;
+        skusToOrder.push({ sku:sku.sku, size:sku.size||'', productName:p.productName, todayStock:sku.todayStock,
+          safetyStock:sku.safetyStock, maxLevel:sku.maxLevel, leadTime:sku.leadTime, avgDailySales:sku.avgDailySales||0, toBeOrder:sku.toBeOrder||0 });
+      }
+      if (skusToOrder.length === 0) continue;
+      skusToOrder.sort((a,b) => b.toBeOrder - a.toBeOrder);
+      productGroups.push({ name:p.productName, totalTBO:productTotalTBO,
+        rawTotalTBO:(typeof p.rawTotalToBeOrder === 'number' ? p.rawTotalToBeOrder : productTotalTBO),
+        orderedPending:p.orderedPending||0, orderedDone:p.orderedDone||0,
+        totalStock:p.totalStock||0, totalMaxLevel:p.totalMaxLevel||0, skus:skusToOrder });
+    }
+    const filteredGroups = search
+      ? productGroups.filter(g => g.name.toLowerCase().includes(search) || g.skus.some(s => s.sku.toLowerCase().includes(search)))
+      : productGroups;
+    if (filteredGroups.length === 0) return null;
+    filteredGroups.sort((a,b) => b.totalTBO - a.totalTBO);
+    const headers = ['Product Name','SKU','Size','Today Stock','Safety Stock','Max Level','Lead Time','Avg Daily Sale','Ordered (Pending)','EasyEcom','To Be Order'];
+    const rows = [headers.map(csvEscape).join(',')];
+    let grandTotalSkus = 0, grandTotalTBO = 0;
+    for (const grp of filteredGroups) {
+      const stockPct = grp.totalMaxLevel > 0 ? Math.round((grp.totalStock/grp.totalMaxLevel)*100) : 0;
+      const grpEasy = grp.orderedDone > 0 ? 'Yes (' + grp.orderedDone + ')' : (grp.orderedPending > 0 ? 'No' : '');
+      rows.push(['── ' + grp.name + ' ──','','',grp.totalStock + ' / ' + grp.totalMaxLevel + ' (' + stockPct + '%)','','','',grp.skus.length + ' SKUs',grp.orderedPending || 0,grpEasy,'TOTAL: ' + grp.totalTBO + (grp.rawTotalTBO !== grp.totalTBO ? ' (was ' + grp.rawTotalTBO + ')' : '')].map(csvEscape).join(','));
+      for (const item of grp.skus) {
+        rows.push([item.productName,item.sku,item.size||'',item.todayStock,item.safetyStock,item.maxLevel,item.leadTime,item.avgDailySales.toFixed(2),'','',item.toBeOrder].map(csvEscape).join(','));
+      }
+      rows.push('');
+      grandTotalSkus += grp.skus.length; grandTotalTBO += grp.totalTBO;
+    }
+    rows.push(['GRAND TOTAL',filteredGroups.length + ' products',grandTotalSkus + ' SKUs','','','','','','','',grandTotalTBO].map(csvEscape).join(','));
+    return '\uFEFF' + rows.join('\r\n');
+  }
+
+  // ── Minimal store-only ZIP builder (no external library) ──
+  function _zipCrc32(bytes) {
+    let crc = ~0;
+    for (let i=0;i<bytes.length;i++) { crc ^= bytes[i]; for (let k=0;k<8;k++) crc = (crc>>>1) ^ (0xEDB88320 & -(crc & 1)); }
+    return (~crc) >>> 0;
+  }
+  function _u16(n){ return new Uint8Array([n&0xFF,(n>>>8)&0xFF]); }
+  function _u32(n){ return new Uint8Array([n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF]); }
+  function _zipStore(files) {
+    const enc = new TextEncoder(), chunks = [], central = []; let offset = 0;
+    const d = new Date();
+    const dt = ((d.getHours()&0x1F)<<11)|((d.getMinutes()&0x3F)<<5)|((Math.floor(d.getSeconds()/2))&0x1F);
+    const dd = (((d.getFullYear()-1980)&0x7F)<<9)|(((d.getMonth()+1)&0x0F)<<5)|(d.getDate()&0x1F);
+    for (const f of files) {
+      const nameBytes = enc.encode(f.name), crc = _zipCrc32(f.bytes), size = f.bytes.length;
+      const local = [_u32(0x04034b50),_u16(20),_u16(0),_u16(0),_u16(dt),_u16(dd),_u32(crc),_u32(size),_u32(size),_u16(nameBytes.length),_u16(0),nameBytes,f.bytes];
+      central.push({nameBytes,crc,size,offset});
+      let ll=0; for (const p of local) ll+=p.length; for (const p of local) chunks.push(p); offset+=ll;
+    }
+    const cdStart = offset; let cdLen = 0;
+    for (const c of central) {
+      const cd = [_u32(0x02014b50),_u16(20),_u16(20),_u16(0),_u16(0),_u16(dt),_u16(dd),_u32(c.crc),_u32(c.size),_u32(c.size),_u16(c.nameBytes.length),_u16(0),_u16(0),_u16(0),_u16(0),_u32(0),_u32(c.offset),c.nameBytes];
+      let l=0; for (const p of cd) l+=p.length; cdLen+=l; for (const p of cd) chunks.push(p);
+    }
+    const eocd = [_u32(0x06054b50),_u16(0),_u16(0),_u16(central.length),_u16(central.length),_u32(cdLen),_u32(cdStart),_u16(0)];
+    for (const p of eocd) chunks.push(p);
+    let total=0; for (const p of chunks) total+=p.length;
+    const out = new Uint8Array(total); let pos=0; for (const p of chunks){ out.set(p,pos); pos+=p.length; }
+    return out;
+  }
+
+  // ── Promise wrapper over the google.script.run shim (→ /api/ims/*) ──
+  function imsCall(method) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    return new Promise((resolve, reject) => {
+      try {
+        const r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+        r[method].apply(r, args);
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // ── EXPORT ALL → single ZIP of every tab (loads any tab not yet opened) ──
+  async function exportAllCSV() {
+    const btn = document.getElementById('exportAllBtn');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Preparing…'; }
+    try {
+      if (!dashData) {
+        const from = document.getElementById('dateFrom').value, to = document.getElementById('dateTo').value;
+        if (from && to) { try { const r = await imsCall('getDashboardData', from, to); if (r && r.success) { dashData = r; renderDashboard(); } } catch(_) {} }
+      }
+      if (!orderData) { try { const r = await imsCall('getToBeOrderData'); if (r && r.success) { orderData = r; renderOrderTable(); } } catch(_) {} }
+      if (!rankData)  { try { const r = await imsCall('getSalesRankData'); if (r && r.success) { rankData = r; renderRankTable(); } } catch(_) {} }
+      if (!topData)   { try { const r = await imsCall('getTopProductsData'); if (r && r.success) { topData = r; renderTopProducts(); if (document.getElementById('treBuffer')) renderTopReorder(); if (document.getElementById('tbsThreshold')) renderTopSkuToBeOrder(); } } catch(_) {} }
+
+      const enc = new TextEncoder();
+      const files = [];
+      const add = (name, csv) => { if (csv) files.push({ name, bytes: enc.encode(csv) }); };
+      add('1_Dashboard_StockLevels.csv', buildDashboardCSV());
+      add('2_ToBeOrder.csv',             buildOrderCSV());
+      add('3_SalesRank_45Days.csv',      buildRankCSV());
+      add('4_TopProducts.csv',           buildTopProductsCSV());
+      add('5_TopProduct_ToBeOrder.csv',  buildTopReorderCSV());
+      add('6_TopProduct_SKU_ToBeOrder.csv', buildTopSkuTbsCSV());
+
+      if (!files.length) { alert('⚠ No data available to export yet. Open the tabs or press Refresh, then try again.'); return; }
+      const zipBytes = _zipStore(files);
+      downloadBlob(new Blob([zipBytes], { type: 'application/zip' }), `Bunai_IMS_AllData_${tsStr()}.zip`);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+  }
+
+  function exportTopReorderCSV() {
+    if (!topData) { alert('⚠ Data not loaded yet. Press Refresh first.'); return; }
+
+    const buffer = Math.max(0, parseInt(document.getElementById('treBuffer').value) || 0);
+    const search = document.getElementById('treSearch').value.toLowerCase();
+
+    const allItems = [];
+    for (const p of topData.products) {
+      for (const sku of p.skus) {
+        if (sku.orderPoint <= 0) continue;
+        const threshold = sku.orderPoint - buffer;
+        if (sku.todayStock <= threshold) {
+          allItems.push({
+            sku: sku.sku,
+            productName: p.productName,
+            todayStock: sku.todayStock,
+            safetyStock: sku.safetyStock,
+            leadTime: sku.leadTime,
+            avgDailySales: sku.avgDailySales || 0,
+            orderPoint: sku.orderPoint,
+            shortfall: sku.orderPoint - sku.todayStock,
+            qtyToOrder: sku.orderPoint - sku.todayStock
+          });
+        }
+      }
+    }
+
+    const filtered = search
+      ? allItems.filter(i => i.sku.toLowerCase().includes(search) || i.productName.toLowerCase().includes(search))
+      : allItems;
+
+    if (filtered.length === 0) { alert('⚠ No SKU found to export!'); return; }
+
+    filtered.sort((a,b) => b.qtyToOrder - a.qtyToOrder);
+
+    const headers = ['SKU', 'Product Name', 'Today Stock', 'Safety Stock', 'Lead Time', 'Avg Daily Sale', 'Order Point', 'Shortfall', 'Qty to Order'];
+    const rows = [headers.map(csvEscape).join(',')];
+
+    for (const item of filtered) {
+      const row = [
+        item.sku,
+        item.productName,
+        item.todayStock,
+        item.safetyStock,
+        item.leadTime,
+        item.avgDailySales.toFixed(2),
+        item.orderPoint,
+        item.shortfall,
+        item.qtyToOrder
+      ];
+      rows.push(row.map(csvEscape).join(','));
+    }
+
+    const totalQty = filtered.reduce((s,i)=>s+i.qtyToOrder, 0);
+    rows.push('');
+    rows.push(['TOTAL', '', '', '', '', '', '', '', totalQty].map(csvEscape).join(','));
+
+    const csv = '\uFEFF' + rows.join('\r\n');
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `TopProduct_ToBeOrder_${dateStr}_buffer${buffer}.csv`;
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+
+  // TOP PRODUCT SKU TO BE ORDER
+  let tbsAllExpanded = false;
+
+  function setTbsThreshold(val, btn) {
+    document.getElementById('tbsThreshold').value = val;
+    document.querySelectorAll('#tab-topskutobeorder .quick-btn').forEach(b=>b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderTopSkuToBeOrder();
+  }
+
+  function toggleAllTbsGroups() {
+    tbsAllExpanded = !tbsAllExpanded;
+    const btn = document.getElementById('tbsExpandAllBtn');
+    if (btn) btn.innerHTML = tbsAllExpanded ? '⬆ Collapse All' : '⬇ Expand All';
+    document.querySelectorAll('#tbsBody .product-group-header.tbs-group-row').forEach(headerRow => {
+      const idx = headerRow.dataset.groupIdx;
+      const subRows = document.querySelectorAll(`.tbs-group-${idx}`);
+      const togBtn = document.getElementById(`tbs-tog-${idx}`);
+      subRows.forEach(r => r.style.display = tbsAllExpanded ? '' : 'none');
+      if (togBtn) togBtn.classList.toggle('expanded', tbsAllExpanded);
+    });
+  }
+
+  function toggleTbsGroup(idx) {
+    const subRows = document.querySelectorAll(`.tbs-group-${idx}`);
+    const btn = document.getElementById(`tbs-tog-${idx}`);
+    if (!btn) return;
+    const isExp = btn.classList.contains('expanded');
+    subRows.forEach(r => r.style.display = isExp ? 'none' : '');
+    btn.classList.toggle('expanded', !isExp);
+  }
+
+  function renderTopSkuToBeOrder() {
+    if (!topData) return;
+
+    const threshold = Math.max(1, parseInt(document.getElementById('tbsThreshold').value) || 1);
+    const search = document.getElementById('tbsSearch').value.toLowerCase();
+
+    const productGroups = [];
+    for (const p of topData.products) {
+      const productTotalTBO = p.totalToBeOrder || 0; // adjusted (after subtracting pending)
+      const productRawTBO   = (typeof p.rawTotalToBeOrder === 'number' ? p.rawTotalToBeOrder : productTotalTBO);
+      // Keep visible by ORIGINAL need, so a pending order that reduces the total to ~0
+      // still stays on screen (with the ordered qty shown) until EasyEcom = Yes.
+      if (productRawTBO < threshold) continue;
+
+      const skusToOrder = [];
+      for (const sku of p.skus) {
+        if ((sku.toBeOrder || 0) <= 0) continue;
+        skusToOrder.push({
+          sku: sku.sku,
+          size: sku.size || "",
+          productName: p.productName,
+          todayStock: sku.todayStock,
+          safetyStock: sku.safetyStock,
+          maxLevel: sku.maxLevel,
+          leadTime: sku.leadTime,
+          avgDailySales: sku.avgDailySales || 0,
+          toBeOrder: sku.toBeOrder || 0
+        });
+      }
+
+      if (skusToOrder.length === 0) continue;
+
+      productGroups.push({
+        name: p.productName,
+        totalTBO: productTotalTBO,
+        rawTotalTBO: (typeof p.rawTotalToBeOrder === 'number' ? p.rawTotalToBeOrder : productTotalTBO),
+        orderedPending: p.orderedPending || 0,
+        orderedDone: p.orderedDone || 0,
+        totalStock: p.totalStock || 0,
+        totalMaxLevel: p.totalMaxLevel || 0,
+        skus: skusToOrder
+      });
+    }
+
+    const totalSkuCount  = productGroups.reduce((s,g)=>s+g.skus.length, 0);
+    const totalQtySum    = productGroups.reduce((s,g)=>s+g.totalTBO, 0);
+    const zeroStockCount = productGroups.reduce((s,g)=>s + g.skus.filter(i=>i.todayStock===0).length, 0);
+
+    document.getElementById('tbsStatProducts').textContent = fmt(productGroups.length);
+    document.getElementById('tbsStatSkus').textContent     = fmt(totalSkuCount);
+    document.getElementById('tbsStatQty').textContent      = fmt(totalQtySum);
+    document.getElementById('tbsStatZero').textContent     = fmt(zeroStockCount);
+
+    if (productGroups.length === 0) {
+      document.getElementById('tbsEmpty').classList.remove('hidden');
+      document.getElementById('tbsTableWrap').classList.add('hidden');
+      document.getElementById('tbsCardsView').classList.add('hidden');
+      document.getElementById('tbsRowCount').textContent = '0 products';
+      return;
+    }
+    document.getElementById('tbsEmpty').classList.add('hidden');
+    document.getElementById('tbsCardsView').classList.add('hidden');
+
+    const filteredGroups = search
+      ? productGroups.filter(g =>
+          g.name.toLowerCase().includes(search) ||
+          g.skus.some(s => s.sku.toLowerCase().includes(search))
+        )
+      : productGroups;
+
+    filteredGroups.sort((a,b) => b.totalTBO - a.totalTBO);
+
+    let rows = '';
+    let pIdx = 0;
+    for (const grp of filteredGroups) {
+      pIdx++;
+      const stockPct = grp.totalMaxLevel > 0 ? Math.round((grp.totalStock/grp.totalMaxLevel)*100) : 0;
+      const startExpanded = tbsAllExpanded;
+
+      // Ordered / EasyEcom (product level, via Taging Col A model number)
+      let orderedInfo = '';
+      if (grp.orderedPending > 0 || grp.orderedDone > 0) {
+        const pendBadge = grp.orderedPending > 0
+          ? `<span class="order-badge" style="background:var(--blue-bg);color:var(--blue);" title="Ordered, pending in EasyEcom — subtracted from To Be Order">🛒 Ordered ${fmt(grp.orderedPending)}</span>`
+          : '';
+        const easyBadge = grp.orderedDone > 0
+          ? `<span class="order-badge order-ok" title="Plus-ed in EasyEcom / IMS stock">✓ EasyEcom ${fmt(grp.orderedDone)}</span>`
+          : (grp.orderedPending > 0 ? `<span class="order-badge" style="background:var(--yellow-bg);color:var(--yellow);" title="Ordered but not yet in EasyEcom">⏳ EasyEcom No</span>` : '');
+        const wasNote = (grp.rawTotalTBO !== grp.totalTBO)
+          ? `<span style="color:var(--muted);">(was ${fmt(grp.rawTotalTBO)} − ordered ${fmt(grp.orderedPending)})</span>`
+          : '';
+        orderedInfo = ` &nbsp;·&nbsp; ${pendBadge} ${easyBadge} ${wasNote}`;
+      }
+
+      const totalBadge = grp.totalTBO > 0
+        ? `<span class="tbs-qty-badge">⚠ ${fmt(grp.totalTBO)}</span>`
+        : `<span class="order-badge order-ok" title="Fully covered by a pending order">✓ 0 (ordered)</span>`;
+
+      rows += `<tr class="product-group-header tbs-group-row" data-group-idx="${pIdx}">
+        <td class="pg-toggle" style="background:linear-gradient(90deg,rgba(212,88,10,0.08),rgba(212,88,10,0.04)) !important;border-top:2px solid rgba(212,88,10,0.25) !important;width:40px;">
+          <button class="toggle-btn ${startExpanded?'expanded':''}" id="tbs-tog-${pIdx}" onclick="toggleTbsGroup(${pIdx})" style="color:var(--orange);">▶</button>
+        </td>
+        <td class="pg-name" colspan="2" style="background:linear-gradient(90deg,rgba(212,88,10,0.08),rgba(212,88,10,0.04)) !important;left:40px !important;cursor:pointer;" onclick="toggleTbsGroup(${pIdx})">
+          <div class="product-group-name" style="color:var(--orange);">
+            📋 <span>${escHtml(grp.name)}</span>
+            <span class="product-group-badge" style="background:rgba(212,88,10,0.1);color:var(--orange);border-color:rgba(212,88,10,0.3);">${grp.skus.length} SKU${grp.skus.length>1?'s':''}</span>
+          </div>
+        </td>
+        <td colspan="7" style="background:linear-gradient(90deg,rgba(212,88,10,0.08),rgba(212,88,10,0.04)) !important;color:var(--muted);font-size:11px;">
+          Stock: <b style="color:var(--text)">${fmt(grp.totalStock)}</b> / ${fmt(grp.totalMaxLevel)} (${stockPct}%) &nbsp;·&nbsp; Total To Be Order:&nbsp;${totalBadge}${orderedInfo}
+        </td>
+      </tr>`;
+
+      const subRowStyle = startExpanded ? '' : 'style="display:none;"';
+      for (const item of grp.skus) {
+        rows += buildTbsRow(item, pIdx, subRowStyle);
+      }
+    }
+    document.getElementById('tbsBody').innerHTML = rows;
+    document.getElementById('tbsRowCount').textContent = filteredGroups.length + ' products · ' + filteredGroups.reduce((s,g)=>s+g.skus.length,0) + ' SKUs · Threshold ≥ ' + threshold;
+    document.getElementById('tbsTableWrap').classList.remove('hidden');
+  }
+
+  function buildTbsRow(item, groupIdx, hiddenStyle) {
+    const stockCls = item.todayStock === 0 ? 'stock-zero' : (item.todayStock < (item.safetyStock||0) ? 'stock-red' : 'stock-yellow');
+    const avgHtml = item.avgDailySales > 0
+      ? `<span class="avg-sale-badge">${item.avgDailySales.toFixed(1)}/day</span>`
+      : '<span style="color:var(--muted)">—</span>';
+    const sizeHtml = item.size
+      ? `<span class="size-badge">${escHtml(item.size)}</span>`
+      : '<span style="color:var(--muted)">—</span>';
+
+    const groupClass = `tbs-group-${groupIdx}`;
+    return `<tr class="${groupClass}" ${hiddenStyle || ''}>
+      <td style="width:40px;"></td>
+      <td class="sticky-col" style="left:40px !important;padding-left:24px !important;"><span class="sku-link" style="font-weight:500;color:var(--accent2);" onclick="openSalesModal('${escHtml(item.sku)}','${escHtml(item.productName)}')">${escHtml(item.sku)}</span></td>
+      <td class="sticky-col-2" style="left:180px !important;font-size:11px;color:var(--muted);">${escHtml(item.productName)}</td>
+      <td>${sizeHtml}</td>
+      <td><span class="stock-cell ${stockCls}">${fmt(item.todayStock)}</span></td>
+      <td style="color:var(--muted)">${fmt(item.safetyStock) || '—'}</td>
+      <td style="color:var(--muted)">${fmt(item.maxLevel) || '—'}</td>
+      <td style="color:var(--muted)">${item.leadTime || '—'}</td>
+      <td>${avgHtml}</td>
+      <td><span class="tbs-qty-badge">⚠ ${fmt(item.toBeOrder)}</span></td>
+    </tr>`;
+  }
+
+  function exportTopSkuTbsCSV() {
+    if (!topData) { alert('⚠ Data not loaded yet. Press Refresh first.'); return; }
+
+    const threshold = Math.max(1, parseInt(document.getElementById('tbsThreshold').value) || 1);
+    const search = document.getElementById('tbsSearch').value.toLowerCase();
+
+    const productGroups = [];
+    for (const p of topData.products) {
+      const productTotalTBO = p.totalToBeOrder || 0; // adjusted (after subtracting pending)
+      const productRawTBO   = (typeof p.rawTotalToBeOrder === 'number' ? p.rawTotalToBeOrder : productTotalTBO);
+      if (productRawTBO < threshold) continue;
+
+      const skusToOrder = [];
+      for (const sku of p.skus) {
+        if ((sku.toBeOrder || 0) <= 0) continue;
+        skusToOrder.push({
+          sku: sku.sku,
+          size: sku.size || "",
+          productName: p.productName,
+          todayStock: sku.todayStock,
+          safetyStock: sku.safetyStock,
+          maxLevel: sku.maxLevel,
+          leadTime: sku.leadTime,
+          avgDailySales: sku.avgDailySales || 0,
+          toBeOrder: sku.toBeOrder || 0
+        });
+      }
+
+      if (skusToOrder.length === 0) continue;
+      skusToOrder.sort((a,b) => b.toBeOrder - a.toBeOrder);
+
+      productGroups.push({
+        name: p.productName,
+        totalTBO: productTotalTBO,
+        rawTotalTBO: (typeof p.rawTotalToBeOrder === 'number' ? p.rawTotalToBeOrder : productTotalTBO),
+        orderedPending: p.orderedPending || 0,
+        orderedDone: p.orderedDone || 0,
+        totalStock: p.totalStock || 0,
+        totalMaxLevel: p.totalMaxLevel || 0,
+        skus: skusToOrder
+      });
+    }
+
+    const filteredGroups = search
+      ? productGroups.filter(g =>
+          g.name.toLowerCase().includes(search) ||
+          g.skus.some(s => s.sku.toLowerCase().includes(search))
+        )
+      : productGroups;
+
+    if (filteredGroups.length === 0) { alert('⚠ No product found to export!'); return; }
+
+    filteredGroups.sort((a,b) => b.totalTBO - a.totalTBO);
+
+    const headers = ['Product Name', 'SKU', 'Size', 'Today Stock', 'Safety Stock', 'Max Level', 'Lead Time', 'Avg Daily Sale', 'Ordered (Pending)', 'EasyEcom', 'To Be Order'];
+    const rows = [headers.map(csvEscape).join(',')];
+
+    let grandTotalSkus = 0;
+    let grandTotalTBO  = 0;
+
+    for (const grp of filteredGroups) {
+      const stockPct = grp.totalMaxLevel > 0 ? Math.round((grp.totalStock/grp.totalMaxLevel)*100) : 0;
+      const grpEasy = grp.orderedDone > 0
+        ? 'Yes (' + grp.orderedDone + ')'
+        : (grp.orderedPending > 0 ? 'No' : '');
+      rows.push([
+        '── ' + grp.name + ' ──',
+        '',
+        '',
+        grp.totalStock + ' / ' + grp.totalMaxLevel + ' (' + stockPct + '%)',
+        '',
+        '',
+        '',
+        grp.skus.length + ' SKUs',
+        grp.orderedPending || 0,
+        grpEasy,
+        'TOTAL: ' + grp.totalTBO + (grp.rawTotalTBO !== grp.totalTBO ? ' (was ' + grp.rawTotalTBO + ')' : '')
+      ].map(csvEscape).join(','));
+
+      for (const item of grp.skus) {
+        rows.push([
+          item.productName,
+          item.sku,
+          item.size || '',
+          item.todayStock,
+          item.safetyStock,
+          item.maxLevel,
+          item.leadTime,
+          item.avgDailySales.toFixed(2),
+          '',
+          '',
+          item.toBeOrder
+        ].map(csvEscape).join(','));
+      }
+
+      rows.push('');
+
+      grandTotalSkus += grp.skus.length;
+      grandTotalTBO  += grp.totalTBO;
+    }
+
+    rows.push([
+      'GRAND TOTAL',
+      filteredGroups.length + ' products',
+      grandTotalSkus + ' SKUs',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      grandTotalTBO
+    ].map(csvEscape).join(','));
+
+    const csv = '\uFEFF' + rows.join('\r\n');
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `TopProduct_SKU_ToBeOrder_${dateStr}_threshold${threshold}.csv`;
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+
+  // MODAL
+  function openSalesModal(sku, productName) {
+    _modalSku=sku; _modalProductName=productName;
+    document.getElementById('salesModal').classList.remove('hidden');
+    document.getElementById('modalSkuBadge').textContent    = sku;
+    document.getElementById('modalProductName').textContent = productName;
+    document.getElementById('modalMeta').textContent        = 'Loading sales data…';
+    document.getElementById('modalLoading').classList.remove('hidden');
+    document.getElementById('modalError').classList.add('hidden');
+    document.getElementById('modalContent').classList.add('hidden');
+    document.body.style.overflow='hidden';
+    const imsOrders = orderData ? orderData.orders : [];
+    google.script.run.withSuccessHandler(onSalesData).withFailureHandler(onSalesError).getSKUSalesData(sku,productName,imsOrders);
+  }
+
+  function reloadModal() { if (_modalSku) openSalesModal(_modalSku,_modalProductName); }
+  function closeModal()  { document.getElementById('salesModal').classList.add('hidden'); document.body.style.overflow=''; }
+  function handleModalOverlayClick(e) { if (e.target===document.getElementById('salesModal')) closeModal(); }
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+  function onSalesData(result) {
+    document.getElementById('modalLoading').classList.add('hidden');
+    if (!result.success) { document.getElementById('modalError').textContent='❌ '+result.error; document.getElementById('modalError').classList.remove('hidden'); return; }
+    document.getElementById('modalMeta').textContent='Last '+result.days+' days · '+result.sizes.length+' sizes found'+(!result.dateColFound?' · ⚠ No date column':'');
+    const sizes=result.sizes;
+    const maxSales=sizes.length?Math.max(...sizes.map(s=>s.totalSales),1):1;
+    const totalSales=sizes.reduce((a,s)=>a+s.totalSales,0);
+    const totalStock=sizes.reduce((a,s)=>a+(typeof s.imsStock==='number'?s.imsStock:0),0);
+    const salePrice=sizes.find(s=>s.salePrice)?.salePrice||0;
+    const cost=sizes.find(s=>s.cost)?.cost||0;
+    const margin=(salePrice&&cost)?((salePrice-cost)/salePrice*100):null;
+    let html=`<div class="modal-summary">
+      <div class="summary-chip"><div class="summary-chip-label">Total Sales (45d)</div><div class="summary-chip-value">${fmt(totalSales)}</div></div>
+      <div class="summary-chip"><div class="summary-chip-label">Sizes Found</div><div class="summary-chip-value">${sizes.length}</div></div>
+      <div class="summary-chip"><div class="summary-chip-label">Total IMS Stock</div><div class="summary-chip-value">${fmt(totalStock)}</div></div>
+      <div class="summary-chip"><div class="summary-chip-label">Sale Price</div><div class="summary-chip-value">${fmtRs(salePrice)}</div></div>
+      <div class="summary-chip"><div class="summary-chip-label">Cost</div><div class="summary-chip-value">${fmtRs(cost)}</div></div>
+      ${margin!==null?`<div class="summary-chip"><div class="summary-chip-label">Margin</div><div class="summary-chip-value" style="color:${margin>=40?'var(--green)':margin>=20?'var(--yellow)':'var(--red)'}">${margin.toFixed(1)}%</div></div>`:''}
+    </div>`;
+    if (!sizes.length) { html+='<div style="text-align:center;padding:40px;color:var(--muted)">No sales found in last 45 days.</div>'; }
+    else {
+      html+=`<table class="size-table"><thead><tr><th>Size</th><th>Sales (45d)</th><th>IMS SKU</th><th>Stock Today</th><th>Lead Time</th><th>Safety Factor</th><th>To Be Order</th></tr></thead><tbody>`;
+      for (const row of sizes) {
+        const barPct=Math.round((row.totalSales/maxSales)*100);
+        const stockVal=typeof row.imsStock==='number'?row.imsStock:null;
+        const stockHtml=stockVal===null?`<span style="color:var(--muted)">—</span>`:stockVal===0?`<span class="stock-cell stock-zero">0</span>`:`<span class="stock-cell stock-green">${fmt(stockVal)}</span>`;
+        const orderHtml=row.toBeOrder>0?`<span class="order-badge order-needed">⚠ ${row.toBeOrder}</span>`:`<span class="order-badge order-ok">✓ OK</span>`;
+        html+=`<tr>
+          <td><span class="size-badge">${escHtml(String(row.size))}</span></td>
+          <td><div class="sales-bar-wrap"><div class="sales-bar"><div class="sales-bar-fill" style="width:${barPct}%"></div></div><span class="sales-num">${fmt(row.totalSales)}</span></div></td>
+          <td><span style="font-size:11px;color:var(--muted);font-family:var(--font)">${escHtml(String(row.imsSku))}</span></td>
+          <td>${stockHtml}</td>
+          <td style="color:var(--muted)">${escHtml(String(row.leadTime||'—'))}</td>
+          <td style="color:var(--muted)">${escHtml(String(row.safetyFactor||'—'))}</td>
+          <td>${orderHtml}</td>
+        </tr>`;
+      }
+      html+='</tbody></table>';
+    }
+    if (sizes.some(s=>s.imsSku==='—')) html+=`<div class="no-match-note">⚠ Some sizes could not be matched to an IMS SKU.</div>`;
+    const contentEl=document.getElementById('modalContent');
+    contentEl.innerHTML=html; contentEl.classList.remove('hidden');
+    document.getElementById('modalFooterNote').textContent=result.productName+' · 45 day window';
+  }
+
+  function onSalesError(err) {
+    document.getElementById('modalLoading').classList.add('hidden');
+    document.getElementById('modalError').textContent='❌ Error: '+err.message;
+    document.getElementById('modalError').classList.remove('hidden');
+  }
+</script>
+</body>
+</html>
