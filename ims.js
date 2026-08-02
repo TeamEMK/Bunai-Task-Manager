@@ -49,8 +49,14 @@ function getServiceCreds() {
   } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
     source = 'GOOGLE_SERVICE_ACCOUNT_JSON';
+  } else if (process.env.GOOGLE_CREDENTIALS) {
+    // server.js reads the key from GOOGLE_CREDENTIALS. Accepting it here too
+    // means one variable configures both — otherwise a deployment that set only
+    // GOOGLE_CREDENTIALS would get working FMS forms but a dead IMS page.
+    raw = process.env.GOOGLE_CREDENTIALS;
+    source = 'GOOGLE_CREDENTIALS';
   } else {
-    throw new Error('IMS not configured: drop your service-account key file into the bunai/secrets/ folder (e.g. secrets/credentials.json), or set GOOGLE_SERVICE_ACCOUNT_FILE. Then share both sheets with the service account email.');
+    throw new Error('IMS not configured: set GOOGLE_CREDENTIALS to the service-account JSON (one line), or drop the key file into the secrets/ folder (e.g. secrets/credentials.json). Then share both sheets with the service account email.');
   }
   const creds = parseCreds(raw);
   if (!creds) {
