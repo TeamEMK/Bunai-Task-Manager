@@ -6,12 +6,16 @@
   <title>Bunai IMS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
   <style>
   :root {
-    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --bg: #f3f6fc; --surface: #ffffff; --surface2: #eef3fb; --border: #e2e9f4;
-    --accent: #2563eb; --accent2: #3b82f6; --text: #0e1a30; --muted: #64748b;
+    /* Matches the main app: warm neutrals under a pink brand, not blue-grey. */
+    --font: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-script: "Dancing Script", "Segoe Script", cursive;
+    --bg: #f5f4f1; --surface: #ffffff; --surface2: #f5f5f4; --border: #e7e5e4;
+    /* Brand pink is a pale pastel, so on a light page the accent has to be the
+       darkened same-hue tone — the pastel itself would be unreadable as text. */
+    --accent: #a63f43; --accent2: #d9636a; --text: #1b1b1b; --muted: #78716c;
     --red: #e11d48; --red-bg: rgba(225,29,72,0.08);
     --yellow: #c2820a; --yellow-bg: rgba(194,130,10,0.10);
     --green: #15a05a; --green-bg: rgba(21,160,90,0.10);
@@ -25,9 +29,11 @@
     --ring: 0 0 0 3px rgba(37,99,235,0.18);
   }
   [data-theme="dark"] {
-    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --bg: #0a0f1a; --surface: #121927; --surface2: #1a2233; --border: #273349;
-    --accent: #3b82f6; --accent2: #60a5fa; --text: #e9eff8; --muted: #8597b2;
+    --font: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-script: "Dancing Script", "Segoe Script", cursive;
+    --bg: #131211; --surface: #1b1b1b; --surface2: #262322; --border: #35312f;
+    /* On the dark theme the pastel pink IS readable (9.6:1), so use it directly. */
+    --accent: #f8afb1; --accent2: #fbc9ca; --text: #f5f4f1; --muted: #a8a29e;
     --red: #fb5168; --red-bg: rgba(251,81,104,0.13);
     --yellow: #ffd02a; --yellow-bg: rgba(255,208,42,0.13);
     --green: #34d97e; --green-bg: rgba(52,217,126,0.13);
@@ -49,8 +55,11 @@
   * { scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
 
   header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 32px; display:flex; align-items:center; justify-content:space-between; height:66px; position:sticky; top:0; z-index:100; box-shadow:var(--shadow-sm); }
-  .logo { font-family:var(--font); font-weight:800; font-size:22px; letter-spacing:-0.6px; background:linear-gradient(135deg,#2563eb,#60a5fa); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-  .logo span { font-weight:500; font-size:12.5px; background:none; -webkit-text-fill-color:var(--muted); margin-left:9px; letter-spacing:0.2px; }
+  /* Script wordmark, same as the sidebar — it echoes the handwritten logo.
+     The gradient runs ink → deep rose; a pastel-pink gradient painted into text
+     would be almost invisible on a light page. */
+  .logo { font-family:var(--font-script); font-weight:700; font-size:30px; line-height:1; letter-spacing:0.01em; background:linear-gradient(135deg,var(--text),var(--accent2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .logo span { font-family:var(--font); font-weight:500; font-size:12.5px; background:none; -webkit-text-fill-color:var(--muted); margin-left:10px; letter-spacing:0.2px; vertical-align:middle; }
   .header-right { display:flex; align-items:center; gap:12px; }
   .today-badge { background:var(--surface2); border:1px solid var(--border); padding:7px 14px; border-radius:9px; font-size:12px; font-weight:500; color:var(--muted); }
 

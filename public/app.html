@@ -263,7 +263,7 @@ body{
 .dash-topbar h2{font-size:20px;font-weight:700;}
 .dash-topbar-btns{display:flex;gap:8px;}
 
-.overview-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
+.overview-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;}
 .ov-card{
   background:var(--card);border-radius:var(--radius);padding:20px 22px;
   border:1px solid var(--border);box-shadow:var(--shadow-xs);
@@ -287,6 +287,9 @@ body{
 .ov-card.pending .number{color:#ef4444;}
 .ov-card.revised .number{color:#f59e0b;}
 .ov-card.completed .number{color:#10b981;}
+/* Upcoming is work that is not late yet — violet keeps it clearly apart from
+   the red/amber "needs attention" pair and the green "done". */
+.ov-card.upcoming .number{color:#7c3aed;}
 
 .dash-bottom{display:grid;grid-template-columns:1fr 320px;gap:18px;}
 .task-table-card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden;}
@@ -828,7 +831,8 @@ tbody tr:last-child td{border-bottom:none;}
   .dash-topbar h2{font-size:17px;}
   .dash-topbar-btns{flex-wrap:wrap;}
   .dash-topbar-btns .btn{flex:1;min-width:0;justify-content:center;font-size:12px;padding:8px 10px;}
-  /* Four cards now, so 2×2 on small screens — 3-across would orphan the fourth. */
+  /* Five cards: 2-across on small screens. Three would leave a lone card on the
+     last row and squeeze the numbers. */
   .overview-cards{grid-template-columns:repeat(2,1fr);gap:8px;}
   .ov-card{padding:12px 10px;}
   .ov-card .label{font-size:11px;}
@@ -918,7 +922,7 @@ tbody tr:last-child td{border-bottom:none;}
   .cp-filter-row{flex-direction:column;}
   .cp-filter-row input,.cp-filter-row select{min-width:0;width:100%;}
 
-  /* ── Client Master ── */
+  /* ── Unit Master ── */
   .cm-add-row{flex-direction:column;}
   .cm-detail-inner{flex-direction:column;gap:14px;}
 
@@ -1018,7 +1022,7 @@ tbody tr:last-child td{border-bottom:none;}
     </div>
     <div class="nav-item" id="nav-clients" style="display:none" onclick="navigate('clients',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-      <span class="nav-label-text">Client Master</span>
+      <span class="nav-label-text">Unit Master</span>
     </div>
     <div class="nav-item" id="nav-compliance" style="display:none" onclick="navigate('compliance',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
@@ -1099,13 +1103,17 @@ tbody tr:last-child td{border-bottom:none;}
         <div class="label">Revised</div><div class="number" id="dRevised">—</div></div>
       <div class="ov-card completed" role="button" tabindex="0"
            onclick="dashCard('completed',this)" onkeydown="dashCardKey(event,'completed',this)"
-           aria-pressed="false" title="Open the completed task list">
+           aria-pressed="false" title="Show completed tasks">
         <div class="label">Completed</div><div class="number" id="dCompleted">—</div></div>
+      <div class="ov-card upcoming" role="button" tabindex="0"
+           onclick="dashCard('upcoming',this)" onkeydown="dashCardKey(event,'upcoming',this)"
+           aria-pressed="false" title="Show tasks due after today">
+        <div class="label">Upcoming</div><div class="number" id="dUpcoming">—</div></div>
     </div>
     <div class="dash-bottom">
       <div class="task-table-card">
         <div class="card-head">
-          <div class="card-head-title" id="dashTableTitle">All Tasks</div>
+          <div class="card-head-title" id="dashTableTitle">All Pending Tasks</div>
           <div class="tab-group" id="dashTypeTabGroup">
             <div class="tab active" id="dashTabAll"   onclick="dashTab('all',this)">All</div>
             <div class="tab"        id="dashTabDel"   onclick="dashTab('delegation',this)">Delegation</div>
@@ -1606,7 +1614,7 @@ tbody tr:last-child td{border-bottom:none;}
         <table class="dt-table">
           <thead>
             <tr>
-              <th style="width:24%">Client Name</th>
+              <th style="width:24%">Unit Name</th>
               <th style="width:22%">Department</th>
               <th>Task Description</th>
               <th style="width:90px">Time (min)</th>
@@ -1641,11 +1649,11 @@ tbody tr:last-child td{border-bottom:none;}
        ══════════════════════════════════════════════════════ -->
   <div id="page-clients" class="page">
     <div class="cm-card">
-      <p class="cm-sub">Add or remove clients here. This list will appear in the dropdown of the Daily Task form.</p>
+      <p class="cm-sub">Add or remove units here. This list will appear in the dropdown of the Daily Task form.</p>
 
       <div class="cm-add-row">
-        <input type="text" id="cmNewClient" placeholder="Enter new client name..." onkeydown="if(event.key==='Enter')cmAdd()"/>
-        <button class="dt-btn dt-btn-add" onclick="cmAdd()">+ Add Client</button>
+        <input type="text" id="cmNewClient" placeholder="Enter new unit name..." onkeydown="if(event.key==='Enter')cmAdd()"/>
+        <button class="dt-btn dt-btn-add" onclick="cmAdd()">+ Add Unit</button>
       </div>
 
       <!-- Bulk CSV Upload -->
@@ -1653,7 +1661,7 @@ tbody tr:last-child td{border-bottom:none;}
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
           <div>
             <div style="font-size:13px;font-weight:700;color:#92400e">📂 Bulk Upload (CSV)</div>
-            <div style="font-size:11px;color:#78350f;margin-top:2px">Upload multiple clients at once. One client name per line.</div>
+            <div style="font-size:11px;color:#78350f;margin-top:2px">Upload multiple units at once. One unit name per line.</div>
           </div>
           <button class="dt-btn dt-btn-add" onclick="cmDownloadSample()" style="padding:6px 12px;font-size:12px">⬇ Download Sample</button>
         </div>
@@ -1663,7 +1671,7 @@ tbody tr:last-child td{border-bottom:none;}
         </div>
       </div>
 
-      <div id="cmListWrap" class="cm-list-wrap"><div class="empty">Loading clients…</div></div>
+      <div id="cmListWrap" class="cm-list-wrap"><div class="empty">Loading units…</div></div>
     </div>
   </div>
 
@@ -1718,7 +1726,7 @@ tbody tr:last-child td{border-bottom:none;}
       <!-- Detailed entries -->
       <div class="dr-section-title">📝 All Entries (this month)</div>
       <div class="dr-filter-row">
-        <input type="text" id="drSearch" placeholder="🔍 Search by name / client / description..." oninput="renderDREntries()"/>
+        <input type="text" id="drSearch" placeholder="🔍 Search by name / unit / description..." oninput="renderDREntries()"/>
         <select id="drUserFilter" onchange="renderDREntries()">
           <option value="">All Users</option>
         </select>
@@ -1859,8 +1867,8 @@ tbody tr:last-child td{border-bottom:none;}
       </div>
     </div>
     <div class="form-group">
-      <label>Client <span style="color:#dc2626">*</span></label>
-      <select id="dClient"><option value="">— Select Client —</option></select>
+      <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+      <select id="dClient"><option value="">— No Unit —</option></select>
     </div>
     <div class="form-group">
       <label>Description</label>
@@ -1934,8 +1942,8 @@ tbody tr:last-child td{border-bottom:none;}
     </div>
 
     <div class="form-group">
-      <label>Client <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <select id="cClient"><option value="">— No Client —</option></select>
+      <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+      <select id="cClient"><option value="">— No Unit —</option></select>
     </div>
 
     <div class="form-group">
@@ -3013,7 +3021,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',clients:'Client Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -3160,6 +3168,8 @@ async function loadDashboard() {
   window._lastDashTasks = allTodayPending;
   // Rows behind the Completed card — fetched in the same call, filtered client-side.
   window._lastDashCompleted = [...(dDel.todayCompleted||[]), ...(dChl.todayCompleted||[])];
+  // Future-dated rows, so the Total view can list what the Total card counts.
+  window._lastDashUpcoming  = [...(dDel.upcomingTasks||[]), ...(dChl.upcomingTasks||[])];
   // Keep sort state across reloads (don't reset)
   renderDashTable(allTodayPending, dashType);
 
@@ -3185,8 +3195,19 @@ function renderDashStats(type) {
     revised   = (del.revised||0)   + (chl.revised||0);
     completed = (del.completed||0) + (chl.completed||0);
   }
+  // Total comes from the server, not pending+revised+completed: those three stop
+  // at today, while Total counts future-dated tasks as well.
+  const totalAll = (type === 'delegation') ? (del.total || 0)
+                 : (type === 'checklist')  ? (chl.total || 0)
+                 : (type === 'fms')        ? fmsPending
+                 : (del.total || 0) + (chl.total || 0) + fmsPending;
+  const upcomingAll = (type === 'delegation') ? (del.upcoming || 0)
+                    : (type === 'checklist')  ? (chl.upcoming || 0)
+                    : (type === 'fms')        ? 0
+                    : (del.upcoming || 0) + (chl.upcoming || 0);
   const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setTxt('dTotal', pending + revised + completed);
+  setTxt('dTotal', totalAll);
+  setTxt('dUpcoming', upcomingAll);
   setTxt('dPending', pending);
   setTxt('dRevised', revised);
   setTxt('dCompleted', completed);
@@ -3209,7 +3230,8 @@ function dashCard(kind, el) {
   if (title) title.textContent =
     kind === 'pending'   ? 'Pending Tasks'   :
     kind === 'revised'   ? 'Revised Tasks'   :
-    kind === 'completed' ? 'Completed Tasks' : 'All Tasks';
+    kind === 'completed' ? 'Completed Tasks' :
+    kind === 'upcoming'  ? 'Upcoming Tasks'  : 'All Pending Tasks';
   if (window._lastDashTasks) renderDashTable(window._lastDashTasks, dashType);
 }
 
@@ -3351,14 +3373,18 @@ function renderDashTable(tasks, type) {
   const showingAll       = (_dashCard === 'all');
   const openRows = tasks || [];
   const doneRows = window._lastDashCompleted || [];
+  const showingUpcoming  = (_dashCard === 'upcoming');
+  const laterRows = window._lastDashUpcoming || [];   // open, due after today
+  // Total = outstanding work, so completed rows are left out of it entirely.
   const source = showingCompleted ? doneRows
-               : showingAll       ? [...openRows, ...doneRows]
+               : showingUpcoming  ? laterRows
+               : showingAll       ? [...openRows, ...laterRows]
                : openRows;
 
   // Merge in FMS rows when the user wants 'all' or 'fms'. FMS rows are open
   // steps with no completed state, so they are left out of the completed view.
   let combined = (type === 'fms') ? [] : source.slice();
-  if (!showingCompleted && (!type || type === 'all' || type === 'fms')) {
+  if (!showingCompleted && !showingUpcoming && (!type || type === 'all' || type === 'fms')) {
     const fmsRows = window._lastDashFMS || [];
     combined = combined.concat(fmsRows);
   }
@@ -3368,7 +3394,7 @@ function renderDashTable(tasks, type) {
   let allPending = combined.filter(t => {
     const matchType = (!type || type === 'all') ? true : t.type === type;
     const st = t.status || 'pending';
-    const matchCard = showingAll ? true : (st === _dashCard);
+    const matchCard = (showingAll || showingUpcoming) ? (st !== 'completed') : (st === _dashCard);
     return matchType && matchCard;
   });
   // Apply date sort
@@ -3380,9 +3406,10 @@ function renderDashTable(tasks, type) {
   const colCount = showPriority ? 6 : 5;
   if (!allPending.length) {
     const emptyMsg = showingCompleted ? 'No completed tasks in this range'
+                   : showingUpcoming ? 'Nothing scheduled after today'
                    : _dashCard === 'revised' ? 'No revised tasks'
                    : _dashCard === 'pending' ? 'No pending tasks 🎉'
-                   : 'No tasks yet';
+                   : 'No pending tasks 🎉';
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty">${emptyMsg}</td></tr>`; return;
   }
   const typeBadge = t => {
@@ -3647,7 +3674,7 @@ function renderTasksTable() {
             <th>Doer</th>
             <th>Assignee</th>
             <th>Date</th>
-            ${showClientCol ? '<th>Client</th>' : ''}
+            ${showClientCol ? '<th>Unit</th>' : ''}
             <th>Remarks</th>
             <th>Status</th>
           </tr></thead>
@@ -3690,7 +3717,7 @@ function openTaskDetail(t) {
     row('Doer', dtEscape(t.assignedToName||'')),
     row('Assigned By', dtEscape(t.assignedByName||'')),
     row('Due Date', fmtDate(t.due_date||'')),
-    row('Client', t.client_name ? `<span style="background:#fff7ed;color:#A63F43;padding:2px 8px;border-radius:6px;font-weight:600">🏢 ${dtEscape(t.client_name)}</span>` : null),
+    row('Unit', t.client_name ? `<span style="background:#fff7ed;color:#A63F43;padding:2px 8px;border-radius:6px;font-weight:600">🏢 ${dtEscape(t.client_name)}</span>` : null),
     row('Priority', priorityBadge),
     row('Status', statusBadge),
     row('Approval', t.approval === 'yes' ? '<span style="color:#16a34a;font-weight:600">Required</span>' : '<span style="color:var(--muted-foreground)">Not required</span>'),
@@ -3914,7 +3941,7 @@ async function openDelegate() {
   document.getElementById('dApprover').innerHTML='<option value="">Select Approver</option>'+opts;
   // Client dropdown — pulls from Client Master
   const clientOpts = (clients || []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
-  document.getElementById('dClient').innerHTML = '<option value="">— Select Client —</option>' + clientOpts;
+  document.getElementById('dClient').innerHTML = '<option value="">— No Unit —</option>' + clientOpts;
   // Hidden by default — only shown when Approval Required = Yes
   document.getElementById('dApproverGroup').style.display = 'none';
   document.getElementById('dApproverEmail').style.display = 'none';
@@ -3962,7 +3989,6 @@ async function saveDelegate() {
   if (!doer) { err.textContent='Please select a doer'; err.style.display='block'; return; }
   if (!date) { err.textContent='Please select a date'; err.style.display='block'; return; }
   if (!desc) { err.textContent='Description is required'; err.style.display='block'; return; }
-  if (!client_id) { err.textContent='Please select a client'; err.style.display='block'; return; }
   if (approval === 'yes' && !approver) { err.textContent='Please select an approver'; err.style.display='block'; return; }
   if (approval === 'yes' && String(approver) === String(doer)) { err.textContent='The approver cannot be the same person as the doer.'; err.style.display='block'; return; }
   const r = await api('/api/tasks','POST',{type:'delegation',desc,assignedTo:doer,date,priority,approval,approver,remarks,client_id,url});
@@ -3994,7 +4020,7 @@ async function openChecklist() {
   const [users, clients] = await Promise.all([api('/api/users'), api('/api/clients')]);
   document.getElementById('cDoer').innerHTML='<option value="">Select Employee</option>'+
     users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
-  document.getElementById('cClient').innerHTML='<option value="">— No Client —</option>'+
+  document.getElementById('cClient').innerHTML='<option value="">— No Unit —</option>'+
     (clients || []).map(c=>`<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
 
   ['cFrequency','cDate','cEndDate','cDesc'].forEach(id=>{
@@ -7847,7 +7873,7 @@ async function dtSubmit(){
     const desc = tr.querySelector('.dt-desc').value.trim();
     const time = parseInt(tr.querySelector('.dt-time').value) || 0;
     if (!client || !desc || time <= 0) {
-      showToast('Each row needs Client, Description and Time (>0)','error');
+      showToast('Each row needs Unit, Description and Time (>0)','error');
       return;
     }
     rows.push({ client_name: client, department: dept, description: desc, duration_min: time });
@@ -7915,12 +7941,12 @@ let CM_OPEN_ID = null;
 
 async function loadClients(){
   const wrap = document.getElementById('cmListWrap');
-  wrap.innerHTML = '<div class="empty">Loading clients…</div>';
+  wrap.innerHTML = '<div class="empty">Loading units…</div>';
   CM_OPEN_ID = null;
   try {
     const clients = await api('/api/clients');
     if (!clients || !clients.length) {
-      wrap.innerHTML = '<div class="empty">No clients yet — add one above.</div>';
+      wrap.innerHTML = '<div class="empty">No units yet — add one above.</div>';
       return;
     }
     let html = '';
@@ -7937,7 +7963,7 @@ async function loadClients(){
     }
     wrap.innerHTML = html;
   } catch(e) {
-    wrap.innerHTML = '<div class="empty">Failed to load clients</div>';
+    wrap.innerHTML = '<div class="empty">Failed to load units</div>';
   }
 }
 
@@ -8006,11 +8032,11 @@ async function cmToggleDetail(id) {
 async function cmAdd(){
   const inp = document.getElementById('cmNewClient');
   const name = inp.value.trim();
-  if (!name) { showToast('Enter client name', 'error'); return; }
+  if (!name) { showToast('Enter unit name', 'error'); return; }
   try {
     const r = await api('/api/clients', 'POST', { name });
     if (r.error) showToast(r.error, 'error');
-    else { showToast('✅ Client added'); inp.value = ''; loadClients(); }
+    else { showToast('✅ Unit added'); inp.value = ''; loadClients(); }
   } catch(e) { showToast('Failed to add', 'error'); }
 }
 
@@ -8018,7 +8044,7 @@ async function cmDelete(id, name){
   if (!confirm(`Remove client "${name}"?`)) return;
   try {
     await api('/api/clients/' + id, 'DELETE');
-    showToast('🗑 Client removed');
+    showToast('🗑 Unit removed');
     loadClients();
   } catch(e) { showToast('Failed to delete', 'error'); }
 }
@@ -8028,7 +8054,7 @@ function cmDownloadSample() {
   const csv = `client_name\nVibes\nCCIS\nParty Walls\nA1 India\nKala Textiles`;
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'clients_sample.csv';
+  a.download = 'units_sample.csv';
   a.click();
   showToast('✅ Sample downloaded');
 }
@@ -8045,14 +8071,14 @@ async function cmBulkUpload() {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
     if (!lines.length) { showToast('CSV file is empty', 'error'); return; }
 
-    // Skip first row if it looks like a header (e.g. "client_name", "name", "Client Name")
+    // Skip first row if it looks like a header. Old client_* spellings stay accepted so CSVs made before the rename still import.
     let names = lines.map(line => line.split(',')[0].trim().replace(/^["']|["']$/g, ''));
     const firstLower = (names[0] || '').toLowerCase();
-    if (['client_name', 'name', 'client name', 'clients'].includes(firstLower)) {
+    if (['client_name', 'name', 'client name', 'clients', 'unit_name', 'unit name', 'units'].includes(firstLower)) {
       names = names.slice(1);
     }
     names = names.filter(n => n);
-    if (!names.length) { showToast('No valid client names found in CSV', 'error'); return; }
+    if (!names.length) { showToast('No valid unit names found in CSV', 'error'); return; }
 
     if (!confirm(`Upload ${names.length} client${names.length===1?'':'s'} from CSV?`)) return;
 
@@ -8269,7 +8295,7 @@ function renderDREntries(){
   }
 
   let html = `<table class="dr-table"><thead><tr>
-    <th>Date</th><th>User</th><th>Client</th><th>Department</th>
+    <th>Date</th><th>User</th><th>Unit</th><th>Department</th>
     <th>Description</th><th>Time</th>
   </tr></thead><tbody>`;
   for (const e of entries) {
@@ -8290,7 +8316,7 @@ function drExportCSV(){
   if (!DR_DATA || !DR_DATA.entries.length) {
     showToast('No data to export', 'error'); return;
   }
-  const rows = [['Date', 'User', 'Email', 'Client', 'Department', 'Description', 'Minutes']];
+  const rows = [['Date', 'User', 'Email', 'Unit', 'Department', 'Description', 'Minutes']];
   for (const e of DR_DATA.entries) {
     rows.push([
       e.entry_date,

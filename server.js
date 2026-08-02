@@ -1073,7 +1073,36 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     const chlDateClause = `AND ${chlDateCond}`;
 
     const taskType = req.query.taskType || 'both';
-    let pending = 0, revised = 0, completed = 0;
+    let pending = 0, revised = 0, completed = 0, total = 0;
+
+    // Total counts EVERY task — completed included, and no "today or earlier"
+    // cap, so next week's work is in there too. Note this is deliberately a
+    // headline figure, not a row count: clicking Total lists only the work still
+    // open, so the number is larger than the table by exactly `completed`.
+    // A PC-selected range is still honoured; that range is an explicit choice.
+    const totalDateClause = usingPCRange ? `AND ${delDateCond}` : '';
+    if (taskType === 'delegation' || taskType === 'both') {
+      const [d] = await db.query(`SELECT COUNT(*) AS n FROM delegation_tasks t WHERE 1=1 ${userFilter} ${totalDateClause}`, params);
+      total += parseInt(d[0].n) || 0;
+    }
+    if (taskType === 'checklist' || taskType === 'both') {
+      const [d] = await db.query(`SELECT COUNT(*) AS n FROM checklist_tasks t WHERE 1=1 ${userFilter} ${totalDateClause}`, params);
+      total += parseInt(d[0].n) || 0;
+    }
+
+    // Upcoming = still-open work dated after today. Counted only in the default
+    // view; with an explicit PC range "after today" has no meaning.
+    let upcomingCount = 0;
+    if (!usingPCRange) {
+      if (taskType === 'delegation' || taskType === 'both') {
+        const [d] = await db.query(`SELECT COUNT(*) AS n FROM delegation_tasks t WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter}`, params);
+        upcomingCount += parseInt(d[0].n) || 0;
+      }
+      if (taskType === 'checklist' || taskType === 'both') {
+        const [d] = await db.query(`SELECT COUNT(*) AS n FROM checklist_tasks t WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter}`, params);
+        upcomingCount += parseInt(d[0].n) || 0;
+      }
+    }
 
     if (taskType === 'delegation' || taskType === 'both') {
       // pending/completed stay within the dashboard date window; revised is counted
@@ -1110,10 +1139,31 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       checklistCompleted = rows;
     }
 
+    // Future-dated OPEN rows. Every other list stops at today, so without these
+    // the Total card would count work the Total view could not display.
+    // 'revised' is left out here because those rows already come through the
+    // pending query regardless of date, and 'completed' does not belong in Total.
+    const UPCOMING_ROW_LIMIT = 300;
+    let delegationUpcoming = [], checklistUpcoming = [];
+    if (!usingPCRange) {
+      if (taskType === 'delegation' || taskType === 'both') {
+        const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
+        delegationUpcoming = rows;
+      }
+      if (taskType === 'checklist' || taskType === 'both') {
+        const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
+        checklistUpcoming = rows;
+      }
+    }
+
+    // Counts first, then the row lists they map to. `upcoming` is the count, so
+    // the rows go out as `upcomingTasks` — two keys of the same name would have
+    // silently dropped one of them.
     res.json({
-      pending, revised, completed,
+      pending, revised, completed, total, upcoming: upcomingCount,
       todayPending: [...delegationPending, ...checklistPending],
       todayCompleted: [...delegationCompleted, ...checklistCompleted],
+      upcomingTasks: [...delegationUpcoming, ...checklistUpcoming],
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
