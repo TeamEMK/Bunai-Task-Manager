@@ -90,11 +90,13 @@ In the Node.js app panel:
 On first start the server will:
 - Connect to MySQL
 - Create all tables automatically
-- Seed a default admin: **`aman@test.com` / `password`**
+- Seed a default admin account — the address and password are printed to the
+  server console on that first start
 
 ### Step 5 — Login
 
-Open your domain → log in with `aman@test.com` / `password`.
+Open your domain and sign in with the seeded admin shown in the server console
+on first start. Change that password immediately (Profile → Change Password).
 
 > ⚠️ Change the default password immediately: **Profile → Change Password**.
 > Then add your real users from the **Users** section.
@@ -117,7 +119,7 @@ Expected console output:
 ```
 ✅ MySQL Connected Successfully!
 ✅ DB migrations checked
-🌱 Default admin seeded → aman@test.com / password
+🌱 Default admin seeded → <address printed here>
 ✦ Bunai Task Manager: http://localhost:3000
 ```
 
