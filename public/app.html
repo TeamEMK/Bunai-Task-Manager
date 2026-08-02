@@ -2947,7 +2947,9 @@ async function init() {
       } catch { fmsNav.style.display = 'none'; }
     })();
     setMinDates();
-    loadDashboard();
+    // Restore whatever page the URL points at instead of always opening the
+    // dashboard. Runs after the role checks above, so nav visibility is settled.
+    openFromHash();
     loadApprovalBadge();
     loadTransferBadge();
     // Refresh badges every 30 seconds
@@ -3037,11 +3039,42 @@ function closeSidebar() {
   document.body.style.overflow = '';
 }
 
-function navigate(page, el) {
+// ══════════════════════════════════════════════════════
+// DEEP LINKS — the current page lives in location.hash
+// This is a single page, so a refresh used to drop you back on the dashboard
+// no matter where you were. Mirroring the page into the hash fixes that, and
+// browser back/forward and bookmarking start working for free.
+// ══════════════════════════════════════════════════════
+function navElFor(page) {
+  return document.querySelector(`.nav-item[onclick*="navigate('${page}'"]`);
+}
+
+// A hash can be typed or bookmarked, so never trust it — the page must exist
+// and the signed-in role must be allowed to open it.
+function canOpenPage(page) {
+  if (!page || !document.getElementById('page-' + page)) return false;
+  if (page === 'mis') return ME && (ME.role === 'admin' || ME.role === 'hod');
+  if (page === 'ims') return ME && ME.role === 'admin';
+  const el = navElFor(page);
+  return !el || el.style.display !== 'none';   // hidden nav item = not their page
+}
+
+function openFromHash() {
+  const page = (location.hash || '').replace(/^#/, '');
+  const target = canOpenPage(page) ? page : 'dashboard';
+  navigate(target, navElFor(target), true);
+}
+
+window.addEventListener('hashchange', openFromHash);
+
+function navigate(page, el, fromHash) {
   // MIS page — admin and HOD (App Role) only
   if (page === 'mis' && ME.role !== 'admin' && ME.role !== 'hod') return;
   // IMS page — admin only
   if (page === 'ims' && (!ME || ME.role !== 'admin')) return;
+  // Record where we are. Skipped when the hash is what triggered this call,
+  // and skipped when unchanged — otherwise the hashchange handler would loop.
+  if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
@@ -3723,6 +3756,10 @@ function openTaskDetail(t) {
     row('Approval', t.approval === 'yes' ? '<span style="color:#16a34a;font-weight:600">Required</span>' : '<span style="color:var(--muted-foreground)">Not required</span>'),
     row('Approver', (t.approval === 'yes' && t.approverName) ? dtEscape(t.approverName) : null),
     row('Remarks', t.remarks ? dtEscape(t.remarks) : null),
+    // Only present once a revision has actually been requested.
+    row('Revision Reason', t.revise_reason
+      ? `<span style="background:#fffbeb;color:#d97706;padding:4px 10px;border-radius:6px;display:inline-block">${dtEscape(t.revise_reason)}</span>`
+      : null),
     row('URL', urlVal || '<span style="color:var(--faint)">No URL</span>'),
   ].filter(Boolean).join('');
   document.getElementById('taskDetailModal').classList.add('open');

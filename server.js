@@ -425,6 +425,11 @@ const _startupMigrationsPromise = (async () => {
   await sa(`ALTER TABLE delegation_tasks ADD COLUMN url VARCHAR(2048) DEFAULT NULL AFTER client_id`);
   await sa(`ALTER TABLE checklist_tasks ADD COLUMN client_id INT DEFAULT NULL AFTER remarks`);
   await sa(`ALTER TABLE checklist_tasks ADD INDEX idx_client (client_id)`);
+  // Why a revision was requested. It used to be dropped whenever the task did
+  // not need approval — the person typed a reason and it went nowhere.
+  // No DEFAULT: MySQL rejects one on TEXT.
+  await sa(`ALTER TABLE delegation_tasks ADD COLUMN revise_reason TEXT AFTER remarks`);
+  await sa(`ALTER TABLE checklist_tasks ADD COLUMN revise_reason TEXT AFTER remarks`);
   // Checklist series metadata — end_date = is checklist ki last date (kab tak chalegi),
   // frequency = daily/weekly/monthly... Both are stored identically on every row of a series
   // so the "which checklist to delete" list can be built.
@@ -1117,11 +1122,11 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
 
     let delegationPending = [], checklistPending = [];
     if (taskType === 'delegation' || taskType === 'both') {
-      const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE ((t.status='pending' AND ${delDateCond}) OR (t.status='revised'${usingPCRange?` AND ${delDateCond}`:''})) ${userFilter} ORDER BY t.due_date ASC LIMIT 500`, params);
+      const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE ((t.status='pending' AND ${delDateCond}) OR (t.status='revised'${usingPCRange?` AND ${delDateCond}`:''})) ${userFilter} ORDER BY t.due_date ASC LIMIT 500`, params);
       delegationPending = rows;
     }
     if (taskType === 'checklist' || taskType === 'both') {
-      const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.status='pending' ${chlDateClause} ${userFilter} ORDER BY t.due_date ASC LIMIT 500`, params);
+      const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.revise_reason,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.status='pending' ${chlDateClause} ${userFilter} ORDER BY t.due_date ASC LIMIT 500`, params);
       checklistPending = rows;
     }
     // Rows behind the "Completed" count card. Same date window as the count so
@@ -1131,11 +1136,11 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     const COMPLETED_ROW_LIMIT = 300;
     let delegationCompleted = [], checklistCompleted = [];
     if (taskType === 'delegation' || taskType === 'both') {
-      const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.status='completed' AND ${delDateCond} ${userFilter} ORDER BY t.due_date DESC LIMIT ${COMPLETED_ROW_LIMIT}`, params);
+      const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.status='completed' AND ${delDateCond} ${userFilter} ORDER BY t.due_date DESC LIMIT ${COMPLETED_ROW_LIMIT}`, params);
       delegationCompleted = rows;
     }
     if (taskType === 'checklist' || taskType === 'both') {
-      const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.status='completed' ${chlDateClause} ${userFilter} ORDER BY t.due_date DESC LIMIT ${COMPLETED_ROW_LIMIT}`, params);
+      const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.revise_reason,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.status='completed' ${chlDateClause} ${userFilter} ORDER BY t.due_date DESC LIMIT ${COMPLETED_ROW_LIMIT}`, params);
       checklistCompleted = rows;
     }
 
@@ -1147,11 +1152,11 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     let delegationUpcoming = [], checklistUpcoming = [];
     if (!usingPCRange) {
       if (taskType === 'delegation' || taskType === 'both') {
-        const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
+        const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
         delegationUpcoming = rows;
       }
       if (taskType === 'checklist' || taskType === 'both') {
-        const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
+        const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.revise_reason,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
         checklistUpcoming = rows;
       }
     }
@@ -1218,7 +1223,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
       where += ' AND t.due_date <= CURDATE()';
     }
 
-    const [tasks] = await db.query(`SELECT t.id,'${type||'delegation'}' AS type,t.description,t.status,t.assigned_to,t.assigned_by,COALESCE(t.priority,'low') AS priority,${isDeleg?"COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.url,":"'no' AS approval,0 AS waiting_approval,NULL AS approver_id,NULL AS approverName,t.remarks,NULL AS url,"}t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,${isDeleg?"NULL AS end_date,NULL AS frequency,":"DATE_FORMAT(t.end_date,'%Y-%m-%d') AS end_date,t.frequency,"}u1.name AS assignedToName,u2.name AS assignedByName FROM ${table} t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id ${isDeleg?"LEFT JOIN users u3 ON t.approver_id=u3.id":""} LEFT JOIN clients c ON t.client_id=c.id ${where} ORDER BY t.due_date ASC`, params);
+    const [tasks] = await db.query(`SELECT t.id,'${type||'delegation'}' AS type,t.description,t.status,t.assigned_to,t.assigned_by,COALESCE(t.priority,'low') AS priority,${isDeleg?"COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,":"'no' AS approval,0 AS waiting_approval,NULL AS approver_id,NULL AS approverName,t.remarks,NULL AS url,"}t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,${isDeleg?"NULL AS end_date,NULL AS frequency,":"DATE_FORMAT(t.end_date,'%Y-%m-%d') AS end_date,t.frequency,"}u1.name AS assignedToName,u2.name AS assignedByName FROM ${table} t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id ${isDeleg?"LEFT JOIN users u3 ON t.approver_id=u3.id":""} LEFT JOIN clients c ON t.client_id=c.id ${where} ORDER BY t.due_date ASC`, params);
 
     // mine=1 always returns a flat task list (never grouped)
     if (isMine) {
@@ -1441,6 +1446,11 @@ app.put('/api/tasks/:id/status', requireAuth, async (req, res) => {
     } else {
       if (tType === 'checklist') await db.query(`UPDATE ${table} SET status=? WHERE id=?`, [status, req.params.id]);
       else await db.query(`UPDATE ${table} SET status=?,waiting_approval=0 WHERE id=?`, [status, req.params.id]);
+    }
+    // Keep the revision reason on the task itself. Previously it was only ever
+    // written to task_approvals, so a revision that needed no approval lost it.
+    if (status === 'revised') {
+      await db.query(`UPDATE ${table} SET revise_reason=? WHERE id=?`, [reason || null, req.params.id]);
     }
     // Clear any leftover pending approval (e.g. after an admin override).
     await db.query(`DELETE FROM task_approvals WHERE task_id=? AND task_type=? AND status='pending'`, [req.params.id, tType]);
@@ -1679,6 +1689,10 @@ app.put('/api/approvals/:id', requireAuth, async (req, res) => {
       }
     }
 
+    // The decision note is written over the request note, so capture the
+    // requester's original reason first — otherwise approving a revision erases
+    // the very explanation the approver just read.
+    const requestReason = appr.note || null;
     await db.query('UPDATE task_approvals SET status=?,note=? WHERE id=?', [action, note||'', req.params.id]);
 
     if (action === 'approved') {
@@ -1686,6 +1700,7 @@ app.put('/api/approvals/:id', requireAuth, async (req, res) => {
         // Apply the revised date now that it is approved.
         if (isChecklist) await db.query(`UPDATE ${table} SET status='revised',due_date=? WHERE id=?`, [appr.new_date, appr.task_id]);
         else await db.query(`UPDATE ${table} SET status='revised',waiting_approval=0,due_date=? WHERE id=?`, [appr.new_date, appr.task_id]);
+        await db.query(`UPDATE ${table} SET revise_reason=? WHERE id=?`, [requestReason, appr.task_id]);
       } else {
         if (isChecklist) await db.query(`UPDATE ${table} SET status=? WHERE id=?`, [appr.action_type, appr.task_id]);
         else await db.query(`UPDATE ${table} SET status=?,waiting_approval=0 WHERE id=?`, [appr.action_type, appr.task_id]);
