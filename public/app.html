@@ -2816,7 +2816,7 @@ function renderDbmTable() {
 
   const today = new Date().toISOString().split('T')[0];
   const rows = filtered.map(t => {
-    const isOverdue = t.status === 'pending' && t.due_date && t.due_date < today;
+    const isOverdue = (t.status === 'pending' || t.status === 'revised') && t.due_date && t.due_date < today;
     return `<tr>
       <td style="font-size:13px">${t.description||'—'}</td>
       <td style="white-space:nowrap;font-size:13px">${t.assignedToName||'—'}</td>
@@ -5189,7 +5189,7 @@ async function openMISDetail(userId, userName) {
       <td style="color:var(--muted-foreground);font-size:12px">${t.assigned_by_name||'—'}</td>
       <td style="white-space:nowrap;font-size:12px">${fmtDate(t.due_date)}</td>
       <td><span class="status-badge ${t.status}">${t.status==='revised'?'Revision Requested':t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span></td>
-      ${t.status==='pending' && t.due_date < new Date().toISOString().split('T')[0]
+      ${(t.status==='pending'||t.status==='revised') && t.due_date < new Date().toISOString().split('T')[0]
         ? `<td style="color:#dc2626;font-size:11px;font-weight:600">⏰ Overdue</td>`
         : `<td></td>`}
     </tr>`).join('');
@@ -5459,7 +5459,7 @@ async function openAllMISDetail(userId, userName) {
       <td style="font-size:12px">${t.description}</td>
       <td style="color:var(--muted-foreground);font-size:11px;white-space:nowrap">${fmtDate(t.due_date)}</td>
       <td><span class="status-badge ${t.status}">${t.status === 'revised' ? 'Revision' : t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span></td>
-      <td>${t.status==='pending' && t.due_date < today ? '<span style="font-size:10px;color:#dc2626;font-weight:600">⏰ Overdue</span>' : ''}</td>
+      <td>${(t.status==='pending'||t.status==='revised') && t.due_date < today ? '<span style="font-size:10px;color:#dc2626;font-weight:600">⏰ Overdue</span>' : ''}</td>
     </tr>`).join('') || `<tr><td colspan="4" class="empty" style="font-size:12px">No tasks</td></tr>`;
 
   const score = emp.overallScore;
@@ -7755,7 +7755,9 @@ async function onTransferDateChange() {
     const list = data.grouped
       ? (data.grouped.find(g => g.userId === _transferFromUserId)?.tasks || [])
       : (data.tasks || []);
-    list.forEach(t => { if (t.due_date === date && t.status === 'pending') allTasks.push({...t, taskType: type}); });
+    // Anything not finished is transferable. Matching on status==='pending'
+    // silently hid revised tasks, which are still open work someone has to do.
+    list.forEach(t => { if (t.due_date === date && t.status !== 'completed') allTasks.push({...t, taskType: type}); });
   };
   pick(delData, 'delegation');
   pick(chlData, 'checklist');
@@ -7763,7 +7765,7 @@ async function onTransferDateChange() {
 
   if (!allTasks.length) {
     document.getElementById('transferTasksListNew').innerHTML =
-      '<div style="padding:12px;color:var(--faint);font-size:13px;text-align:center">No pending tasks on this date</div>';
+      '<div style="padding:12px;color:var(--faint);font-size:13px;text-align:center">No open tasks on this date</div>';
   } else {
     const pendingRes = await api('/api/transfers/pending-tasks');
     const pendingIds = new Set((pendingRes||[]).map(p=>`${p.task_type}_${p.task_id}`));
