@@ -1192,7 +1192,9 @@ tbody tr:last-child td{border-bottom:none;}
     <!-- Status filter tabs -->
     <div style="display:flex;gap:8px;margin-bottom:16px;">
       <div class="tab-group">
+        <div class="tab" id="statusTabAll" onclick="filterTaskStatus('all',this)">All</div>
         <div class="tab active" id="statusTabPending" onclick="filterTaskStatus('pending',this)">Pending</div>
+        <div class="tab" id="statusTabUpcoming" onclick="filterTaskStatus('upcoming',this)">Upcoming</div>
         <div class="tab" id="statusTabCompleted" onclick="filterTaskStatus('completed',this)">Completed</div>
       </div>
     </div>
@@ -3404,14 +3406,27 @@ function renderDashTable(tasks, type) {
   // reads both lists — otherwise the card could say 4 while the table showed 2.
   const showingCompleted = (_dashCard === 'completed');
   const showingAll       = (_dashCard === 'all');
-  const openRows = tasks || [];
-  const doneRows = window._lastDashCompleted || [];
   const showingUpcoming  = (_dashCard === 'upcoming');
+  const openRows  = tasks || [];
+  const doneRows  = window._lastDashCompleted || [];
   const laterRows = window._lastDashUpcoming || [];   // open, due after today
+
+  // A revised delegation task comes back in the open list whatever its date, so
+  // one dated in the future is in BOTH lists. Merging without this would print
+  // it twice and make Total's row count disagree with the card.
+  const dedupe = rows => {
+    const seen = new Set();
+    return rows.filter(t => {
+      const key = `${t.type}:${t.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  };
+
   // Total = outstanding work, so completed rows are left out of it entirely.
   const source = showingCompleted ? doneRows
                : showingUpcoming  ? laterRows
-               : showingAll       ? [...openRows, ...laterRows]
+               : showingAll       ? dedupe([...openRows, ...laterRows])
                : openRows;
 
   // Merge in FMS rows when the user wants 'all' or 'fms'. FMS rows are open
@@ -3605,13 +3620,16 @@ function renderTasksTable() {
   const dateTo = document.getElementById('tasksDateTo')?.value || '';
   const container = document.getElementById('tasksContent');
 
+  const todayStr = new Date().toISOString().slice(0, 10);
   let tasks = allTasksData.filter(t => {
-    // A revised task is still active (not done), so it belongs under the "Pending" tab.
-    const matchStatus = taskStatusFilter === 'all'
-      ? true
-      : taskStatusFilter === 'pending'
-        ? (t.status === 'pending' || t.status === 'revised')
-        : t.status === taskStatusFilter;
+    // A revised task is still active (not done), so it belongs under "Pending".
+    // "Upcoming" is a date bucket, not a status — any open task dated after
+    // today, whether it is pending or was revised into the future.
+    const matchStatus =
+      taskStatusFilter === 'all'      ? true :
+      taskStatusFilter === 'pending'  ? ((t.status === 'pending' || t.status === 'revised') && (!t.due_date || t.due_date <= todayStr)) :
+      taskStatusFilter === 'upcoming' ? (t.status !== 'completed' && t.due_date > todayStr) :
+      t.status === taskStatusFilter;
     const matchSearch = !search ||
       (t.description||'').toLowerCase().includes(search) ||
       (t.assignedToName||'').toLowerCase().includes(search) ||
@@ -3638,8 +3656,12 @@ function renderTasksTable() {
   const isDelegateByMe = tasksType === 'delegatebyme';
   const isChecklistFull = tasksType === 'checklist-full';
   const isClickable = tasksType === 'delegation' || isDelegateByMe;
+  // Group by doer only for roles that see more than their own work, and only
+  // once a single employee has not been picked from the filter.
+  const groupByDoer = (isAdmin || ME.role === 'pc') && userFilterVal === 'all';
   if (isClickable) window._taskDetailMap = {};
-  const pageRows = pageTasks.map(t => {
+  // Shared row builder — the flat and grouped views must render rows identically.
+  const rowsFor = rowList => rowList.map(t => {
     const isCompleted = t.status === 'completed';
     const isWaiting = t.waiting_approval == 1;
     const isChecklist = tasksType === 'checklist' || isChecklistFull;
@@ -3682,6 +3704,7 @@ function renderTasksTable() {
       <td style="white-space:nowrap"><span class="status-badge ${t.status}">${t.waiting_approval==1?'Awaiting Approval':t.status==='revised'?'Revised':t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span></td>
     </tr>`;
   }).join('');
+  const pageRows = rowsFor(pageTasks);
 
   const paginationHtml = totalPages > 1 ? `
     <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:12px;border-top:1px solid var(--border);font-size:13px;color:var(--muted-foreground)">
@@ -3697,25 +3720,99 @@ function renderTasksTable() {
     </div>` : '';
 
   const showClientCol = tasksType === 'delegation' || tasksType === 'delegatebyme';
+  const headHtml = `<thead><tr>
+      <th style="white-space:nowrap">Action</th>
+      <th>Desc</th>
+      <th>Doer</th>
+      <th>Assignee</th>
+      <th>Date</th>
+      ${showClientCol ? '<th>Unit</th>' : ''}
+      <th>Remarks</th>
+      <th>Status</th>
+    </tr></thead>`;
+  const minW = showClientCol ? '820px' : '700px';
+
+  // ── Grouped view ──
+  // Only worth it when the viewer actually sees several people's work; a normal
+  // user has one doer, so a single group would be pure noise. Groups render
+  // collapsed, which is why this view drops pagination — the page stays short
+  // until something is opened.
+  if (groupByDoer) {
+    const groups = new Map();
+    for (const t of tasks) {
+      const key = t.assigned_to || 'unassigned';
+      if (!groups.has(key)) groups.set(key, { name: t.assignedToName || 'Unassigned', rows: [] });
+      groups.get(key).rows.push(t);
+    }
+    const ordered = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+    const pill = (text, bg, fg) =>
+      `<span style="background:${bg};color:${fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:var(--radius-full);white-space:nowrap">${text}</span>`;
+
+    const blocks = ordered.map((g, i) => {
+      const done    = g.rows.filter(t => t.status === 'completed').length;
+      const revised = g.rows.filter(t => t.status === 'revised').length;
+      const pending = g.rows.filter(t => t.status === 'pending').length;
+      return `<div class="user-task-block">
+        <div class="utb-header" onclick="toggleTaskGroup(this)">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span class="utb-arrow" style="color:var(--faint);font-size:11px;transition:transform .15s">▶</span>
+            <span class="utb-name">${dtEscape(g.name)}</span>
+          </div>
+          <div class="utb-actions" style="flex-wrap:wrap;justify-content:flex-end">
+            ${pill(`${g.rows.length} total`, 'var(--muted)', 'var(--muted-foreground)')}
+            ${pending ? pill(`${pending} pending`, '#fef2f2', '#dc2626') : ''}
+            ${revised ? pill(`${revised} revised`, '#fffbeb', '#d97706') : ''}
+            ${done    ? pill(`${done} completed`, '#f0fdf4', '#16a34a') : ''}
+          </div>
+        </div>
+        <div class="utb-body">
+          <div class="flat-tasks-scroll">
+            <table style="min-width:${minW};width:100%">${headHtml}<tbody>${rowsFor(g.rows)}</tbody></table>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="tasks-slide-in">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);padding:12px 18px;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">${ordered.length} doer${ordered.length === 1 ? '' : 's'} · ${tasks.length} task${tasks.length === 1 ? '' : 's'}</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" onclick="setAllTaskGroups(true)">Expand all</button>
+            <button class="btn btn-outline btn-sm" onclick="setAllTaskGroups(false)">Collapse all</button>
+          </div>
+        </div>
+        ${blocks}
+      </div>`;
+    return;
+  }
+
   container.innerHTML = `
     <div class="flat-tasks-table tasks-slide-in">
       <div class="flat-tasks-scroll">
-        <table style="min-width:${showClientCol ? '820px' : '700px'};width:100%">
-          <thead><tr>
-            <th style="white-space:nowrap">Action</th>
-            <th>Desc</th>
-            <th>Doer</th>
-            <th>Assignee</th>
-            <th>Date</th>
-            ${showClientCol ? '<th>Unit</th>' : ''}
-            <th>Remarks</th>
-            <th>Status</th>
-          </tr></thead>
+        <table style="min-width:${minW};width:100%">
+          ${headHtml}
           <tbody>${pageRows}</tbody>
         </table>
       </div>
       ${paginationHtml}
     </div>`;
+}
+
+function toggleTaskGroup(header) {
+  const body = header.nextElementSibling;
+  const open = body.classList.toggle('open');
+  const arrow = header.querySelector('.utb-arrow');
+  if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+}
+
+function setAllTaskGroups(open) {
+  document.querySelectorAll('#tasksContent .user-task-block').forEach(b => {
+    b.querySelector('.utb-body').classList.toggle('open', open);
+    const arrow = b.querySelector('.utb-arrow');
+    if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+  });
 }
 
 function tasksTab(type, el) {

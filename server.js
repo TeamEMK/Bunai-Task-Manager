@@ -1100,11 +1100,11 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     let upcomingCount = 0;
     if (!usingPCRange) {
       if (taskType === 'delegation' || taskType === 'both') {
-        const [d] = await db.query(`SELECT COUNT(*) AS n FROM delegation_tasks t WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter}`, params);
+        const [d] = await db.query(`SELECT COUNT(*) AS n FROM delegation_tasks t WHERE t.due_date > CURDATE() AND t.status <> 'completed' ${userFilter}`, params);
         upcomingCount += parseInt(d[0].n) || 0;
       }
       if (taskType === 'checklist' || taskType === 'both') {
-        const [d] = await db.query(`SELECT COUNT(*) AS n FROM checklist_tasks t WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter}`, params);
+        const [d] = await db.query(`SELECT COUNT(*) AS n FROM checklist_tasks t WHERE t.due_date > CURDATE() AND t.status <> 'completed' ${userFilter}`, params);
         upcomingCount += parseInt(d[0].n) || 0;
       }
     }
@@ -1146,17 +1146,18 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
 
     // Future-dated OPEN rows. Every other list stops at today, so without these
     // the Total card would count work the Total view could not display.
-    // 'revised' is left out here because those rows already come through the
-    // pending query regardless of date, and 'completed' does not belong in Total.
+    // Upcoming is a date bucket, not a status, so a task revised to a future
+    // date belongs here too. Such a row also arrives via the pending query
+    // (which takes 'revised' at any date), so the client de-duplicates.
     const UPCOMING_ROW_LIMIT = 300;
     let delegationUpcoming = [], checklistUpcoming = [];
     if (!usingPCRange) {
       if (taskType === 'delegation' || taskType === 'both') {
-        const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
+        const [rows] = await db.query(`SELECT t.id,'delegation' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM delegation_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status <> 'completed' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
         delegationUpcoming = rows;
       }
       if (taskType === 'checklist' || taskType === 'both') {
-        const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.revise_reason,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status='pending' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
+        const [rows] = await db.query(`SELECT t.id,'checklist' AS type,t.description,t.status,t.assigned_to,COALESCE(t.priority,'low') AS priority,'no' AS approval,0 AS waiting_approval,t.remarks,t.revise_reason,t.client_id,c.name AS client_name,DATE_FORMAT(t.due_date,'%Y-%m-%d') AS due_date,u1.name AS assignedToName,u2.name AS assignedByName FROM checklist_tasks t JOIN users u1 ON t.assigned_to=u1.id JOIN users u2 ON t.assigned_by=u2.id LEFT JOIN clients c ON t.client_id=c.id WHERE t.due_date > CURDATE() AND t.status <> 'completed' ${userFilter} ORDER BY t.due_date ASC LIMIT ${UPCOMING_ROW_LIMIT}`, params);
         checklistUpcoming = rows;
       }
     }
