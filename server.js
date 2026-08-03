@@ -430,6 +430,50 @@ const _startupMigrationsPromise = (async () => {
   // No DEFAULT: MySQL rejects one on TEXT.
   await sa(`ALTER TABLE delegation_tasks ADD COLUMN revise_reason TEXT AFTER remarks`);
   await sa(`ALTER TABLE checklist_tasks ADD COLUMN revise_reason TEXT AFTER remarks`);
+
+  // ── Meetings ──────────────────────────────────────────
+  // Feeds the Meetings page and the meetings section of Employee 360.
+  await sa(`CREATE TABLE IF NOT EXISTS meetings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    agenda TEXT DEFAULT NULL,
+    client_id INT DEFAULT NULL,
+    organizer_id INT NOT NULL,
+    meeting_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    meet_link VARCHAR(2048) DEFAULT NULL,
+    status ENUM('scheduled','cancelled','done') DEFAULT 'scheduled',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_date (meeting_date),
+    INDEX idx_organizer (organizer_id),
+    INDEX idx_client (client_id),
+    INDEX idx_status (status)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+  // One row per invitee. The UNIQUE key makes re-saving an attendee list idempotent.
+  await sa(`CREATE TABLE IF NOT EXISTS meeting_attendees (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    meeting_id INT NOT NULL,
+    user_id INT NOT NULL,
+    UNIQUE KEY uq_meeting_user (meeting_id, user_id),
+    INDEX idx_meeting (meeting_id),
+    INDEX idx_user (user_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+  // Units carry an active flag and a logo — both read by the Employee 360
+  // scorecard, where the unit score is active/total.
+  // Who owns this unit. Employee 360 lists the units an employee handles and
+  // scores them on how many are still active.
+  await sa(`ALTER TABLE clients ADD COLUMN handler_id INT DEFAULT NULL AFTER name`);
+  await sa(`ALTER TABLE clients ADD INDEX idx_handler (handler_id)`);
+  await sa(`ALTER TABLE clients ADD COLUMN logo_url LONGTEXT DEFAULT NULL AFTER handler_id`);
+  await sa(`ALTER TABLE clients ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER logo_url`);
+
+  // The weekly check-in: what the employee committed to for that Monday.
+  await sa(`ALTER TABLE week_plans ADD COLUMN user_committed_score DECIMAL(5,1) DEFAULT NULL AFTER improvement_pct`);
+  await sa(`ALTER TABLE week_plans ADD COLUMN user_committed_at TIMESTAMP NULL DEFAULT NULL AFTER user_committed_score`);
   // Checklist series metadata — end_date = is checklist ki last date (kab tak chalegi),
   // frequency = daily/weekly/monthly... Both are stored identically on every row of a series
   // so the "which checklist to delete" list can be built.
@@ -3298,6 +3342,607 @@ app.get('/api/transfers/my', requireAuth, async (req, res) => {
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// ══════════════════════════════════════════════════════
+// MEETINGS
+// Ported from the e-marketing task manager. Two things are deliberately left
+// out: Google-Meet auto-link creation (needs Workspace domain-wide delegation,
+// which this project is not set up for — paste a link instead) and WhatsApp
+// invites (the queue cannot survive a serverless request). Everything else —
+// scheduling, availability slots, recurrence, attendees — is here.
+// ══════════════════════════════════════════════════════
+const MEETING_BIZ_HOURS = { startHour: 10, endHour: 19, slotMin: 30 };
+
+// Saturday is a working day here EXCEPT the last one of the month, which
+// matches the rule the rest of the app uses for off-days.
+function isLastSaturdayOfMonth(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  if (d.getUTCDay() !== 6) return false;
+  const next = new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return next.getUTCMonth() !== d.getUTCMonth();
+}
+
+// Builds the half-hour grid for a day and marks what is taken.
+// A slot is "booked" only when the VIEWER is in that meeting — other people's
+// calendars must not grey out your own. busyUserIds is still recorded for
+// everyone so the attendee picker can warn about clashes.
+async function buildMeetingSlots(dateStr, userIds = [], viewerId = null) {
+  const slots = [];
+  const { startHour, endHour, slotMin } = MEETING_BIZ_HOURS;
+  for (let h = startHour; h < endHour; h++) {
+    for (let m = 0; m < 60; m += slotMin) {
+      const sh = String(h).padStart(2, '0'), sm = String(m).padStart(2, '0');
+      const endMin = m + slotMin;
+      const eh = String(endMin >= 60 ? h + 1 : h).padStart(2, '0');
+      const em = String(endMin % 60).padStart(2, '0');
+      slots.push({ start: `${sh}:${sm}`, end: `${eh}:${em}`, booked: false, busyUserIds: [] });
+    }
+  }
+  const [meetings] = await db.query(
+    `SELECT m.id, m.title, TIME_FORMAT(m.start_time,'%H:%i') AS start_time,
+            TIME_FORMAT(m.end_time,'%H:%i') AS end_time, m.organizer_id
+       FROM meetings m
+      WHERE m.meeting_date = ? AND m.status = 'scheduled'`, [dateStr]);
+
+  const busyRanges = {};
+  if (meetings.length) {
+    const mIds = meetings.map(m => m.id);
+    const [attendees] = await db.query(
+      `SELECT meeting_id, user_id FROM meeting_attendees WHERE meeting_id IN (${mIds.map(() => '?').join(',')})`, mIds);
+    const attByMtg = {};
+    for (const a of attendees) (attByMtg[a.meeting_id] = attByMtg[a.meeting_id] || []).push(a.user_id);
+    for (const m of meetings) {
+      const involved = new Set([m.organizer_id, ...(attByMtg[m.id] || [])]);
+      const viewerInvolved = viewerId != null && involved.has(viewerId);
+      for (const slot of slots) {
+        if (slot.start < m.end_time && slot.end > m.start_time) {
+          if (viewerInvolved) slot.booked = true;
+          for (const uid of involved) if (!slot.busyUserIds.includes(uid)) slot.busyUserIds.push(uid);
+        }
+      }
+      for (const uid of involved) {
+        if (userIds.length && !userIds.includes(uid)) continue;
+        (busyRanges[uid] = busyRanges[uid] || []).push({ start: m.start_time, end: m.end_time, title: m.title });
+      }
+    }
+  }
+  if (userIds.length) {
+    for (const slot of slots) slot.conflictForSelection = slot.busyUserIds.some(uid => userIds.includes(uid));
+  }
+  return { slots, busyRanges };
+}
+
+// Expands a recurrence rule into dates. Capped so a mistyped "repeat until
+// 2099" cannot spawn thousands of rows.
+const RECURRENCE_MAX_OCCURRENCES = 120;
+function generateRecurrenceDates(startDateStr, frequency, untilStr, customDays) {
+  const start = new Date(startDateStr + 'T00:00:00Z');
+  const until = new Date(untilStr + 'T00:00:00Z');
+  const dates = [];
+  if (until < start) return dates;
+  if (frequency === 'monthly') {
+    const cur = new Date(start);
+    while (cur <= until && dates.length < RECURRENCE_MAX_OCCURRENCES) {
+      dates.push(cur.toISOString().split('T')[0]);
+      cur.setUTCMonth(cur.getUTCMonth() + 1);
+    }
+    return dates;
+  }
+  const customSet = new Set((customDays || []).map(d => parseInt(d, 10)));
+  const startDow = start.getUTCDay();
+  const cur = new Date(start);
+  while (cur <= until && dates.length < RECURRENCE_MAX_OCCURRENCES) {
+    const dow = cur.getUTCDay();
+    let include = false;
+    if (frequency === 'daily') include = true;
+    else if (frequency === 'weekday') include = dow !== 0;
+    else if (frequency === 'weekly') include = dow === startDow;
+    else if (frequency === 'custom') include = customSet.has(dow);
+    if (include) dates.push(cur.toISOString().split('T')[0]);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+// Only the organiser or an admin may change a meeting.
+async function loadMeetingForWrite(id, req, res) {
+  const [[m]] = await db.query('SELECT id, organizer_id FROM meetings WHERE id=?', [id]);
+  if (!m) { res.status(404).json({ error: 'Meeting not found' }); return null; }
+  if (m.organizer_id !== req.session.userId && req.session.role !== 'admin') {
+    res.status(403).json({ error: 'Only the organiser or an admin can change this meeting' });
+    return null;
+  }
+  return m;
+}
+
+// GET — meetings the caller organises or is invited to.
+app.get('/api/meetings', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const { from, to, status, organizer } = req.query;
+    let where = `(m.organizer_id = ? OR EXISTS
+      (SELECT 1 FROM meeting_attendees ma WHERE ma.meeting_id = m.id AND ma.user_id = ?))`;
+    const params = [uid, uid];
+    if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) { where += ' AND m.meeting_date >= ?'; params.push(from); }
+    if (to   && /^\d{4}-\d{2}-\d{2}$/.test(to))   { where += ' AND m.meeting_date <= ?'; params.push(to); }
+    if (status) { where += ' AND m.status = ?'; params.push(status); }
+    if (organizer && organizer !== 'all') { where += ' AND m.organizer_id = ?'; params.push(organizer); }
+
+    const [rows] = await db.query(
+      `SELECT m.id, m.title, m.agenda, m.client_id, m.organizer_id,
+              DATE_FORMAT(m.meeting_date,'%Y-%m-%d') AS meeting_date,
+              TIME_FORMAT(m.start_time,'%H:%i') AS start_time,
+              TIME_FORMAT(m.end_time,'%H:%i')   AS end_time,
+              m.meet_link, m.status, m.created_at,
+              c.name AS client_name, u.name AS organizer_name
+         FROM meetings m
+         LEFT JOIN clients c ON m.client_id = c.id
+         LEFT JOIN users   u ON m.organizer_id = u.id
+        WHERE ${where}
+        ORDER BY m.meeting_date ASC, m.start_time ASC
+        LIMIT 500`, params);
+
+    // Attendees in one extra query rather than one per meeting.
+    if (rows.length) {
+      const ids = rows.map(r => r.id);
+      const [atts] = await db.query(
+        `SELECT ma.meeting_id, ma.user_id, u.name
+           FROM meeting_attendees ma JOIN users u ON ma.user_id = u.id
+          WHERE ma.meeting_id IN (${ids.map(() => '?').join(',')})`, ids);
+      const byMtg = {};
+      for (const a of atts) (byMtg[a.meeting_id] = byMtg[a.meeting_id] || []).push({ id: a.user_id, name: a.name });
+      for (const r of rows) r.attendees = byMtg[r.id] || [];
+    }
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET — availability grid for one date.
+app.get('/api/meetings/slots', requireAuth, async (req, res) => {
+  try {
+    const date = req.query.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return res.status(400).json({ error: 'date=YYYY-MM-DD required' });
+    const userIds = String(req.query.userIds || '')
+      .split(',').map(s => parseInt(s, 10)).filter(n => Number.isFinite(n) && n > 0);
+
+    const holidays = await loadHolidaysSet();
+    const d = new Date(date + 'T00:00:00Z');
+    let offReason = null;
+    if (d.getUTCDay() === 0) offReason = 'Sunday';
+    else if (isLastSaturdayOfMonth(date)) offReason = 'Last Saturday (off)';
+    else if (holidays.has(date)) offReason = 'Holiday';
+    if (offReason) return res.json({ date, off: true, reason: offReason, slots: [], busyRanges: {} });
+
+    const { slots, busyRanges } = await buildMeetingSlots(date, userIds, req.session.userId);
+    res.json({ date, off: false, slots, busyRanges });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET — one meeting with its attendees.
+app.get('/api/meetings/:id', requireAuth, async (req, res) => {
+  try {
+    const [[m]] = await db.query(
+      `SELECT m.id, m.title, m.agenda, m.client_id, m.organizer_id,
+              DATE_FORMAT(m.meeting_date,'%Y-%m-%d') AS meeting_date,
+              TIME_FORMAT(m.start_time,'%H:%i') AS start_time,
+              TIME_FORMAT(m.end_time,'%H:%i')   AS end_time,
+              m.meet_link, m.status,
+              c.name AS client_name, u.name AS organizer_name
+         FROM meetings m
+         LEFT JOIN clients c ON m.client_id = c.id
+         LEFT JOIN users   u ON m.organizer_id = u.id
+        WHERE m.id = ?`, [req.params.id]);
+    if (!m) return res.status(404).json({ error: 'Meeting not found' });
+    const [atts] = await db.query(
+      `SELECT u.id, u.name, u.email FROM meeting_attendees ma
+         JOIN users u ON ma.user_id = u.id WHERE ma.meeting_id = ?`, [req.params.id]);
+    m.attendees = atts;
+    res.json(m);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST — create one meeting, or a whole recurring series.
+app.post('/api/meetings', requireAuth, async (req, res) => {
+  try {
+    const { title, agenda, client_id, meeting_date, start_time, end_time, meet_link,
+            attendee_ids, frequency, repeat_until, repeat_days } = req.body;
+    if (!title || !meeting_date || !start_time || !end_time) {
+      return res.status(400).json({ error: 'Title, date, start time and end time are required' });
+    }
+    if (end_time <= start_time) return res.status(400).json({ error: 'End time must be after the start time' });
+
+    const organizerId = req.session.userId;
+    const freq = ['daily', 'weekday', 'weekly', 'monthly', 'custom'].includes(frequency) ? frequency : null;
+    let occurrenceDates = [meeting_date];
+    if (freq) {
+      if (!repeat_until) return res.status(400).json({ error: 'Pick a "repeat until" date for a recurring meeting' });
+      if (freq === 'custom' && !(Array.isArray(repeat_days) && repeat_days.length)) {
+        return res.status(400).json({ error: 'Select at least one day to repeat on' });
+      }
+      occurrenceDates = generateRecurrenceDates(meeting_date, freq, repeat_until, repeat_days);
+      if (!occurrenceDates.length) return res.status(400).json({ error: 'No occurrences fall in the selected range' });
+    }
+
+    const attIds = (Array.isArray(attendee_ids) ? attendee_ids : [])
+      .map(n => parseInt(n, 10)).filter(n => Number.isFinite(n) && n > 0);
+
+    const newIds = [];
+    for (const dateStr of occurrenceDates) {
+      const [r] = await db.query(
+        `INSERT INTO meetings (title, agenda, client_id, organizer_id, meeting_date, start_time, end_time, meet_link)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [title, agenda || null, client_id || null, organizerId, dateStr, start_time, end_time, meet_link || null]);
+      newIds.push(r.insertId);
+      for (const uid of attIds) {
+        await db.query('INSERT IGNORE INTO meeting_attendees (meeting_id, user_id) VALUES (?,?)', [r.insertId, uid]);
+      }
+    }
+    res.json({ ok: true, id: newIds[0], count: newIds.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT — edit a meeting and replace its attendee list.
+app.put('/api/meetings/:id', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!await loadMeetingForWrite(id, req, res)) return;
+    const { title, agenda, client_id, meeting_date, start_time, end_time, meet_link, attendee_ids } = req.body;
+    if (!title || !meeting_date || !start_time || !end_time) {
+      return res.status(400).json({ error: 'Title, date, start time and end time are required' });
+    }
+    if (end_time <= start_time) return res.status(400).json({ error: 'End time must be after the start time' });
+
+    await db.query(
+      `UPDATE meetings SET title=?, agenda=?, client_id=?, meeting_date=?, start_time=?, end_time=?, meet_link=?
+        WHERE id=?`,
+      [title, agenda || null, client_id || null, meeting_date, start_time, end_time, meet_link || null, id]);
+
+    if (Array.isArray(attendee_ids)) {
+      await db.query('DELETE FROM meeting_attendees WHERE meeting_id=?', [id]);
+      for (const uid of attendee_ids.map(n => parseInt(n, 10)).filter(n => Number.isFinite(n) && n > 0)) {
+        await db.query('INSERT IGNORE INTO meeting_attendees (meeting_id, user_id) VALUES (?,?)', [id, uid]);
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT — mark scheduled / done / cancelled. The Employee 360 meetings score
+// is done/total, so this is what moves that number.
+app.put('/api/meetings/:id/status', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['scheduled', 'done', 'cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    if (!await loadMeetingForWrite(req.params.id, req, res)) return;
+    await db.query('UPDATE meetings SET status=? WHERE id=?', [status, req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE — cancels rather than removes, so the history stays in the scorecard.
+app.delete('/api/meetings/:id', requireAuth, async (req, res) => {
+  try {
+    if (!await loadMeetingForWrite(req.params.id, req, res)) return;
+    await db.query("UPDATE meetings SET status='cancelled' WHERE id=?", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════
+// EMPLOYEE 360
+// Everything about one employee in one place for an increment review:
+// delegation + checklist stats, daily-report compliance, the units they handle,
+// meetings, a weighted scorecard, and week-by-week committed vs achieved.
+// ══════════════════════════════════════════════════════
+
+// Monday of the week containing `date`, in IST.
+function istMondayOf(date) {
+  const ist = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+  const dayUTC = ist.getUTCDay();                 // 0=Sun, 1=Mon..6=Sat
+  const diff = (dayUTC === 0 ? -6 : 1 - dayUTC);  // shift back to Monday
+  const mon = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + diff));
+  return mon.toISOString().split('T')[0];
+}
+function addDays(yyyyMmDd, n) {
+  const d = new Date(yyyyMmDd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+// Weekly performance score, [-100, 0] where 0 is perfect. Deliberately a
+// deficit scale: it answers "how much did this week slip", not "how good".
+function scoreFor(total, pending, overdue, revised) {
+  total = parseInt(total) || 0; pending = parseInt(pending) || 0;
+  overdue = parseInt(overdue) || 0; revised = parseInt(revised) || 0;
+  if (total <= 0) return null;
+  return Math.max(-100, Math.round((0 - (pending / total) * 100 - (overdue / total) * 50 - (revised / total) * 25) * 10) / 10);
+}
+
+// admin → anyone; hod/pc → their own department; everyone else → only themselves.
+async function canViewComplianceEmployee(req, targetId) {
+  const role = req.session.role;
+  const uid = req.session.userId;
+  if (role === 'admin') return true;
+  if (Number(targetId) === Number(uid)) return true;
+  if (role === 'hod' || role === 'pc') {
+    const [[me]] = await db.query('SELECT department FROM users WHERE id=?', [uid]);
+    const [[target]] = await db.query('SELECT department FROM users WHERE id=?', [targetId]);
+    return !!me?.department && me.department === target?.department;
+  }
+  return false;
+}
+
+app.get('/api/compliance/employee/:id', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid employee id' });
+    if (!await canViewComplianceEmployee(req, id)) return res.status(403).json({ error: 'Not allowed' });
+
+    // Window defaults to the current IST month.
+    const ist = new Date(Date.now() + (5.5 * 60 * 60 * 1000));
+    const yy = ist.getUTCFullYear(), mm = ist.getUTCMonth();
+    const defaultFrom = `${yy}-${String(mm + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+    const defaultTo = `${yy}-${String(mm + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+    const from = isDate(req.query.from) ? req.query.from : defaultFrom;
+    const to   = isDate(req.query.to)   ? req.query.to   : defaultTo;
+
+    const [[user]] = await db.query(
+      `SELECT id, name, email, role, COALESCE(department,'—') AS department,
+              COALESCE(week_off,'') AS week_off, COALESCE(extra_off,'') AS extra_off
+         FROM users WHERE id=?`, [id]);
+    if (!user) return res.status(404).json({ error: 'Employee not found' });
+
+    const N = v => Number(v) || 0;
+
+    // ── Task stats, bucketed by due date inside the window ──
+    const [[del]] = await db.query(
+      `SELECT COUNT(*) AS total,
+        SUM(CASE WHEN status='pending'   THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN status='revised'   THEN 1 ELSE 0 END) AS revised,
+        SUM(CASE WHEN status='pending' AND due_date<CURDATE() THEN 1 ELSE 0 END) AS overdue
+       FROM delegation_tasks WHERE assigned_to=? AND due_date BETWEEN ? AND ?`, [id, from, to]);
+    const [[chl]] = await db.query(
+      `SELECT COUNT(*) AS total,
+        SUM(CASE WHEN status='pending'   THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN status='pending' AND due_date<CURDATE() THEN 1 ELSE 0 END) AS overdue
+       FROM checklist_tasks WHERE assigned_to=? AND due_date BETWEEN ? AND ?`, [id, from, to]);
+    const delegation = { total: N(del.total), pending: N(del.pending), completed: N(del.completed), revised: N(del.revised), overdue: N(del.overdue) };
+    const checklist  = { total: N(chl.total), pending: N(chl.pending), completed: N(chl.completed), revised: 0, overdue: N(chl.overdue) };
+
+    // ── Daily-report compliance ──
+    const [[dr]] = await db.query(
+      `SELECT COUNT(*) AS entries, COALESCE(SUM(duration_min),0) AS minutes,
+              COUNT(DISTINCT entry_date) AS days_filled
+         FROM daily_tasks WHERE user_id=? AND entry_date BETWEEN ? AND ?`, [id, from, to]);
+
+    // Working days = the window minus Sundays, last Saturdays and holidays.
+    const holidaysSet = await loadHolidaysSet();
+    let workingDays = 0;
+    {
+      let cur = new Date(from + 'T00:00:00Z');
+      const endU = new Date(to + 'T00:00:00Z');
+      let guard = 0;
+      while (cur <= endU && guard++ < 1000) {
+        const ds = cur.toISOString().split('T')[0];
+        const off = cur.getUTCDay() === 0
+                 || isLastSaturdayOfMonth(ds)
+                 || isUserOffOn(user, ds, holidaysSet);
+        if (!off) workingDays++;
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
+    const daysFilled = N(dr.days_filled);
+    const dailyReport = {
+      entries: N(dr.entries), minutes: N(dr.minutes), hours: Math.round(N(dr.minutes) / 6) / 10,
+      daysFilled, workingDays,
+      fillPct: workingDays > 0 ? Math.round((daysFilled / workingDays) * 100) : 0
+    };
+    const [recentEntries] = await db.query(
+      `SELECT id, DATE_FORMAT(entry_date,'%Y-%m-%d') AS entry_date,
+              client_name, COALESCE(department,'') AS department, description, duration_min
+         FROM daily_tasks WHERE user_id=? AND entry_date BETWEEN ? AND ?
+        ORDER BY entry_date DESC, id DESC LIMIT 20`, [id, from, to]);
+
+    // ── Units this employee handles, plus what happened on them in the window ──
+    const [clientRows] = await db.query(
+      `SELECT id, name, COALESCE(is_active,1) AS is_active, logo_url
+         FROM clients WHERE handler_id=? ORDER BY COALESCE(is_active,1) DESC, name ASC`, [id]);
+    if (clientRows.length) {
+      const ids = clientRows.map(c => c.id);
+      const ph = ids.map(() => '?').join(',');
+      const [dc] = await db.query(
+        `SELECT client_id, COUNT(*) AS total, SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending
+           FROM delegation_tasks WHERE client_id IN (${ph}) AND due_date BETWEEN ? AND ? GROUP BY client_id`, [...ids, from, to]);
+      const [cc] = await db.query(
+        `SELECT client_id, COUNT(*) AS total, SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending
+           FROM checklist_tasks WHERE client_id IN (${ph}) AND due_date BETWEEN ? AND ? GROUP BY client_id`, [...ids, from, to]);
+      const [mc] = await db.query(
+        `SELECT client_id, COUNT(*) AS total FROM meetings
+          WHERE client_id IN (${ph}) AND meeting_date BETWEEN ? AND ? GROUP BY client_id`, [...ids, from, to]);
+      const dMap = Object.fromEntries(dc.map(r => [r.client_id, r]));
+      const cMap = Object.fromEntries(cc.map(r => [r.client_id, r]));
+      const mMap = Object.fromEntries(mc.map(r => [r.client_id, r]));
+      for (const c of clientRows) {
+        c.is_active = N(c.is_active);
+        const d = dMap[c.id] || {}, k = cMap[c.id] || {}, m = mMap[c.id] || {};
+        c.tasks = N(d.total) + N(k.total);
+        c.pending = N(d.pending) + N(k.pending);
+        c.meetings = N(m.total);
+        c.activity = c.tasks + c.meetings;
+      }
+    }
+    const clients = {
+      total: clientRows.length,
+      active: clientRows.filter(c => c.is_active).length,
+      inactive: clientRows.filter(c => !c.is_active).length,
+      list: clientRows
+    };
+
+    // ── Meetings organised and attended ──
+    const [[mo]] = await db.query(
+      `SELECT COUNT(*) AS total,
+        SUM(CASE WHEN status='scheduled' THEN 1 ELSE 0 END) AS scheduled,
+        SUM(CASE WHEN status='done'      THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled
+       FROM meetings WHERE organizer_id=? AND meeting_date BETWEEN ? AND ?`, [id, from, to]);
+    const [[ma]] = await db.query(
+      `SELECT COUNT(DISTINCT m.id) AS total
+         FROM meetings m JOIN meeting_attendees mt ON mt.meeting_id=m.id
+        WHERE mt.user_id=? AND m.meeting_date BETWEEN ? AND ?`, [id, from, to]);
+    const [mtgRecent] = await db.query(
+      `SELECT m.id, m.title, m.status,
+              DATE_FORMAT(m.meeting_date,'%Y-%m-%d') AS meeting_date,
+              TIME_FORMAT(m.start_time,'%H:%i') AS start_time,
+              c.name AS client_name,
+              CASE WHEN m.organizer_id=? THEN 'Organizer' ELSE 'Attendee' END AS my_role
+         FROM meetings m LEFT JOIN clients c ON m.client_id=c.id
+        WHERE (m.organizer_id=? OR EXISTS (SELECT 1 FROM meeting_attendees mt WHERE mt.meeting_id=m.id AND mt.user_id=?))
+          AND m.meeting_date BETWEEN ? AND ?
+        ORDER BY m.meeting_date DESC, m.start_time DESC LIMIT 20`, [id, id, id, from, to]);
+    const meetings = {
+      organized: { total: N(mo.total), scheduled: N(mo.scheduled), done: N(mo.done), cancelled: N(mo.cancelled) },
+      attended: N(ma.total),
+      recent: mtgRecent
+    };
+
+    // ── Scorecard. Each section 0-100, or null when it does not apply to this
+    // employee — a null section is dropped and its weight is shared out among
+    // the rest, so nobody is penalised for work they were never given.
+    const clamp = n => Math.max(0, Math.min(100, n));
+    const r1 = n => Math.round(n * 10) / 10;
+    const cat = {
+      delegation: delegation.total > 0
+        ? r1(clamp((delegation.completed / delegation.total) * 100 - (delegation.overdue / delegation.total) * 30 - (delegation.revised / delegation.total) * 15))
+        : null,
+      checklist: checklist.total > 0
+        ? r1(clamp((checklist.completed / checklist.total) * 100 - (checklist.overdue / checklist.total) * 30))
+        : null,
+      dailyReport: dailyReport.workingDays > 0 ? r1(clamp(dailyReport.fillPct)) : null,
+      meetings: meetings.organized.total > 0 ? r1(clamp((meetings.organized.done / meetings.organized.total) * 100)) : null,
+      clients: clients.total > 0 ? r1(clamp((clients.active / clients.total) * 100)) : null
+    };
+    const weights = { delegation: 30, checklist: 25, dailyReport: 20, meetings: 15, clients: 10 };
+    const present = Object.keys(weights).filter(k => cat[k] !== null);
+    const average = present.length ? r1(present.reduce((a, k) => a + cat[k], 0) / present.length) : null;
+    let wSum = 0, wTot = 0;
+    for (const k of present) { wSum += cat[k] * weights[k]; wTot += weights[k]; }
+    const final = wTot ? r1(wSum / wTot) : null;
+    const grade = final == null ? 'N/A'
+      : final >= 85 ? 'Excellent' : final >= 70 ? 'Good' : final >= 50 ? 'Average' : 'Needs Improvement';
+    const scores = { categories: cat, weights, average, final, grade };
+
+    // ── Weekly: what they committed on Monday vs what the week actually scored.
+    const weekly = [];
+    {
+      const firstMon = istMondayOf(new Date(from + 'T00:00:00Z'));
+      const mondays = [];
+      for (let m = firstMon; m <= to; m = addDays(m, 7)) mondays.push(m);
+      // One week before the window is loaded purely as the regression baseline.
+      const baselineMon = addDays(firstMon, -7);
+      const allMons = [baselineMon, ...mondays];
+      const rangeStart = baselineMon;
+      const rangeEnd = mondays.length ? addDays(mondays[mondays.length - 1], 6) : addDays(baselineMon, 6);
+
+      const [planRows] = await db.query(
+        `SELECT DATE_FORMAT(start_date,'%Y-%m-%d') AS mon, user_committed_score
+           FROM week_plans WHERE employee_id=? AND start_date IN (${allMons.map(() => '?').join(',')})`,
+        [id, ...allMons]);
+      const committedBy = {};
+      for (const r of planRows) committedBy[r.mon] = r.user_committed_score == null ? null : Number(r.user_committed_score);
+
+      // Bucket tasks by their own Monday in SQL — two grouped queries beat one
+      // query per week.
+      const wkExpr = `DATE_FORMAT(DATE_SUB(due_date, INTERVAL WEEKDAY(due_date) DAY),'%Y-%m-%d')`;
+      const [delWk] = await db.query(
+        `SELECT ${wkExpr} AS wk, COUNT(*) AS total,
+          SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending,
+          SUM(CASE WHEN status='revised' THEN 1 ELSE 0 END) AS revised,
+          SUM(CASE WHEN status='pending' AND due_date<CURDATE() THEN 1 ELSE 0 END) AS overdue
+         FROM delegation_tasks WHERE assigned_to=? AND due_date BETWEEN ? AND ? GROUP BY wk`, [id, rangeStart, rangeEnd]);
+      const [chlWk] = await db.query(
+        `SELECT ${wkExpr} AS wk, COUNT(*) AS total,
+          SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending,
+          SUM(CASE WHEN status='pending' AND due_date<CURDATE() THEN 1 ELSE 0 END) AS overdue
+         FROM checklist_tasks WHERE assigned_to=? AND due_date BETWEEN ? AND ? GROUP BY wk`, [id, rangeStart, rangeEnd]);
+
+      const agg = {};
+      const bump = (wk, t, p, o, r) => {
+        const a = agg[wk] || (agg[wk] = { total: 0, pending: 0, overdue: 0, revised: 0 });
+        a.total += t; a.pending += p; a.overdue += o; a.revised += r;
+      };
+      for (const r of delWk) bump(r.wk, N(r.total), N(r.pending), N(r.overdue), N(r.revised));
+      for (const r of chlWk) bump(r.wk, N(r.total), N(r.pending), N(r.overdue), 0);
+
+      const achievedBy = {};
+      for (const wkMon of allMons) {
+        const a = agg[wkMon];
+        achievedBy[wkMon] = a ? scoreFor(a.total, a.pending, a.overdue, a.revised) : null;
+      }
+      for (const wkMon of mondays) {
+        const committed = wkMon in committedBy ? committedBy[wkMon] : null;
+        const achieved = achievedBy[wkMon];
+        const prevAchieved = achievedBy[addDays(wkMon, -7)];
+        const wAgg = agg[wkMon] || { total: 0, pending: 0, revised: 0 };
+        weekly.push({
+          weekStart: wkMon, weekEnd: addDays(wkMon, 6),
+          committed, achieved,
+          prevAchieved: prevAchieved == null ? null : prevAchieved,
+          gap: (committed !== null && achieved !== null) ? Math.round((achieved - committed) * 10) / 10 : null,
+          // Committing to less than you already achieved last week.
+          regression: committed !== null && prevAchieved != null && committed < prevAchieved,
+          taskTotal: wAgg.total,
+          taskPending: wAgg.pending,
+          taskCompleted: Math.max(0, wAgg.total - wAgg.pending - (wAgg.revised || 0))
+        });
+      }
+    }
+
+    res.json({
+      range: { from, to },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, department: user.department },
+      delegation, checklist, dailyReport, recentEntries, clients, meetings, scores, weekly
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Drill-down behind a row of the weekly table.
+app.get('/api/compliance/employee/:id/week-tasks', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid employee id' });
+    if (!await canViewComplianceEmployee(req, id)) return res.status(403).json({ error: 'Not allowed' });
+    const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+    const from = isDate(req.query.from) ? req.query.from : null;
+    const to   = isDate(req.query.to)   ? req.query.to   : null;
+    if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+
+    const [delTasks] = await db.query(
+      `SELECT dt.id, dt.description AS title, dt.status, DATE_FORMAT(dt.due_date,'%Y-%m-%d') AS due_date,
+              COALESCE(c.name,'—') AS client_name, 'delegation' AS task_type,
+              COALESCE(u2.name,'—') AS assigned_by
+         FROM delegation_tasks dt
+         LEFT JOIN clients c ON c.id = dt.client_id
+         LEFT JOIN users u2 ON u2.id = dt.assigned_by
+        WHERE dt.assigned_to=? AND dt.due_date BETWEEN ? AND ?
+        ORDER BY dt.due_date, dt.id`, [id, from, to]);
+    const [chlTasks] = await db.query(
+      `SELECT ct.id, ct.description AS title, ct.status, DATE_FORMAT(ct.due_date,'%Y-%m-%d') AS due_date,
+              COALESCE(c.name,'—') AS client_name, 'checklist' AS task_type,
+              COALESCE(u2.name,'—') AS assigned_by
+         FROM checklist_tasks ct
+         LEFT JOIN clients c ON c.id = ct.client_id
+         LEFT JOIN users u2 ON u2.id = ct.assigned_by
+        WHERE ct.assigned_to=? AND ct.due_date BETWEEN ? AND ?
+        ORDER BY ct.due_date, ct.id`, [id, from, to]);
+    res.json([...delTasks, ...chlTasks].sort((a, b) => a.due_date < b.due_date ? -1 : 1));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
 
 // ══════════════════════════════════════════════════════
 // WEEK PLAN

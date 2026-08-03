@@ -1016,6 +1016,10 @@ tbody tr:last-child td{border-bottom:none;}
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
       <span class="nav-label-text">Daily Task</span>
     </div>
+    <div class="nav-item" id="nav-meetings" onclick="navigate('meetings',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+      <span class="nav-label-text">Meetings</span>
+    </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
       <span class="nav-label-text">Leave Tracker</span>
@@ -1682,6 +1686,12 @@ tbody tr:last-child td{border-bottom:none;}
        ══════════════════════════════════════════════════════ -->
   <div id="page-compliance" class="page">
     <div class="cp-card">
+      <!-- Two views of the same data: the 7-day fill grid, and one employee in full. -->
+      <div class="tab-group" style="margin-bottom:16px">
+        <div class="tab active" id="cpTabFill" onclick="complianceTab('fill',this)">📅 Daily Fill (7-day)</div>
+        <div class="tab" id="cpTab360" onclick="complianceTab('e360',this)">👤 Employee 360</div>
+      </div>
+      <div id="cpFillView">
       <div class="cp-header">
         <button class="dt-btn dt-btn-add" onclick="loadCompliance()">🔄 Refresh</button>
       </div>
@@ -1699,6 +1709,22 @@ tbody tr:last-child td{border-bottom:none;}
       </div>
 
       <div id="cpGridWrap" class="cp-grid-wrap"><div class="empty">Loading...</div></div>
+      </div><!-- /cpFillView -->
+
+      <div id="cpE360View" style="display:none">
+        <p class="cp-sub">One employee, everything in one place — delegation, checklist, daily reports, units and meetings. Built for increment-time review.</p>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+          <select id="e360User" onchange="loadEmp360()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
+          <input type="date" id="e360From" onchange="loadEmp360()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"/>
+          <input type="date" id="e360To" onchange="loadEmp360()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"/>
+          <button class="btn btn-outline btn-sm" onclick="e360Range(0)">This Month</button>
+          <button class="btn btn-outline btn-sm" onclick="e360Range(3)">3M</button>
+          <button class="btn btn-outline btn-sm" onclick="e360Range(6)">6M</button>
+          <button class="btn btn-outline btn-sm" onclick="e360Range(12)">12M</button>
+          <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 Print</button>
+        </div>
+        <div id="e360Body"><div class="empty">Pick an employee</div></div>
+      </div>
     </div>
   </div>
 
@@ -1739,6 +1765,21 @@ tbody tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
+  <!-- ══════════════════════════════════════════════════════
+       MEETINGS — schedule, attendees, availability
+       ══════════════════════════════════════════════════════ -->
+  <div id="page-meetings" class="page">
+    <div class="page-header">
+      <div class="tab-group" id="mtgStatusTabs">
+        <div class="tab active" onclick="mtgFilter('upcoming',this)">Upcoming</div>
+        <div class="tab" onclick="mtgFilter('all',this)">All</div>
+        <div class="tab" onclick="mtgFilter('done',this)">Done</div>
+        <div class="tab" onclick="mtgFilter('cancelled',this)">Cancelled</div>
+      </div>
+      <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule Meeting</button>
+    </div>
+    <div id="meetingsList"></div>
+  </div>
   <!-- ══════════════════════════════════════════════════════
        LEAVE TRACKER — all users
        ══════════════════════════════════════════════════════ -->
@@ -1829,6 +1870,104 @@ tbody tr:last-child td{border-bottom:none;}
 <!-- ══════════════════════════════════════
      DELEGATE TASK MODAL (Admin only)
 ══════════════════════════════════════ -->
+<!-- Schedule / edit a meeting -->
+<!-- Tasks behind one week of the Employee 360 table -->
+<div class="modal-overlay" id="weekTasksModal">
+  <div class="modal" style="width:680px">
+    <h3 id="weekTasksTitle">📋 Week tasks</h3>
+    <div id="weekTasksBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('weekTasksModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="meetingModal">
+  <div class="modal" style="width:620px">
+    <h3 id="mtgModalTitle">📅 Schedule Meeting</h3>
+    <input type="hidden" id="mtgId"/>
+    <div class="alert error" id="mtgErr"></div>
+
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="mtgTitle" placeholder="What is this meeting about?"/>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="mtgDate" onchange="mtgLoadSlots()"/>
+      </div>
+      <div class="form-group">
+        <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+        <select id="mtgClient"><option value="">— No Unit —</option></select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Start</label>
+        <input type="time" id="mtgStart" onchange="mtgLoadSlots()"/>
+      </div>
+      <div class="form-group">
+        <label>End</label>
+        <input type="time" id="mtgEnd"/>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Attendees</label>
+      <div id="mtgAttendees" style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
+    </div>
+
+    <!-- Availability for the chosen day; clicking a free slot fills start/end. -->
+    <div class="form-group">
+      <label>Availability <span style="color:var(--faint);font-weight:400;font-size:11px">(click a free slot)</span></label>
+      <div id="mtgSlots" style="font-size:12px;color:var(--faint)">Pick a date to see open slots</div>
+    </div>
+
+    <div class="form-group">
+      <label>Meeting Link <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+      <input type="url" id="mtgLink" placeholder="https://meet.google.com/..."/>
+    </div>
+
+    <div class="form-group">
+      <label>Agenda <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+      <textarea id="mtgAgenda" placeholder="Points to cover…"></textarea>
+    </div>
+
+    <!-- Recurrence is create-only; editing one occurrence must not rewrite a series. -->
+    <div id="mtgRepeatWrap">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Repeat</label>
+          <select id="mtgFreq" onchange="mtgFreqChange()">
+            <option value="">Does not repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekday">Every day except Sunday</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="custom">Custom days</option>
+          </select>
+        </div>
+        <div class="form-group" id="mtgUntilWrap" style="display:none">
+          <label>Repeat Until</label>
+          <input type="date" id="mtgUntil"/>
+        </div>
+      </div>
+      <div class="form-group" id="mtgDaysWrap" style="display:none">
+        <label>Repeat On</label>
+        <div id="mtgDays" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('meetingModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveMeeting()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="delegateModal">
   <div class="modal">
     <h3>+ Delegate Task</h3>
@@ -3025,7 +3164,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',meetings:'Meetings',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -3096,6 +3235,7 @@ function navigate(page, el, fromHash) {
   if (page==='compliance') loadCompliance();
   if (page==='dailyreports') loadDailyReports();
   if (page==='leaves') loadLeaves();
+  if (page==='meetings') loadMeetings();
   if (page==='ims') loadIMS();
   window.scrollTo(0,0);
 }
@@ -8899,6 +9039,399 @@ async function loadLeaveApprovals(){
   } catch(e) {
     wrap.innerHTML = `<div class="empty" style="color:#dc2626">⚠️ ${dtEscape(e.message)}</div>`;
   }
+}
+
+
+// ══════════════════════════════════════════════════════
+// MEETINGS
+// ══════════════════════════════════════════════════════
+let _meetings = [];
+let mtgStatusFilter = 'upcoming';
+
+function mtgFilter(f, el) {
+  mtgStatusFilter = f;
+  document.querySelectorAll('#mtgStatusTabs .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderMeetings();
+}
+
+async function loadMeetings() {
+  const box = document.getElementById('meetingsList');
+  box.innerHTML = '<div class="empty">Loading meetings…</div>';
+  const r = await api('/api/meetings');
+  _meetings = Array.isArray(r) ? r : [];
+  renderMeetings();
+}
+
+function renderMeetings() {
+  const box = document.getElementById('meetingsList');
+  const today = new Date().toISOString().slice(0, 10);
+  const list = _meetings.filter(m =>
+    mtgStatusFilter === 'all'       ? true :
+    mtgStatusFilter === 'done'      ? m.status === 'done' :
+    mtgStatusFilter === 'cancelled' ? m.status === 'cancelled' :
+    // "Upcoming" = still scheduled and not in the past.
+    (m.status === 'scheduled' && m.meeting_date >= today)
+  );
+
+  if (!list.length) {
+    box.innerHTML = `<div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs)">No meetings here</div>`;
+    return;
+  }
+
+  const statusPill = s => {
+    const map = { scheduled: ['#eff6ff', '#1d4ed8', 'Scheduled'], done: ['#f0fdf4', '#16a34a', 'Done'], cancelled: ['#fef2f2', '#dc2626', 'Cancelled'] };
+    const [bg, fg, label] = map[s] || map.scheduled;
+    return `<span style="background:${bg};color:${fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:var(--radius-full)">${label}</span>`;
+  };
+
+  box.innerHTML = list.map(m => {
+    const mine = String(m.organizer_id) === String(ME.id) || ME.role === 'admin';
+    const people = (m.attendees || []).map(a => dtEscape(a.name)).join(', ') || '—';
+    return `<div class="user-task-block" style="margin-bottom:10px">
+      <div style="padding:14px 18px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700">${dtEscape(m.title)}</span>
+            ${statusPill(m.status)}
+            ${m.client_name ? `<span style="background:var(--brand-tint);color:var(--brand-deep);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px">🏢 ${dtEscape(m.client_name)}</span>` : ''}
+          </div>
+          <div style="font-size:12px;color:var(--muted-foreground);margin-top:5px">
+            📅 ${fmtDate(m.meeting_date)} · ⏰ ${m.start_time}–${m.end_time}
+          </div>
+          <div style="font-size:12px;color:var(--muted-foreground);margin-top:3px">
+            👤 ${dtEscape(m.organizer_name || '')} &nbsp;·&nbsp; 👥 ${people}
+          </div>
+          ${m.agenda ? `<div style="font-size:12px;color:var(--muted-foreground);margin-top:5px">📝 ${dtEscape(m.agenda)}</div>` : ''}
+          ${m.meet_link ? `<div style="margin-top:6px"><a href="${dtEscape(m.meet_link)}" target="_blank" rel="noopener" style="color:var(--brand-deep);font-size:12px;font-weight:600">🔗 Join link</a></div>` : ''}
+        </div>
+        ${mine ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${m.status === 'scheduled' ? `
+            <button class="action-btn done" onclick="setMeetingStatus(${m.id},'done')">Done</button>
+            <button class="action-btn edit" onclick="openMeetingModal(${m.id})">✏️</button>
+            <button class="action-btn delete" onclick="setMeetingStatus(${m.id},'cancelled')">Cancel</button>` : `
+            <button class="action-btn" style="background:var(--muted);color:var(--muted-foreground)" onclick="setMeetingStatus(${m.id},'scheduled')">Reopen</button>`}
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function setMeetingStatus(id, status) {
+  const r = await api(`/api/meetings/${id}/status`, 'PUT', { status });
+  if (r.error) return showToast(r.error, 'error');
+  showToast(status === 'done' ? '✅ Marked done' : status === 'cancelled' ? '🚫 Cancelled' : '↩️ Reopened');
+  loadMeetings();
+}
+
+const MTG_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+async function openMeetingModal(id) {
+  document.getElementById('mtgErr').style.display = 'none';
+  document.getElementById('mtgId').value = id || '';
+  document.getElementById('mtgModalTitle').textContent = id ? '✏️ Edit Meeting' : '📅 Schedule Meeting';
+  // Recurrence applies to a new series only — editing one occurrence should not
+  // silently regenerate the rest.
+  document.getElementById('mtgRepeatWrap').style.display = id ? 'none' : 'block';
+
+  // Units + people, both needed before we can prefill.
+  const [clients, users] = await Promise.all([api('/api/clients'), api('/api/users')]);
+  const cSel = document.getElementById('mtgClient');
+  cSel.innerHTML = '<option value="">— No Unit —</option>' +
+    (Array.isArray(clients) ? clients : []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
+
+  const others = (Array.isArray(users) ? users : []).filter(u => String(u.id) !== String(ME.id));
+  document.getElementById('mtgAttendees').innerHTML = others.map(u => `
+    <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;background:var(--muted);padding:4px 9px;border-radius:var(--radius-full);cursor:pointer">
+      <input type="checkbox" class="mtg-att" value="${u.id}" onchange="mtgLoadSlots()"/> ${dtEscape(u.name)}
+    </label>`).join('') || '<span style="font-size:12px;color:var(--faint)">No other users yet</span>';
+
+  document.getElementById('mtgDays').innerHTML = MTG_DAY_LABELS.map((d, i) => `
+    <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;background:var(--muted);padding:4px 9px;border-radius:var(--radius-full);cursor:pointer">
+      <input type="checkbox" class="mtg-day" value="${i}"/> ${d}
+    </label>`).join('');
+
+  const set = (elId, v) => { document.getElementById(elId).value = v; };
+  if (id) {
+    const m = await api(`/api/meetings/${id}`);
+    if (m.error) return showToast(m.error, 'error');
+    set('mtgTitle', m.title || ''); set('mtgDate', m.meeting_date || '');
+    set('mtgStart', m.start_time || ''); set('mtgEnd', m.end_time || '');
+    set('mtgClient', m.client_id || ''); set('mtgLink', m.meet_link || '');
+    set('mtgAgenda', m.agenda || '');
+    const ids = new Set((m.attendees || []).map(a => String(a.id)));
+    document.querySelectorAll('.mtg-att').forEach(cb => { cb.checked = ids.has(cb.value); });
+  } else {
+    ['mtgTitle', 'mtgStart', 'mtgEnd', 'mtgLink', 'mtgAgenda', 'mtgUntil'].forEach(k => set(k, ''));
+    set('mtgDate', new Date().toISOString().slice(0, 10));
+    set('mtgClient', ''); set('mtgFreq', '');
+    mtgFreqChange();
+  }
+  document.getElementById('meetingModal').classList.add('open');
+  mtgLoadSlots();
+}
+
+function mtgFreqChange() {
+  const f = document.getElementById('mtgFreq').value;
+  document.getElementById('mtgUntilWrap').style.display = f ? 'block' : 'none';
+  document.getElementById('mtgDaysWrap').style.display = f === 'custom' ? 'block' : 'none';
+}
+
+function mtgSelectedAttendees() {
+  return [...document.querySelectorAll('.mtg-att:checked')].map(c => parseInt(c.value, 10));
+}
+
+async function mtgLoadSlots() {
+  const date = document.getElementById('mtgDate').value;
+  const box = document.getElementById('mtgSlots');
+  if (!date) { box.textContent = 'Pick a date to see open slots'; return; }
+  const ids = mtgSelectedAttendees();
+  const r = await api(`/api/meetings/slots?date=${date}&userIds=${ids.join(',')}`);
+  if (r.error) { box.textContent = r.error; return; }
+  if (r.off) {
+    box.innerHTML = `<span style="color:#dc2626;font-weight:600">${dtEscape(r.reason)} — no slots</span>`;
+    return;
+  }
+  box.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px">` + r.slots.map(s => {
+    const taken = s.booked || s.conflictForSelection;
+    const bg = taken ? '#fef2f2' : 'var(--muted)';
+    const fg = taken ? '#dc2626' : 'var(--foreground)';
+    const title = taken ? 'Someone selected is busy' : 'Click to use this slot';
+    return `<button type="button" title="${title}" onclick="mtgPickSlot('${s.start}','${s.end}')"
+      style="background:${bg};color:${fg};border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;${taken ? 'text-decoration:line-through' : ''}">${s.start}</button>`;
+  }).join('') + `</div>`;
+}
+
+function mtgPickSlot(start, end) {
+  document.getElementById('mtgStart').value = start;
+  document.getElementById('mtgEnd').value = end;
+}
+
+async function saveMeeting() {
+  const err = document.getElementById('mtgErr');
+  err.style.display = 'none';
+  const id = document.getElementById('mtgId').value;
+  const body = {
+    title: document.getElementById('mtgTitle').value.trim(),
+    agenda: document.getElementById('mtgAgenda').value.trim(),
+    client_id: document.getElementById('mtgClient').value || null,
+    meeting_date: document.getElementById('mtgDate').value,
+    start_time: document.getElementById('mtgStart').value,
+    end_time: document.getElementById('mtgEnd').value,
+    meet_link: document.getElementById('mtgLink').value.trim(),
+    attendee_ids: mtgSelectedAttendees(),
+  };
+  if (!body.title)        { err.textContent = 'Title is required'; err.style.display = 'block'; return; }
+  if (!body.meeting_date) { err.textContent = 'Please pick a date'; err.style.display = 'block'; return; }
+  if (!body.start_time || !body.end_time) { err.textContent = 'Please set a start and end time'; err.style.display = 'block'; return; }
+
+  if (!id) {
+    const freq = document.getElementById('mtgFreq').value;
+    if (freq) {
+      body.frequency = freq;
+      body.repeat_until = document.getElementById('mtgUntil').value;
+      body.repeat_days = [...document.querySelectorAll('.mtg-day:checked')].map(c => parseInt(c.value, 10));
+    }
+  }
+
+  const r = id ? await api(`/api/meetings/${id}`, 'PUT', body)
+               : await api('/api/meetings', 'POST', body);
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('meetingModal');
+  showToast(id ? '✅ Meeting updated' : `✅ ${r.count > 1 ? r.count + ' meetings' : 'Meeting'} scheduled`);
+  loadMeetings();
+}
+
+
+
+// Compliance page has two views; Employee 360 loads lazily on first open.
+function complianceTab(which, el) {
+  document.querySelectorAll('#page-compliance .tab-group .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const fill = which === 'fill';
+  document.getElementById('cpFillView').style.display = fill ? 'block' : 'none';
+  document.getElementById('cpE360View').style.display = fill ? 'none' : 'block';
+  if (!fill) loadEmp360();
+}
+
+// Quick ranges. 0 = this calendar month; N = the last N months ending today.
+function e360Range(months) {
+  const now = new Date();
+  const iso = d => d.toISOString().slice(0, 10);
+  let from, to;
+  if (!months) {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  } else {
+    to = now;
+    from = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  }
+  document.getElementById('e360From').value = iso(from);
+  document.getElementById('e360To').value = iso(to);
+  loadEmp360();
+}
+
+// ══════════════════════════════════════════════════════
+// EMPLOYEE 360
+// ══════════════════════════════════════════════════════
+let _e360 = null;
+
+async function loadEmp360() {
+  const sel = document.getElementById('e360User');
+  const body = document.getElementById('e360Body');
+
+  // First visit: fill the employee picker and default the window to this month.
+  if (!sel.options.length) {
+    const users = await api('/api/users');
+    const list = Array.isArray(users) ? users : [];
+    sel.innerHTML = list.map(u => `<option value="${u.id}">${dtEscape(u.name)}</option>`).join('');
+    if (!list.length) { body.innerHTML = '<div class="empty">No employees yet</div>'; return; }
+    // Default to the signed-in user when they are in the list.
+    if (list.some(u => String(u.id) === String(ME.id))) sel.value = ME.id;
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const iso = d => d.toISOString().slice(0, 10);
+    document.getElementById('e360From').value = iso(first);
+    document.getElementById('e360To').value   = iso(last);
+  }
+
+  const id = sel.value;
+  const from = document.getElementById('e360From').value;
+  const to   = document.getElementById('e360To').value;
+  if (!id) return;
+
+  body.innerHTML = '<div class="empty">Loading…</div>';
+  const d = await api(`/api/compliance/employee/${id}?from=${from}&to=${to}`);
+  if (d.error) { body.innerHTML = `<div class="empty" style="color:#dc2626">${dtEscape(d.error)}</div>`; return; }
+  _e360 = d;
+  renderEmp360(d);
+}
+
+function renderEmp360(d) {
+  const card = (inner, extra = '') =>
+    `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);padding:18px;${extra}">${inner}</div>`;
+  const label = t => `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:10px">${t}</div>`;
+  const stat = (k, v, color) =>
+    `<div style="text-align:center;min-width:44px;flex:1 1 auto"><div style="font-size:17px;font-weight:700;line-height:1.15;color:${color || 'var(--foreground)'}">${v}</div>
+     <div style="font-size:10px;color:var(--muted-foreground)">${k}</div></div>`;
+  const row = (a, b) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="color:var(--muted-foreground)">${a}</span><span style="font-weight:600">${b}</span></div>`;
+
+  // Grade colour doubles as the score bar colour, so the two always agree.
+  const gradeColor = g => g === 'Excellent' ? '#16a34a' : g === 'Good' ? '#0ea5e9' : g === 'Average' ? '#d97706' : '#dc2626';
+  const sc = d.scores;
+  const gc = gradeColor(sc.grade);
+
+  const catRows = Object.entries(sc.categories).map(([k, v]) => {
+    const nice = { delegation: 'Delegation', checklist: 'Checklist', dailyReport: 'Daily Report', meetings: 'Meetings', clients: 'Units' }[k] || k;
+    if (v === null) {
+      // Nothing to measure — say so rather than showing a misleading zero.
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+        <span style="width:104px;font-size:12px;color:var(--muted-foreground)">${nice}</span>
+        <span style="flex:1;font-size:11px;color:var(--faint)">no data — weight ${sc.weights[k]}% shared out</span></div>`;
+    }
+    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+      <span style="width:104px;font-size:12px;color:var(--muted-foreground)">${nice}</span>
+      <span style="flex:1;height:8px;background:var(--muted);border-radius:99px;overflow:hidden">
+        <span style="display:block;height:100%;width:${v}%;background:${gradeColor(v >= 85 ? 'Excellent' : v >= 70 ? 'Good' : v >= 50 ? 'Average' : 'x')}"></span></span>
+      <span style="width:42px;text-align:right;font-size:12px;font-weight:700">${v}</span>
+      <span style="width:34px;text-align:right;font-size:11px;color:var(--faint)">${sc.weights[k]}%</span></div>`;
+  }).join('');
+
+  const dr = d.dailyReport;
+  const entries = d.recentEntries.length ? d.recentEntries.slice(0, 8).map(e =>
+    `<tr><td style="white-space:nowrap">${fmtDate(e.entry_date)}</td><td>${dtEscape(e.description || '')}</td>
+     <td style="white-space:nowrap">${dtEscape(e.client_name || '—')}</td><td style="white-space:nowrap">${e.duration_min} min</td></tr>`).join('')
+    : `<tr><td colspan="4" class="empty">No entries in this range</td></tr>`;
+
+  const units = d.clients.list.length ? d.clients.list.map(c =>
+    `<tr><td>${dtEscape(c.name)}</td>
+     <td><span class="status-badge ${c.is_active ? 'completed' : 'pending'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
+     <td>${c.tasks}</td><td>${c.pending}</td><td>${c.meetings}</td></tr>`).join('')
+    : `<tr><td colspan="5" class="empty">No units handled</td></tr>`;
+
+  const weekly = d.weekly.length ? d.weekly.map(w =>
+    `<tr onclick="openWeekTasks('${w.weekStart}','${w.weekEnd}')" style="cursor:pointer" title="Click to see this week's tasks">
+      <td style="white-space:nowrap">${fmtDate(w.weekStart)} – ${fmtDate(w.weekEnd)}</td>
+      <td>${w.committed === null ? '<span style="color:var(--faint)">not set</span>' : w.committed}</td>
+      <td>${w.achieved === null ? '<span style="color:var(--faint)">—</span>' : w.achieved}</td>
+      <td>${w.gap === null ? '—' : `<span style="color:${w.gap >= 0 ? '#16a34a' : '#dc2626'};font-weight:600">${w.gap > 0 ? '+' : ''}${w.gap}</span>`}</td>
+      <td>${w.taskTotal}</td><td>${w.taskPending}</td>
+      <td>${w.regression ? '<span style="font-size:11px;color:#dc2626;font-weight:600">⚠ lower than last week</span>' : ''}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="7" class="empty">No weeks in this range</td></tr>`;
+
+  document.getElementById('e360Body').innerHTML = `
+    <div style="display:grid;grid-template-columns:minmax(280px,1fr) minmax(320px,1.4fr);gap:14px;margin-bottom:14px">
+      ${card(`
+        ${label('Final Score')}
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <span style="font-size:46px;font-weight:800;line-height:1;color:${gc}">${sc.final ?? '—'}</span>
+          <span style="font-size:14px;font-weight:700;color:${gc}">${dtEscape(sc.grade)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted-foreground);margin-top:8px">
+          ${dtEscape(d.user.name)} · ${dtEscape(d.user.department)} · unweighted average ${sc.average ?? '—'}
+        </div>`)}
+      ${card(label('Score Breakdown') + catRows)}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:14px">
+      ${card(label('Delegation') + `<div style="display:flex;flex-wrap:wrap;gap:8px 4px;justify-content:space-around">
+        ${stat('total', d.delegation.total)}${stat('done', d.delegation.completed, '#16a34a')}
+        ${stat('pending', d.delegation.pending, '#dc2626')}${stat('revised', d.delegation.revised, '#d97706')}
+        ${stat('overdue', d.delegation.overdue, '#dc2626')}</div>`)}
+      ${card(label('Checklist') + `<div style="display:flex;flex-wrap:wrap;gap:8px 4px;justify-content:space-around">
+        ${stat('total', d.checklist.total)}${stat('done', d.checklist.completed, '#16a34a')}
+        ${stat('pending', d.checklist.pending, '#dc2626')}${stat('overdue', d.checklist.overdue, '#dc2626')}</div>`)}
+      ${card(label('Meetings') + `<div style="display:flex;flex-wrap:wrap;gap:8px 4px;justify-content:space-around">
+        ${stat('organised', d.meetings.organized.total)}${stat('done', d.meetings.organized.done, '#16a34a')}
+        ${stat('cancelled', d.meetings.organized.cancelled, '#dc2626')}${stat('attended', d.meetings.attended)}</div>`)}
+      ${card(label('Daily Report') +
+        row('Days filled', `${dr.daysFilled} / ${dr.workingDays}`) +
+        row('Fill rate', `${dr.fillPct}%`) +
+        row('Hours logged', `${dr.hours} h`) +
+        row('Entries', dr.entries))}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
+      ${card(label(`Units handled — ${d.clients.active} active / ${d.clients.total}`) +
+        `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
+          <th>Unit</th><th>Status</th><th>Tasks</th><th>Pending</th><th>Meetings</th>
+        </tr></thead><tbody>${units}</tbody></table></div>`)}
+      ${card(label('Recent daily entries') +
+        `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
+          <th>Date</th><th>Work</th><th>Unit</th><th>Time</th>
+        </tr></thead><tbody>${entries}</tbody></table></div>`)}
+    </div>
+
+    ${card(label('Week by week — committed vs achieved') +
+      `<div class="flat-tasks-scroll"><table style="min-width:640px;width:100%"><thead><tr>
+        <th>Week</th><th>Committed</th><th>Achieved</th><th>Gap</th><th>Tasks</th><th>Pending</th><th></th>
+      </tr></thead><tbody>${weekly}</tbody></table></div>
+      <div style="font-size:11px;color:var(--faint);margin-top:8px">
+        Weekly scores run −100 to 0, where 0 means nothing slipped. Gap is achieved minus committed, so positive beats the commitment.
+      </div>`)}`;
+}
+
+// Drill-down: the tasks behind one week of the table.
+async function openWeekTasks(from, to) {
+  if (!_e360) return;
+  const box = document.getElementById('weekTasksBody');
+  document.getElementById('weekTasksTitle').textContent = `📋 ${fmtDate(from)} – ${fmtDate(to)}`;
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('weekTasksModal').classList.add('open');
+  const rows = await api(`/api/compliance/employee/${_e360.user.id}/week-tasks?from=${from}&to=${to}`);
+  if (rows.error) { box.innerHTML = `<div class="empty" style="color:#dc2626">${dtEscape(rows.error)}</div>`; return; }
+  if (!rows.length) { box.innerHTML = '<div class="empty">No tasks that week</div>'; return; }
+  box.innerHTML = `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
+      <th>Date</th><th>Task</th><th>Type</th><th>Unit</th><th>Status</th>
+    </tr></thead><tbody>${rows.map(t => `<tr>
+      <td style="white-space:nowrap">${fmtDate(t.due_date)}</td>
+      <td>${dtEscape(t.title || '')}</td>
+      <td style="white-space:nowrap">${t.task_type}</td>
+      <td style="white-space:nowrap">${dtEscape(t.client_name || '—')}</td>
+      <td><span class="status-badge ${t.status}">${t.status}</span></td>
+    </tr>`).join('')}</tbody></table></div>`;
 }
 
 init();
