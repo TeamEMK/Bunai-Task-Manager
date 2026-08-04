@@ -113,33 +113,48 @@ body{
 .sidebar:hover{ width:var(--rail-open); box-shadow:var(--shadow-md); }
 
 .sidebar-logo{
-  padding:16px 12px;border-bottom:1px solid var(--sidebar-border);
-  display:flex;align-items:center;gap:10px;min-height:60px;
+  padding:12px;border-bottom:1px solid var(--sidebar-border);
+  display:flex;align-items:center;gap:8px;min-height:60px;
   white-space:nowrap;overflow:hidden;
+}
+/* The lockup sits on its own white badge so the logo appears exactly as it is
+   drawn in the brand file, instead of a knocked-out version on the dark rail. */
+.sidebar-logo > .logo-plate{
+  display:flex;align-items:center;
+  background:#fff;border-radius:var(--radius-sm);
+  padding:5px;overflow:hidden;
 }
 .logo-icon{
   width:34px;height:34px;background:linear-gradient(135deg,var(--brand-soft),var(--brand));
   border-radius:8px;display:grid;place-items:center;color:var(--foreground);
   font-weight:700;font-size:15px;flex-shrink:0;
 }
-/* Wordmark beside the logo — script face so it reads as part of the mark rather
-   than as a nav label. Script fonts have a small x-height, so 22px here sits at
-   about the same optical size the 15px sans did. */
+/* Wordmark beside the logo — the brand lettering itself, as an image. A script
+   webfont only approximates this hand-drawn mark, so the file is the mark.
+   Height-driven, width follows the source's 169x96 aspect. */
+.logo-wordmark{
+  height:30px;width:auto;display:block;flex-shrink:0;
+  opacity:0;transition:opacity .2s .1s;
+}
+/* Text fallback if the image fails to load — script face keeps it in family. */
 .logo-text{
   font-family:var(--font-script);
-  font-size:22px;font-weight:700;line-height:1;
+  font-size:26px;font-weight:700;line-height:1.15;
   color:var(--sidebar-foreground);
   opacity:0;transition:opacity .2s .1s;white-space:nowrap;
-  letter-spacing:.01em;padding-bottom:2px;
+  letter-spacing:0;padding-bottom:3px;
 }
-.sidebar:hover .logo-text{opacity:1;}
+.sidebar:hover .logo-text,
+.sidebar:hover .logo-wordmark{opacity:1;}
 /* White logo inside the app. The Bunai mark is a circle, not a wide wordmark,
    so it stays a fixed square — widening it would only pad empty space, and
    growing it to fill the expanded rail would blow out the 60px logo row.
    The wordmark beside it carries the name once the sidebar opens. */
 .sidebar-logo-img{
-  width:34px;height:34px;object-fit:contain;flex-shrink:0;display:block;
+  width:26px;height:26px;object-fit:contain;flex-shrink:0;display:block;
+  transition:width .25s ease,height .25s ease;
 }
+.sidebar:hover .sidebar-logo-img{ width:32px;height:32px; }
 
 .nav{padding:10px 8px;flex:1;overflow-y:auto;overflow-x:hidden;}
 .nav::-webkit-scrollbar{width:3px;}
@@ -809,7 +824,7 @@ tbody tr:last-child td{border-bottom:none;}
   .sidebar{width:240px;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 24px rgba(0,0,0,.18);}
   .sidebar:hover{width:240px;}
   .sidebar.open{transform:translateX(0);}
-  .sidebar .logo-text,.sidebar .nav-label-text,.sidebar .su-info,.sidebar .logout-label{opacity:1;}
+  .sidebar .logo-text,.sidebar .logo-wordmark,.sidebar .nav-label-text,.sidebar .su-info,.sidebar .logout-label{opacity:1;}
 
   /* ── Main content ── */
   /* On phones the sidebar is an off-canvas drawer over a backdrop, so content
@@ -879,7 +894,8 @@ tbody tr:last-child td{border-bottom:none;}
   .sidebar:hover .nav-label-text,
   .sidebar:hover .su-info,
   .sidebar:hover .logout-label,
-  .sidebar:hover .logo-text{opacity:1;}
+  .sidebar:hover .logo-text,
+  .sidebar:hover .logo-wordmark{opacity:1;}
 
   /* ── All Tasks page filters ── */
   #taskSearch, #userSearch, #cpSearch, #lvSearch, #drSearch{width:100% !important;}
@@ -966,11 +982,17 @@ tbody tr:last-child td{border-bottom:none;}
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
-    <!-- White mark: the rail is the dark ink surface. -->
-    <img src="bunai-logo-white.png" alt="Bunai" class="sidebar-logo-img"
+      <div class="logo-plate">
+    <!-- Colour mark on a white plate — the logo as drawn in the brand file,
+         rather than a knocked-out white version of it. -->
+    <img src="bunai-logo.png" alt="Bunai" class="sidebar-logo-img"
       onerror="this.style.display='none';document.getElementById('sidebarLogoFallback').style.display='grid'"/>
     <div id="sidebarLogoFallback" style="display:none;width:34px;height:34px;background:linear-gradient(135deg,#FBC9CA,#F8AFB1);border-radius:8px;place-items:center;color:#1B1B1B;font-weight:700;font-size:15px;font-style:italic;flex-shrink:0">B</div>
-    <div class="logo-text">Bunai</div>
+      </div>
+      <!-- The real lettering, knocked out white for the ink rail. -->
+      <img src="bunai-wordmark-white.png" alt="Bunai" class="logo-wordmark"
+        onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/>
+      <div class="logo-text" style="display:none">Bunai</div>
   </div>
   <nav class="nav">
     <div class="nav-item active" onclick="navigate('dashboard',this)">
