@@ -3351,7 +3351,9 @@ app.get('/api/transfers/my', requireAuth, async (req, res) => {
 // invites (the queue cannot survive a serverless request). Everything else —
 // scheduling, availability slots, recurrence, attendees — is here.
 // ══════════════════════════════════════════════════════
-const MEETING_BIZ_HOURS = { startHour: 10, endHour: 19, slotMin: 30 };
+// Working window for the availability grid, in minutes from midnight, so a
+// half-hour start (8:30) is expressible. Last slot ends exactly at endMin.
+const MEETING_BIZ_HOURS = { startMin: 8 * 60 + 30, endMin: 19 * 60, slotMin: 30 };
 
 // Saturday is a working day here EXCEPT the last one of the month, which
 // matches the rule the rest of the app uses for off-days.
@@ -3368,15 +3370,10 @@ function isLastSaturdayOfMonth(dateStr) {
 // everyone so the attendee picker can warn about clashes.
 async function buildMeetingSlots(dateStr, userIds = [], viewerId = null) {
   const slots = [];
-  const { startHour, endHour, slotMin } = MEETING_BIZ_HOURS;
-  for (let h = startHour; h < endHour; h++) {
-    for (let m = 0; m < 60; m += slotMin) {
-      const sh = String(h).padStart(2, '0'), sm = String(m).padStart(2, '0');
-      const endMin = m + slotMin;
-      const eh = String(endMin >= 60 ? h + 1 : h).padStart(2, '0');
-      const em = String(endMin % 60).padStart(2, '0');
-      slots.push({ start: `${sh}:${sm}`, end: `${eh}:${em}`, booked: false, busyUserIds: [] });
-    }
+  const { startMin, endMin, slotMin } = MEETING_BIZ_HOURS;
+  const hhmm = t => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+  for (let t = startMin; t + slotMin <= endMin; t += slotMin) {
+    slots.push({ start: hhmm(t), end: hhmm(t + slotMin), booked: false, busyUserIds: [] });
   }
   const [meetings] = await db.query(
     `SELECT m.id, m.title, TIME_FORMAT(m.start_time,'%H:%i') AS start_time,
@@ -3460,9 +3457,12 @@ app.get('/api/meetings', requireAuth, async (req, res) => {
   try {
     const uid = req.session.userId;
     const { from, to, status, organizer } = req.query;
-    let where = `(m.organizer_id = ? OR EXISTS
+    // Admin oversees every meeting; everyone else sees only their own —
+    // the ones they organise or were invited to.
+    const isAdmin = req.session.role === 'admin';
+    let where = isAdmin ? '1=1' : `(m.organizer_id = ? OR EXISTS
       (SELECT 1 FROM meeting_attendees ma WHERE ma.meeting_id = m.id AND ma.user_id = ?))`;
-    const params = [uid, uid];
+    const params = isAdmin ? [] : [uid, uid];
     if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) { where += ' AND m.meeting_date >= ?'; params.push(from); }
     if (to   && /^\d{4}-\d{2}-\d{2}$/.test(to))   { where += ' AND m.meeting_date <= ?'; params.push(to); }
     if (status) { where += ' AND m.status = ?'; params.push(status); }

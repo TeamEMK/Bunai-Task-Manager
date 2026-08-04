@@ -1016,9 +1016,9 @@ tbody tr:last-child td{border-bottom:none;}
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
       <span class="nav-label-text">Daily Task</span>
     </div>
-    <div class="nav-item" id="nav-meetings" onclick="navigate('meetings',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-      <span class="nav-label-text">Meetings</span>
+    <div class="nav-item" id="nav-scheduler" onclick="navigate('scheduler',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      <span class="nav-label-text">Scheduler</span>
     </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -1766,19 +1766,26 @@ tbody tr:last-child td{border-bottom:none;}
   </div>
 
   <!-- ══════════════════════════════════════════════════════
-       MEETINGS — schedule, attendees, availability
+       SCHEDULER — month calendar + day timeline
        ══════════════════════════════════════════════════════ -->
-  <div id="page-meetings" class="page">
-    <div class="page-header">
-      <div class="tab-group" id="mtgStatusTabs">
-        <div class="tab active" onclick="mtgFilter('upcoming',this)">Upcoming</div>
-        <div class="tab" onclick="mtgFilter('all',this)">All</div>
-        <div class="tab" onclick="mtgFilter('done',this)">Done</div>
-        <div class="tab" onclick="mtgFilter('cancelled',this)">Cancelled</div>
-      </div>
-      <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule Meeting</button>
+  <div id="page-scheduler" class="page">
+    <div class="tab-group" style="margin-bottom:14px">
+      <div class="tab active" id="schTabCal" onclick="schedulerTab('calendar',this)">📅 Calendar</div>
+      <div class="tab" id="schTabList" onclick="schedulerTab('list',this)">📋 Meetings</div>
     </div>
-    <div id="meetingsList"></div>
+    <div id="schCalView"><div class="empty">Loading…</div></div>
+    <div id="schListView" style="display:none">
+      <div class="page-header">
+        <div class="tab-group" id="mtgStatusTabs">
+          <div class="tab active" onclick="mtgFilter('upcoming',this)">Upcoming</div>
+          <div class="tab" onclick="mtgFilter('all',this)">All</div>
+          <div class="tab" onclick="mtgFilter('done',this)">Done</div>
+          <div class="tab" onclick="mtgFilter('cancelled',this)">Cancelled</div>
+        </div>
+        <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule Meeting</button>
+      </div>
+      <div id="meetingsList"></div>
+    </div>
   </div>
   <!-- ══════════════════════════════════════════════════════
        LEAVE TRACKER — all users
@@ -1907,17 +1914,28 @@ tbody tr:last-child td{border-bottom:none;}
     <div class="form-row">
       <div class="form-group">
         <label>Start</label>
-        <input type="time" id="mtgStart" onchange="mtgLoadSlots()"/>
+        <input type="time" id="mtgStart" onchange="mtgSyncEnd();mtgLoadSlots()"/>
       </div>
       <div class="form-group">
-        <label>End</label>
-        <input type="time" id="mtgEnd"/>
+        <label>Duration</label>
+        <select id="mtgDuration" onchange="mtgSyncEnd()">
+          <option value="15">15 min</option>
+          <option value="30" selected>30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">1 hour</option>
+          <option value="90">1.5 hours</option>
+          <option value="120">2 hours</option>
+        </select>
+        <div style="font-size:11px;color:var(--faint);margin-top:5px">Ends at <b id="mtgEndLabel">—</b></div>
+        <input type="hidden" id="mtgEnd"/>
       </div>
     </div>
 
     <div class="form-group">
       <label>Attendees</label>
-      <div id="mtgAttendees" style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
+      <select id="mtgAttendees" multiple size="5" onchange="mtgLoadSlots()"
+        style="width:100%;padding:6px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
+      <div style="font-size:11px;color:var(--faint);margin-top:4px">Ctrl / Cmd + click to pick more than one</div>
     </div>
 
     <!-- Availability for the chosen day; clicking a free slot fills start/end. -->
@@ -3164,7 +3182,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',meetings:'Meetings',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',scheduler:'Scheduler',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -3235,7 +3253,7 @@ function navigate(page, el, fromHash) {
   if (page==='compliance') loadCompliance();
   if (page==='dailyreports') loadDailyReports();
   if (page==='leaves') loadLeaves();
-  if (page==='meetings') loadMeetings();
+  if (page==='scheduler') loadScheduler();
   if (page==='ims') loadIMS();
   window.scrollTo(0,0);
 }
@@ -9042,6 +9060,15 @@ async function loadLeaveApprovals(){
 }
 
 
+// "16:30" → "4:30 PM". Display only; inputs and the API stay on 24-hour time.
+function to12h(hhmm) {
+  if (!hhmm || !/^\d{1,2}:\d{2}/.test(hhmm)) return hhmm || "";
+  const [h, m] = hhmm.split(":").map(Number);
+  const suffix = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return hour + ":" + String(m).padStart(2, "0") + " " + suffix;
+}
+
 // ══════════════════════════════════════════════════════
 // MEETINGS
 // ══════════════════════════════════════════════════════
@@ -9097,7 +9124,7 @@ function renderMeetings() {
             ${m.client_name ? `<span style="background:var(--brand-tint);color:var(--brand-deep);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px">🏢 ${dtEscape(m.client_name)}</span>` : ''}
           </div>
           <div style="font-size:12px;color:var(--muted-foreground);margin-top:5px">
-            📅 ${fmtDate(m.meeting_date)} · ⏰ ${m.start_time}–${m.end_time}
+            📅 ${fmtDate(m.meeting_date)} · ⏰ ${to12h(m.start_time)} – ${to12h(m.end_time)}
           </div>
           <div style="font-size:12px;color:var(--muted-foreground);margin-top:3px">
             👤 ${dtEscape(m.organizer_name || '')} &nbsp;·&nbsp; 👥 ${people}
@@ -9141,10 +9168,9 @@ async function openMeetingModal(id) {
     (Array.isArray(clients) ? clients : []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
 
   const others = (Array.isArray(users) ? users : []).filter(u => String(u.id) !== String(ME.id));
-  document.getElementById('mtgAttendees').innerHTML = others.map(u => `
-    <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;background:var(--muted);padding:4px 9px;border-radius:var(--radius-full);cursor:pointer">
-      <input type="checkbox" class="mtg-att" value="${u.id}" onchange="mtgLoadSlots()"/> ${dtEscape(u.name)}
-    </label>`).join('') || '<span style="font-size:12px;color:var(--faint)">No other users yet</span>';
+  document.getElementById('mtgAttendees').innerHTML = others.length
+    ? others.map(u => `<option value="${u.id}">${dtEscape(u.name)}${u.department ? ' · ' + dtEscape(u.department) : ''}</option>`).join('')
+    : '<option disabled>No other users yet</option>';
 
   document.getElementById('mtgDays').innerHTML = MTG_DAY_LABELS.map((d, i) => `
     <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;background:var(--muted);padding:4px 9px;border-radius:var(--radius-full);cursor:pointer">
@@ -9157,14 +9183,25 @@ async function openMeetingModal(id) {
     if (m.error) return showToast(m.error, 'error');
     set('mtgTitle', m.title || ''); set('mtgDate', m.meeting_date || '');
     set('mtgStart', m.start_time || ''); set('mtgEnd', m.end_time || '');
+    // Reflect the saved length in the picker, snapping to the nearest option.
+    if (m.start_time && m.end_time) {
+      const [sh, sm] = m.start_time.split(':').map(Number);
+      const [eh, em] = m.end_time.split(':').map(Number);
+      const mins = (eh * 60 + em) - (sh * 60 + sm);
+      const opts = [15, 30, 45, 60, 90, 120];
+      const near = opts.reduce((a2, b2) => Math.abs(b2 - mins) < Math.abs(a2 - mins) ? b2 : a2, 30);
+      set('mtgDuration', String(near));
+      document.getElementById('mtgEndLabel').textContent = to12h(m.end_time);
+    }
     set('mtgClient', m.client_id || ''); set('mtgLink', m.meet_link || '');
     set('mtgAgenda', m.agenda || '');
     const ids = new Set((m.attendees || []).map(a => String(a.id)));
-    document.querySelectorAll('.mtg-att').forEach(cb => { cb.checked = ids.has(cb.value); });
+    [...document.getElementById('mtgAttendees').options].forEach(o => { o.selected = ids.has(o.value); });
   } else {
     ['mtgTitle', 'mtgStart', 'mtgEnd', 'mtgLink', 'mtgAgenda', 'mtgUntil'].forEach(k => set(k, ''));
     set('mtgDate', new Date().toISOString().slice(0, 10));
-    set('mtgClient', ''); set('mtgFreq', '');
+    set('mtgClient', ''); set('mtgFreq', ''); set('mtgDuration', '30');
+    document.getElementById('mtgEndLabel').textContent = '—';
     mtgFreqChange();
   }
   document.getElementById('meetingModal').classList.add('open');
@@ -9178,7 +9215,7 @@ function mtgFreqChange() {
 }
 
 function mtgSelectedAttendees() {
-  return [...document.querySelectorAll('.mtg-att:checked')].map(c => parseInt(c.value, 10));
+  return [...document.getElementById('mtgAttendees').selectedOptions].map(o => parseInt(o.value, 10)).filter(Boolean);
 }
 
 async function mtgLoadSlots() {
@@ -9197,14 +9234,29 @@ async function mtgLoadSlots() {
     const bg = taken ? '#fef2f2' : 'var(--muted)';
     const fg = taken ? '#dc2626' : 'var(--foreground)';
     const title = taken ? 'Someone selected is busy' : 'Click to use this slot';
-    return `<button type="button" title="${title}" onclick="mtgPickSlot('${s.start}','${s.end}')"
-      style="background:${bg};color:${fg};border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;${taken ? 'text-decoration:line-through' : ''}">${s.start}</button>`;
+    return `<button type="button" title="${title}" onclick="mtgPickSlot('${s.start}')"
+      style="background:${bg};color:${fg};border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;${taken ? 'text-decoration:line-through' : ''}">${to12h(s.start)}</button>`;
   }).join('') + `</div>`;
 }
 
-function mtgPickSlot(start, end) {
+// End time is derived from start + duration, so the two can never disagree.
+function mtgSyncEnd() {
+  const start = document.getElementById("mtgStart").value;
+  const mins = parseInt(document.getElementById("mtgDuration").value, 10) || 30;
+  const endEl = document.getElementById("mtgEnd");
+  const lbl = document.getElementById("mtgEndLabel");
+  if (!start) { endEl.value = ""; lbl.textContent = "—"; return; }
+  const [h, m] = start.split(":").map(Number);
+  const t = h * 60 + m + mins;
+  const hh = String(Math.floor(t / 60) % 24).padStart(2, "0");
+  const mm = String(t % 60).padStart(2, "0");
+  endEl.value = hh + ":" + mm;
+  lbl.textContent = to12h(endEl.value);
+}
+
+function mtgPickSlot(start) {
   document.getElementById('mtgStart').value = start;
-  document.getElementById('mtgEnd').value = end;
+  mtgSyncEnd();
 }
 
 async function saveMeeting() {
@@ -9432,6 +9484,163 @@ async function openWeekTasks(from, to) {
       <td style="white-space:nowrap">${dtEscape(t.client_name || '—')}</td>
       <td><span class="status-badge ${t.status}">${t.status}</span></td>
     </tr>`).join('')}</tbody></table></div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// SCHEDULER — month calendar with a day timeline beside it
+// ══════════════════════════════════════════════════════
+let _schMonth = null;          // first of the displayed month
+let _schDay = null;            // YYYY-MM-DD selected in the day panel
+let _schMeetings = [];
+let _schTasks = [];
+
+const SCH_ISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function schShift(months) {
+  _schMonth = new Date(_schMonth.getFullYear(), _schMonth.getMonth() + months, 1);
+  loadScheduler();
+}
+function schToday() {
+  const n = new Date();
+  _schMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+  _schDay = SCH_ISO(n);
+  loadScheduler();
+}
+
+async function loadScheduler() {
+  if (!_schMonth) {
+    const n = new Date();
+    _schMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+    _schDay = SCH_ISO(n);
+  }
+  // Fetch the whole visible grid, not just the month — the grid spills into the
+  // neighbouring months and those cells should not look empty.
+  const first = new Date(_schMonth);
+  const gridStart = new Date(first);
+  gridStart.setDate(1 - first.getDay());
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridStart.getDate() + 41);
+
+  const from = SCH_ISO(gridStart), to = SCH_ISO(gridEnd);
+  const [mtg, del, chl] = await Promise.all([
+    api(`/api/meetings?from=${from}&to=${to}`),
+    api('/api/tasks?type=delegation'),
+    api('/api/tasks?type=checklist'),
+  ]);
+  _schMeetings = Array.isArray(mtg) ? mtg : [];
+
+  // Tasks arrive grouped for admins and flat for everyone else.
+  const flat = d => {
+    if (!d || d.error) return [];
+    if (Array.isArray(d.grouped)) return d.grouped.flatMap(g => g.tasks || []);
+    return d.tasks || [];
+  };
+  _schTasks = [...flat(del), ...flat(chl)].filter(t => t.due_date >= from && t.due_date <= to);
+
+  renderScheduler(gridStart);
+}
+
+function renderScheduler(gridStart) {
+  const box = document.getElementById('schCalView');
+  const monthLabel = _schMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const todayIso = SCH_ISO(new Date());
+  const thisMonth = _schMonth.getMonth();
+
+  const byDay = {};
+  for (const m of _schMeetings) (byDay[m.meeting_date] = byDay[m.meeting_date] || { m: [], t: [] }).m.push(m);
+  for (const t of _schTasks) (byDay[t.due_date] = byDay[t.due_date] || { m: [], t: [] }).t.push(t);
+
+  let cells = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    const iso = SCH_ISO(d);
+    const outside = d.getMonth() !== thisMonth;
+    const bucket = byDay[iso] || { m: [], t: [] };
+    const isSunday = d.getDay() === 0;
+
+    const chips = [
+      ...bucket.m.slice(0, 2).map(m =>
+        `<div style="font-size:10px;background:var(--brand-tint);color:var(--brand-deep);border-left:2px solid var(--brand-mid);padding:2px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${m.status !== 'scheduled' ? 'text-decoration:line-through;opacity:.6' : ''}">${to12h(m.start_time)} ${dtEscape(m.title)}</div>`),
+      ...bucket.t.slice(0, 1).map(t =>
+        `<div style="font-size:10px;background:#fff7ed;color:#b45309;border-left:2px solid #f59e0b;padding:2px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">📋 ${dtEscape(t.description || '')}</div>`),
+    ].join('');
+    const extra = (bucket.m.length + bucket.t.length) - (Math.min(bucket.m.length, 2) + Math.min(bucket.t.length, 1));
+
+    cells += `<div onclick="schPickDay('${iso}')" style="min-height:96px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;cursor:pointer;background:${_schDay === iso ? 'var(--brand-tint)' : outside ? 'var(--muted)' : 'var(--card)'};overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:12px;font-weight:${iso === todayIso ? '700' : '500'};color:${outside ? 'var(--faint)' : 'var(--foreground)'};${iso === todayIso ? 'background:var(--brand-mid);color:#fff;border-radius:99px;width:20px;height:20px;display:inline-grid;place-items:center' : ''}">${d.getDate()}</span>
+        ${isSunday ? '<span style="font-size:9px;color:#dc2626;font-weight:600">Off</span>' : ''}
+      </div>
+      ${chips}
+      ${extra > 0 ? `<div style="font-size:10px;color:var(--muted-foreground)">+ ${extra} more</div>` : ''}
+    </div>`;
+  }
+
+  const dayMeetings = _schMeetings.filter(m => m.meeting_date === _schDay)
+    .sort((a, b) => a.start_time < b.start_time ? -1 : 1);
+  const dayTasks = _schTasks.filter(t => t.due_date === _schDay);
+
+  // Hourly rail across business hours, with each meeting placed on its start hour.
+  let timeline = '';
+  // Same window as the availability grid: 8:30 AM start, last slot ends 7 PM.
+  for (let h = 8; h <= 18; h++) {
+    const hits = dayMeetings.filter(m => Number(m.start_time.split(':')[0]) === h);
+    timeline += `<div style="display:flex;gap:8px;border-top:1px dashed var(--border);min-height:38px;padding:4px 0">
+      <span style="width:58px;flex-shrink:0;font-size:11px;color:var(--muted-foreground)">${to12h(String(h).padStart(2, '0') + ':00')}</span>
+      <div style="flex:1">${hits.map(m => `<div onclick="openMeetingModal(${m.id})" style="cursor:pointer;font-size:11px;background:var(--brand-tint);border-left:3px solid var(--brand-mid);border-radius:4px;padding:4px 7px;margin-bottom:3px">
+        <b>${to12h(m.start_time)}</b> ${dtEscape(m.title)}</div>`).join('')}</div>
+    </div>`;
+  }
+
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-outline btn-sm" onclick="schToday()">Today</button>
+        <button class="btn btn-outline btn-sm" onclick="schShift(-1)">←</button>
+        <button class="btn btn-outline btn-sm" onclick="schShift(1)">→</button>
+        <span style="font-size:17px;font-weight:700;letter-spacing:-.02em">${monthLabel}</span>
+      </div>
+      <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,2.4fr) minmax(260px,1fr);gap:14px;align-items:start">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);overflow:hidden">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr)">
+          ${['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d =>
+            `<div style="padding:8px;text-align:center;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted-foreground);background:var(--muted);border-bottom:1px solid var(--border)">${d}</div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr)">${cells}</div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);padding:14px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:2px">Day · ${fmtDate(_schDay)}</div>
+        <div style="font-size:11px;color:var(--muted-foreground);margin-bottom:10px">${dayMeetings.length} meeting${dayMeetings.length === 1 ? '' : 's'} · ${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} due</div>
+        ${dayMeetings.length ? timeline : '<div class="empty" style="font-size:12px">No meetings on this date</div>'}
+        ${dayTasks.length ? `<div style="margin-top:14px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:6px">Tasks due</div>
+          ${dayTasks.map(t => `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${dtEscape(t.description || '')}<span style="color:var(--faint)"> · ${dtEscape(t.assignedToName || '')}</span></div>`).join('')}
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+// Calendar and list are two views of the same meetings; the list loads lazily.
+function schedulerTab(which, el) {
+  document.querySelectorAll('#page-scheduler .tab-group .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const cal = which === 'calendar';
+  document.getElementById('schCalView').style.display = cal ? 'block' : 'none';
+  document.getElementById('schListView').style.display = cal ? 'none' : 'block';
+  if (!cal) loadMeetings();
+}
+
+function schPickDay(iso) {
+  _schDay = iso;
+  // Opening a day should also offer to book it.
+  const dt = document.getElementById('mtgDate');
+  if (dt) dt.value = iso;
+  renderScheduler(new Date(new Date(_schMonth).setDate(1 - _schMonth.getDay())));
 }
 
 init();

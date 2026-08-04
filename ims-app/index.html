@@ -216,9 +216,6 @@
   .tab-panel { display:none; }
   .tab-panel.active { display:block; animation:fadeIn .25s ease; }
 
-  .theme-toggle { display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:5px 14px 5px 8px; cursor:pointer; font-family:var(--font); font-size:12px; font-weight:600; color:var(--muted); transition:all .2s; user-select:none; }
-  .theme-toggle:hover { border-color:var(--accent); color:var(--text); }
-  .theme-toggle .toggle-icon { width:26px; height:26px; border-radius:50%; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:14px; }
 
   .size-pills { display:flex; flex-wrap:wrap; gap:4px; }
   .size-pill  { background:var(--blue-bg); color:var(--accent2); border:1px solid rgba(37,99,235,0.2); border-radius:6px; font-size:10px; font-family:var(--font); font-weight:700; padding:2px 7px; white-space:nowrap; }
@@ -338,10 +335,6 @@
   <div class="header-right">
     <div class="today-badge" id="buildBadge" style="opacity:0.75;border-color:var(--accent);color:var(--accent);">build v7 · clean-ui</div>
     <div class="today-badge" id="todayBadge">—</div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">
-      <div class="toggle-icon" id="themeIcon">☀️</div>
-      <span id="themeLabel">Light</span>
-    </button>
     <button class="refresh-btn" id="refreshBtn" onclick="loadCurrentTab()">⟳ Refresh</button>
     <button class="refresh-btn" id="exportAllBtn" onclick="exportAllCSV()" style="border-color:var(--accent2);background:var(--blue-bg);color:var(--accent2);" title="Download every tab as CSV files inside one ZIP (uses the filters currently applied)">⬇ Export All (ZIP)</button>
   </div>
@@ -771,7 +764,6 @@
   let rankData      = null;
   let topData       = null;
   let currentTab    = 'dashboard';
-  let isDark        = false;
   let _modalSku = '', _modalProductName = '';
   let currentTopView = 'cards';
 
@@ -780,12 +772,6 @@
   let rankStatusFilter  = 'all';
   let topStatusFilter   = 'all';
 
-  function toggleTheme() {
-    isDark = !isDark;
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : '');
-    document.getElementById('themeIcon').textContent  = isDark ? '🌙' : '☀️';
-    document.getElementById('themeLabel').textContent = isDark ? 'Dark' : 'Light';
-  }
 
   function todayStr()    { return new Date().toISOString().split('T')[0]; }
   function daysAgoStr(n) { const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().split('T')[0]; }
