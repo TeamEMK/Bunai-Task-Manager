@@ -1,2943 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
-<title>Bunai Task Manager</title>
-<!-- Icons are cropped-and-resized from the logo, not the raw 718px file: the
-     source has ~28% blank margin that would swallow a 16px tab icon.
-     favicon.ico is listed first because browsers request /favicon.ico before
-     they parse these tags. -->
-<link rel="icon" href="/favicon.ico" sizes="any"/>
-<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png"/>
-<link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png"/>
-<!-- ── PWA / iPhone Add-to-Home-Screen ── -->
-<link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Task Manager"/>
-<meta name="mobile-web-app-capable" content="yes"/>
-<meta name="application-name" content="Task Manager"/>
-<meta name="theme-color" content="#F8AFB1"/>
-<link rel="manifest" href="/manifest.json"/>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<style>
-/* ══════════════════════════════════════
-   DESIGN TOKENS
-   Every surface, border and text colour resolves from here — nothing in the
-   app hardcodes a neutral any more. Neutrals are warm (stone, not slate):
-   a cool blue-grey fights the pink brand, a warm grey sits under it.
-══════════════════════════════════════ */
-:root{
-  /* surfaces */
-  --background:#F5F4F1;        /* page — deep enough that white cards read as raised */
-  --card:#FFFFFF;              /* raised surface */
-  --muted:#F5F5F4;             /* subtle fill, hover, table head */
-
-  /* text */
-  --foreground:#1B1B1B;        /* brand ink */
-  --muted-foreground:#78716C;  /* secondary   — 5.4:1 on card */
-  --faint:#A8A29E;             /* labels/meta — 2.9:1, large/uppercase only */
-
-  /* lines + focus */
-  --border:#E7E5E4;
-  --ring:#D9636A;
-
-  /* Sidebar is the one dark surface — it's the logo's own ink, which is what
-     separates the rail from the workspace and lets the pink read as an accent.
-     Dark needs its own scale: the light --muted-foreground would vanish here. */
-  --sidebar:#1B1B1B;
-  --sidebar-foreground:#FAFAF9;              /* active/hover label */
-  --sidebar-muted:#A8A29E;                   /* resting label — 6.8:1 on ink */
-  --sidebar-border:rgba(255,255,255,.09);
-  --sidebar-hover:rgba(255,255,255,.07);
-  --sidebar-active:rgba(248,175,177,.14);    /* brand wash — pink text on it = 9.6:1 */
-  --sidebar-danger:#FCA5A5;                  /* logout — 9.1:1 on ink */
-
-  /* Bunai brand — pink is a SURFACE, ink rides on top.
-     mid/deep are the same hue (358°) darkened so they stay readable on white. */
-  --brand:#F8AFB1;             /* fills            — ink on it = 9.6:1 */
-  --brand-soft:#FBC9CA;        /* gradient partner */
-  --brand-mid:#D9636A;         /* borders, rings   — 3.5:1 on white */
-  --brand-deep:#A63F43;        /* accent text      — 6.2:1 on white */
-  --brand-tint:#FFF3F3;        /* lightest wash */
-  --brand-tint-2:#FBE4E5;      /* tint borders */
-
-  /* shape */
-  --radius-sm:8px;
-  --radius:12px;
-  --radius-lg:16px;
-  --radius-full:9999px;
-
-  /* elevation — tinted with the ink colour, never pure black */
-  --shadow-xs:0 1px 2px rgba(27,27,27,.04);
-  --shadow-sm:0 1px 3px rgba(27,27,27,.06),0 1px 2px rgba(27,27,27,.03);
-  --shadow-md:0 4px 14px rgba(27,27,27,.07);
-  --shadow-lg:0 12px 40px rgba(27,27,27,.10);
-
-  /* type */
-  --font-sans:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
-  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,monospace;
-  /* Script face for the wordmark only — echoes the handwritten logo. */
-  --font-script:'Dancing Script','Segoe Script','Brush Script MT',cursive;
-
-  /* layout */
-  --page-max:1600px;
-  --rail:60px;         /* sidebar collapsed */
-  --rail-open:230px;   /* sidebar expanded — .main margin tracks this */
-}
-
-*{margin:0;padding:0;box-sizing:border-box;}
-body{
-  font-family:var(--font-sans);
-  background:var(--background);
-  color:var(--foreground);
-  min-height:100vh;
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-}
-/* Tabular figures everywhere numbers are compared down a column. */
-.number,.ov-card .number,.dr-stat-value,.cm-detail-val{font-variant-numeric:tabular-nums;}
-
-/* ══════════════════════════════════════
-   SIDEBAR - Collapsed by default
-══════════════════════════════════════ */
-.sidebar{
-  width:var(--rail);background:var(--sidebar);position:fixed;top:0;left:0;bottom:0;
-  z-index:100;display:flex;flex-direction:column;
-  transition:width .25s ease;overflow:hidden;
-}
-.sidebar:hover{ width:var(--rail-open); box-shadow:var(--shadow-md); }
-
-.sidebar-logo{
-  padding:12px;border-bottom:1px solid var(--sidebar-border);
-  display:flex;align-items:center;gap:8px;min-height:60px;
-  white-space:nowrap;overflow:hidden;
-}
-/* The lockup sits on its own white badge so the logo appears exactly as it is
-   drawn in the brand file, instead of a knocked-out version on the dark rail. */
-.sidebar-logo > .logo-plate{
-  display:flex;align-items:center;
-  background:#fff;border-radius:var(--radius-sm);
-  padding:5px;overflow:hidden;
-}
-.logo-icon{
-  width:34px;height:34px;background:linear-gradient(135deg,var(--brand-soft),var(--brand));
-  border-radius:8px;display:grid;place-items:center;color:var(--foreground);
-  font-weight:700;font-size:15px;flex-shrink:0;
-}
-/* Wordmark beside the logo — the brand lettering itself, as an image. A script
-   webfont only approximates this hand-drawn mark, so the file is the mark.
-   Height-driven, width follows the source's 169x96 aspect. */
-.logo-wordmark{
-  height:30px;width:auto;display:block;flex-shrink:0;
-  opacity:0;transition:opacity .2s .1s;
-}
-/* Text fallback if the image fails to load — script face keeps it in family. */
-.logo-text{
-  font-family:var(--font-script);
-  font-size:26px;font-weight:700;line-height:1.15;
-  color:var(--sidebar-foreground);
-  opacity:0;transition:opacity .2s .1s;white-space:nowrap;
-  letter-spacing:0;padding-bottom:3px;
-}
-.sidebar:hover .logo-text,
-.sidebar:hover .logo-wordmark{opacity:1;}
-/* White logo inside the app. The Bunai mark is a circle, not a wide wordmark,
-   so it stays a fixed square — widening it would only pad empty space, and
-   growing it to fill the expanded rail would blow out the 60px logo row.
-   The wordmark beside it carries the name once the sidebar opens. */
-.sidebar-logo-img{
-  width:26px;height:26px;object-fit:contain;flex-shrink:0;display:block;
-  transition:width .25s ease,height .25s ease;
-}
-.sidebar:hover .sidebar-logo-img{ width:32px;height:32px; }
-
-.nav{padding:10px 8px;flex:1;overflow-y:auto;overflow-x:hidden;}
-.nav::-webkit-scrollbar{width:3px;}
-.nav::-webkit-scrollbar-track{background:transparent;}
-.nav::-webkit-scrollbar-thumb{background:var(--sidebar-border);border-radius:3px;}
-.nav::-webkit-scrollbar-thumb:hover{background:var(--sidebar-muted);}
-.nav-item{
-  position:relative;
-  display:flex;align-items:center;gap:10px;
-  padding:10px 11px;border-radius:var(--radius-sm);cursor:pointer;
-  font-size:13px;font-weight:500;color:var(--sidebar-muted);
-  transition:background .15s,color .15s;margin-bottom:2px;user-select:none;
-  white-space:nowrap;overflow:hidden;
-}
-.nav-item svg{width:18px;height:18px;flex-shrink:0;}
-.nav-label-text{opacity:0;transition:opacity .2s .1s;}
-.sidebar:hover .nav-label-text{opacity:1;}
-.nav-item:hover{background:var(--sidebar-hover);color:var(--sidebar-foreground);}
-.nav-item.active{background:var(--sidebar-active);color:var(--brand);font-weight:600;}
-/* Collapsed to a 60px rail the label is hidden, so the active row needs a mark
-   that survives without text — a brand bar pinned to the left edge. */
-.nav-item.active::before{
-  content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
-  width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--brand);
-}
-.nav-divider{border-top:1px solid var(--sidebar-border);margin:8px 0;}
-
-.sidebar-user{
-  padding:12px;border-top:1px solid var(--sidebar-border);
-  display:flex;align-items:center;gap:10px;overflow:hidden;white-space:nowrap;
-}
-.su-avatar{
-  width:32px;height:32px;border-radius:50%;
-  background:linear-gradient(135deg,var(--brand-soft),var(--brand));
-  display:grid;place-items:center;font-size:11px;font-weight:700;
-  color:var(--foreground);flex-shrink:0;
-}
-.su-info{opacity:0;transition:opacity .2s .1s;}
-.sidebar:hover .su-info{opacity:1;}
-.su-name{font-size:12px;font-weight:600;color:var(--sidebar-foreground);}
-.su-role{font-size:11px;color:var(--sidebar-muted);}
-
-.sidebar-bottom{padding:10px 8px;overflow:hidden;border-top:1px solid var(--sidebar-border);}
-.logout-btn{
-  display:flex;align-items:center;gap:10px;padding:10px 11px;
-  border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;
-  color:var(--sidebar-danger);transition:background .15s;width:100%;white-space:nowrap;
-  background:none;border:none;font-family:var(--font-sans);
-}
-.logout-btn:hover{background:rgba(252,165,165,.12);}
-.logout-label{opacity:0;transition:opacity .2s .1s;}
-.sidebar:hover .logout-label{opacity:1;}
-
-/* ══════════════════════════════════════
-   MAIN
-══════════════════════════════════════ */
-.main{margin-left:var(--rail);min-height:100vh;transition:margin-left .25s ease;}
-/* Sidebar expands -> content slides across instead of being covered. Needs the
-   sibling combinator because .sidebar is position:fixed and can't push on its
-   own; both transitions share the same .25s so they move as one. */
-.sidebar:hover ~ .main{ margin-left:var(--rail-open); }
-/* Translucent + blurred so content scrolling underneath stays faintly visible. */
-.topbar{
-  background:color-mix(in srgb,var(--card) 80%,transparent);
-  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
-  border-bottom:1px solid var(--border);
-  padding:0 24px;height:60px;display:flex;align-items:center;
-  justify-content:space-between;position:sticky;top:0;z-index:90;
-}
-/* Browsers without color-mix still get a solid bar rather than a transparent one. */
-@supports not (background:color-mix(in srgb,#fff 80%,transparent)){
-  .topbar{background:var(--card);}
-}
-.topbar-title{font-size:18px;font-weight:700;color:var(--foreground);letter-spacing:-.02em;}
-.topbar-right{display:flex;align-items:center;gap:8px;}
-
-/* ── Buttons ──
-   Shared shape + focus ring; each variant only sets its colours. The visible
-   focus ring is keyboard-only (:focus-visible) so mouse clicks stay clean. */
-.btn{
-  padding:8px 14px;border-radius:var(--radius-sm);
-  font-size:13px;font-weight:600;font-family:var(--font-sans);
-  cursor:pointer;border:1px solid transparent;
-  display:inline-flex;align-items:center;gap:6px;
-  transition:background .15s,border-color .15s,color .15s,box-shadow .15s;
-  outline:none;
-}
-.btn:focus-visible{box-shadow:0 0 0 3px rgba(217,99,106,.35);}
-.btn:active{transform:translateY(1px);}
-.btn-primary{background:var(--brand);color:var(--foreground);}
-.btn-primary:hover{background:var(--brand-mid);color:#fff;}
-.btn-outline{background:var(--card);color:var(--foreground);border-color:var(--border);}
-.btn-outline:hover{background:var(--muted);border-color:var(--faint);}
-.btn-danger{background:#ef4444;color:#fff;}.btn-danger:hover{background:#dc2626;}
-.btn-green{background:#10b981;color:#fff;}.btn-green:hover{background:#059669;}
-.btn-yellow{background:#f59e0b;color:#fff;}.btn-yellow:hover{background:#d97706;}
-.btn-sm{padding:5px 10px;font-size:12px;}
-
-/* ══════════════════════════════════════
-   PAGES
-══════════════════════════════════════ */
-/* Content is capped and centred so the app doesn't stretch edge-to-edge on
-   wide monitors — tables become unreadable past ~1600px. */
-.page{display:none;padding:24px;max-width:var(--page-max);margin:0 auto;width:100%;}
-.page.active{display:block;}
-.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
-/* The page title lived in these header rows and now comes from the topbar only.
-   space-between with a single child would slide the remaining control to the
-   left, so a lone child gets pushed back to where it was. */
-.page-header > :only-child,
-.dash-topbar > :only-child,
-.cp-header   > :only-child,
-.dr-header   > :only-child,
-.lv-header   > :only-child{ margin-left:auto; }
-.page-header h2{font-size:20px;font-weight:700;letter-spacing:-.02em;}
-
-/* ══════════════════════════════════════
-   DASHBOARD
-══════════════════════════════════════ */
-.dash-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
-.dash-topbar h2{font-size:20px;font-weight:700;}
-.dash-topbar-btns{display:flex;gap:8px;}
-
-.overview-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;}
-.ov-card{
-  background:var(--card);border-radius:var(--radius);padding:20px 22px;
-  border:1px solid var(--border);box-shadow:var(--shadow-xs);
-  transition:box-shadow .18s,border-color .18s,background .18s;
-  cursor:pointer;user-select:none;position:relative;outline:none;
-}
-.ov-card:hover{box-shadow:var(--shadow-sm);border-color:var(--brand-tint-2);}
-.ov-card:focus-visible{box-shadow:0 0 0 3px rgba(217,99,106,.35);border-color:var(--brand-mid);}
-/* The selected filter reads as pressed, not merely hovered. */
-.ov-card.is-active{border-color:var(--brand-mid);background:var(--brand-tint);box-shadow:var(--shadow-sm);}
-.ov-card.is-active::after{
-  content:'';position:absolute;left:0;top:14px;bottom:14px;width:3px;
-  border-radius:0 3px 3px 0;background:var(--brand-mid);
-}
-.ov-card.total .number{color:var(--foreground);}
-.ov-card .label{
-  font-size:11px;color:var(--muted-foreground);margin-bottom:8px;
-  text-transform:uppercase;letter-spacing:.06em;font-weight:600;
-}
-.ov-card .number{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1.1;}
-.ov-card.pending .number{color:#ef4444;}
-.ov-card.revised .number{color:#f59e0b;}
-.ov-card.completed .number{color:#10b981;}
-/* Upcoming is work that is not late yet — violet keeps it clearly apart from
-   the red/amber "needs attention" pair and the green "done". */
-.ov-card.upcoming .number{color:#7c3aed;}
-
-.dash-bottom{display:grid;grid-template-columns:1fr 320px;gap:18px;}
-.task-table-card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden;}
-.card-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-.card-head-title{font-size:14px;font-weight:700;}
-.tab-group{display:flex;gap:4px;background:var(--muted);padding:3px;border-radius:var(--radius-full);border:1px solid var(--border);}
-/* Pill segmented control, same shape language as the dashboard's top nav. */
-.tab{padding:5px 12px;border-radius:var(--radius-full);font-size:12px;font-weight:600;cursor:pointer;color:var(--muted-foreground);transition:background .15s,color .15s;}
-.tab:hover{color:var(--foreground);}
-.tab.active{background:var(--card);color:var(--brand-deep);box-shadow:var(--shadow-sm);}
-.tab.tab-action{color:var(--brand-deep);background:var(--brand-tint);border:1px dashed var(--brand-tint-2);}
-.tab.tab-action:hover{background:var(--brand-tint-2);border-color:var(--brand-mid);}
-
-table{width:100%;border-collapse:collapse;}
-thead th{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:11px 14px;text-align:left;border-bottom:1px solid var(--border);background:var(--muted);}
-tbody tr{transition:background .12s;}
-tbody tr:hover{background:var(--brand-tint);}
-tbody td{padding:11px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
-tbody tr:last-child td{border-bottom:none;}
-
-.status-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;display:inline-block;}
-.status-badge.pending{background:#fef2f2;color:#dc2626;}
-.status-badge.completed{background:#f0fdf4;color:#16a34a;}
-.status-badge.revised{background:#fffbeb;color:#d97706;}
-
-.chart-card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:18px;}
-.chart-card h3{font-size:14px;font-weight:700;margin-bottom:14px;}
-.chart-wrap{position:relative;height:200px;}
-
-/* ══════════════════════════════════════
-   ALL TASKS
-══════════════════════════════════════ */
-.user-task-block{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);margin-bottom:10px;overflow:hidden;}
-.utb-header{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;transition:background .15s;}
-.utb-header:hover{background:var(--muted);}
-.utb-name{font-size:14px;font-weight:700;}
-.utb-count{font-size:13px;color:var(--muted-foreground);}
-.utb-actions{display:flex;gap:6px;}
-.utb-body{border-top:1px solid var(--border);display:none;}
-.utb-body.open{display:block;}
-
-/* ══════════════════════════════════════
-   USERS
-══════════════════════════════════════ */
-.users-grid{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden;}
-
-/* ══════════════════════════════════════
-   PROFILE
-══════════════════════════════════════ */
-.profile-card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:28px;max-width:500px;}
-.profile-avatar-big{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--brand-soft),var(--brand));display:grid;place-items:center;font-size:22px;font-weight:700;color:var(--foreground);margin-bottom:18px;}
-.section-title{font-size:14px;font-weight:700;margin-bottom:14px;padding-top:8px;border-top:1px solid var(--border);margin-top:4px;}
-
-/* ══════════════════════════════════════
-   MODALS
-══════════════════════════════════════ */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:none;align-items:center;justify-content:center;}
-.modal-overlay.open{display:flex;}
-.modal{background:var(--card);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-lg);border:1px solid var(--border);position:relative;}
-
-/* ── Dialog close (×) ──
-   The bar is sticky and zero-height: .modal is the scroll container, so a
-   plain absolute button would scroll out of sight on long dialogs. Zero height
-   keeps it out of the layout flow so nothing below shifts down. */
-.modal-close-bar{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;z-index:3;}
-.modal-close{
-  display:grid;place-items:center;width:30px;height:30px;padding:0;
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
-  color:var(--muted-foreground);cursor:pointer;
-  transition:background .15s,color .15s,border-color .15s;
-}
-.modal-close:hover{background:var(--muted);color:var(--foreground);border-color:var(--faint);}
-.modal-close:focus-visible{outline:2px solid var(--ring);outline-offset:1px;}
-.modal-close svg{width:16px;height:16px;display:block;}
-/* Titles sit on the same line as the button, so keep them clear of it. */
-.modal h3{padding-right:38px;}
-
-/* ── Password reveal ──
-   [type] bumps specificity above .form-group input so the right padding that
-   keeps text off the eye icon actually applies. */
-.pw-wrap{position:relative;display:block;}
-.pw-wrap input[type]{padding-right:42px;}
-.pw-toggle{
-  position:absolute;right:5px;top:50%;transform:translateY(-50%);
-  display:grid;place-items:center;width:30px;height:30px;padding:0;
-  background:none;border:none;border-radius:var(--radius-sm);
-  color:var(--faint);cursor:pointer;transition:color .15s,background .15s;
-}
-.pw-toggle:hover{color:var(--brand-deep);background:var(--brand-tint);}
-.pw-toggle:focus-visible{outline:2px solid var(--ring);outline-offset:1px;color:var(--brand-deep);}
-.pw-toggle svg{width:17px;height:17px;display:block;}
-/* Open eye = "hidden, click to reveal". They swap on toggle. */
-.pw-toggle .pw-icon-off{display:none;}
-.pw-toggle.is-on .pw-icon-on{display:none;}
-.pw-toggle.is-on .pw-icon-off{display:block;}
-.modal h3{font-size:17px;font-weight:700;margin-bottom:18px;letter-spacing:-.02em;}
-.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:14px;border-top:1px solid var(--border);}
-
-.form-group{margin-bottom:15px;}
-.form-group label{font-size:11px;font-weight:600;color:var(--muted-foreground);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;}
-.form-group input,.form-group select,.form-group textarea{
-  width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);
-  font-size:13px;font-family:var(--font-sans);outline:none;
-  transition:border-color .15s,box-shadow .15s;color:var(--foreground);background:var(--card);
-}
-.form-group input::placeholder,.form-group textarea::placeholder{color:var(--faint);}
-.form-group input:focus,.form-group select:focus,.form-group textarea:focus{
-  border-color:var(--brand-mid);box-shadow:0 0 0 3px rgba(217,99,106,.18);
-}
-.form-group textarea{resize:vertical;min-height:70px;}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-
-/* ══════════════════════════════════════
-   MISC
-══════════════════════════════════════ */
-.alert{padding:9px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none;}
-.alert.success{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;}
-.alert.error{background:#fef2f2;border:1px solid #fecaca;color:#dc2626;}
-.empty{text-align:center;padding:36px;color:var(--faint);font-size:13px;}
-
-.action-btn{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:none;font-family:var(--font-sans);transition:all .2s;}
-.action-btn.done{background:#dcfce7;color:#16a34a;}.action-btn.done:hover{background:#bbf7d0;}
-.action-btn.revise{background:#fffbeb;color:#d97706;}.action-btn.revise:hover{background:#fef3c7;}
-.action-btn.edit{background:#eff6ff;color:#1d4ed8;}.action-btn.edit:hover{background:#dbeafe;}
-.action-btn.delete{background:#fef2f2;color:#dc2626;}.action-btn.delete:hover{background:#fecaca;}
-
-.role-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;}
-.role-badge.admin{background:#eff6ff;color:#1d4ed8;}
-.role-badge.pc{background:#fdf4ff;color:#7c3aed;}
-.role-badge.pc{background:#fdf4ff;color:#7c3aed;}
-.role-badge.hod{background:#fdf4ff;color:#7e22ce;}
-.role-badge.user{background:#f0fdf4;color:#16a34a;}
-
-.priority-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;text-transform:uppercase;}
-.priority-badge.low{background:#f0fdf4;color:#16a34a;}
-.priority-badge.medium{background:#eff6ff;color:#1d4ed8;}
-.priority-badge.high{background:#fffbeb;color:#d97706;}
-.priority-badge.urgent{background:#fef2f2;color:#dc2626;}
-
-/* Holiday list */
-.holiday-item{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
-.holiday-item:last-child{border-bottom:none;}
-
-/* MIS Report */
-.mis-header{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
-.mis-table-wrap{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden;}
-.mis-score-bar{height:6px;border-radius:3px;background:var(--border);margin-top:4px;overflow:hidden;}
-.mis-score-fill{height:100%;border-radius:3px;transition:width .5s ease;}
-.score-positive{color:#16a34a;font-weight:700;}
-.score-negative{color:#dc2626;font-weight:700;}
-.score-zero{color:var(--muted-foreground);font-weight:700;}
-
-/* Comments */
-.comment-item{padding:10px 0;border-bottom:1px solid var(--border);}
-.comment-item:last-child{border-bottom:none;}
-.comment-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
-.comment-author{font-size:12px;font-weight:600;color:var(--foreground);}
-.comment-time{font-size:11px;color:var(--faint);}
-.comment-text{font-size:13px;color:var(--foreground);}
-.comment-empty{text-align:center;padding:20px;color:var(--faint);font-size:13px;}
-
-/* FMS */
-.fms-name-tab{padding:8px 16px;border-radius:20px;background:var(--card);border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;color:var(--foreground);transition:all .2s;}
-.fms-name-tab.active{background:var(--brand-deep);color:#fff;border-color:var(--brand-deep);}
-.fms-name-tab:hover:not(.active){border-color:var(--brand-deep);color:var(--brand-deep);}
-.fms-step-tab{padding:6px 18px;border-radius:8px;background:var(--muted);border:1.5px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;color:var(--foreground);transition:all .2s;white-space:nowrap;}
-.fms-step-tab.active{background:var(--brand-deep);color:#fff;border-color:var(--brand-deep);}
-.fms-step-box{background:var(--muted);border:1.5px solid var(--border);border-radius:12px;padding:16px;position:relative;transition:box-shadow .2s;}
-.fms-step-box.drag-over{border-color:var(--brand-deep);box-shadow:0 0 0 3px rgba(26,86,219,.15);}
-.fms-step-box.selected{border-color:#ef4444;background:#fff5f5;}
-.fms-step-num{font-size:11px;font-weight:700;color:var(--brand-deep);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
-.multi-select-wrap{position:relative;}
-.multi-select-dropdown{position:absolute;top:calc(100% + 2px);left:0;right:0;background:var(--card);border:1.5px solid var(--border);border-radius:8px;max-height:180px;overflow-y:auto;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.12);display:none;}
-.multi-select-dropdown.open{display:block;}
-.multi-select-item{padding:8px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:background .15s;}
-.multi-select-item:hover{background:#f0f4ff;}
-.multi-select-item input[type=checkbox]{cursor:pointer;width:14px;height:14px;accent-color:var(--brand-deep);}
-.selected-tags{display:flex;flex-wrap:wrap;gap:4px;min-height:38px;padding:5px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;background:var(--card);align-items:center;transition:border .2s;}
-.selected-tags:hover{border-color:var(--brand-deep);}
-.tag-badge{background:#eff6ff;color:#1d4ed8;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;}
-.extra-row-item{display:flex;align-items:center;gap:8px;margin-top:8px;}
-.drag-handle{cursor:grab;color:var(--faint);font-size:16px;padding:0 4px;}
-.drag-handle:active{cursor:grabbing;}
-
-/* FMS Tasks Train */
-/* Deliberately the one dark surface in the app — the train reads better against
-   ink than against the page. Uses the brand ink, not the old slate. */
-.fms-train-track{background:var(--foreground);border-radius:var(--radius-lg);padding:24px 0 36px;overflow:hidden;position:relative;margin-bottom:16px;}
-.fms-train-track::before{content:'';position:absolute;bottom:28px;left:0;right:0;height:5px;background:linear-gradient(90deg,var(--foreground) 0%,#475569 20%,var(--foreground) 40%,#475569 60%,var(--foreground) 80%,#475569 100%);border-radius:3px;}
-.fms-train-track::after{content:'';position:absolute;bottom:24px;left:0;right:0;height:12px;background:repeating-linear-gradient(90deg,#334155 0,#334155 30px,transparent 30px,transparent 50px);opacity:.5;}
-.fms-train-scroll{display:flex;align-items:flex-end;gap:6px;padding:0 30px 14px;width:max-content;animation:trainScroll var(--train-dur,18s) linear infinite;}
-.fms-train-scroll:hover{animation-play-state:paused;}
-@keyframes trainScroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.fms-train-engine{flex-shrink:0;background:linear-gradient(135deg,var(--foreground),#334155);border:2px solid var(--brand-mid);border-radius:10px 4px 4px 10px;padding:14px 18px;color:#fff;min-width:80px;text-align:center;font-size:24px;display:flex;flex-direction:column;align-items:center;position:relative;}
-.fms-train-engine::before,.fms-coach::before{content:'⬤';position:absolute;bottom:-14px;left:12px;color:var(--muted-foreground);font-size:9px;}
-.fms-train-engine::after,.fms-coach::after{content:'⬤';position:absolute;bottom:-14px;right:12px;color:var(--muted-foreground);font-size:9px;}
-.fms-coach{flex-shrink:0;border-radius:8px;padding:12px 14px;color:#fff;min-width:160px;max-width:200px;cursor:pointer;position:relative;transition:transform .2s,box-shadow .2s;border:2px solid transparent;display:flex;flex-direction:column;gap:4px;background:#1e3a5f;}
-.fms-coach:hover{transform:translateY(-5px);box-shadow:0 10px 25px rgba(0,0,0,.4);}
-.fms-coach.active{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.3);transform:translateY(-6px);}
-.fms-coach.not-mine{background:var(--foreground);opacity:.55;cursor:not-allowed;pointer-events:none;}
-.fms-coach.mine{background:linear-gradient(135deg,var(--brand-soft),var(--brand));}
-.fms-coach-num{font-size:10px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.5px;}
-.fms-coach-name{font-size:12px;font-weight:700;line-height:1.3;word-break:break-word;}
-.fms-coach-doers{font-size:10px;opacity:.75;margin-top:2px;}
-.fms-coach-connector{width:20px;height:8px;background:#475569;border-radius:2px;flex-shrink:0;align-self:flex-end;margin-bottom:14px;}
-.fms-train-speed{display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--muted);border-radius:0 0 12px 12px;font-size:12px;color:var(--muted-foreground);}
-.fms-train-speed input[type=range]{flex:1;accent-color:var(--brand-deep);}
-.fms-step-rows-table{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden;margin-top:4px;}
-.fms-step-rows-table table th{font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--faint);padding:10px 14px;background:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;}
-.fms-step-rows-table table td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
-.fms-done-btn{background:#10b981;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;font-family:var(--font-sans);}
-.fms-done-btn:hover{background:#059669;transform:translateY(-1px);}
-.fms-status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:#fef9c3;color:#854d0e;}
-
-/* Header select dropdowns in step config */
-.header-select{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card);color:var(--foreground);}
-.header-select:focus{border-color:var(--brand-mid);}
-.multi-select-headers{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;min-height:42px;cursor:text;background:var(--card);}
-.multi-select-headers .hdr-tag{background:#eff6ff;color:#1d4ed8;font-size:11px;padding:3px 8px;border-radius:8px;font-weight:600;display:flex;align-items:center;gap:4px;cursor:pointer;}
-.multi-select-headers .hdr-tag .rm{color:#93c5fd;font-size:10px;margin-left:2px;}
-
-/* Flat tasks table (used in All Tasks page) */
-.flat-tasks-table{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden;}
-.flat-tasks-scroll{overflow:auto;max-height:calc(100vh - 240px);}
-.flat-tasks-scroll thead th{position:sticky;top:0;z-index:2;background:var(--muted);}
-.flat-tasks-scroll thead th:first-child{position:sticky;top:0;left:0;z-index:3;background:var(--muted);}
-.flat-tasks-scroll tbody td:first-child{position:sticky;left:0;background:var(--card);z-index:1;box-shadow:2px 0 4px rgba(0,0,0,.04);}
-.flat-tasks-scroll tbody tr:hover td:first-child{background:var(--muted);}
-@keyframes tasksSlideDown{from{opacity:0;transform:translateY(-14px);}to{opacity:1;transform:translateY(0);}}
-.tasks-slide-in{animation:tasksSlideDown .22s ease both;}
-.bulk-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
-.file-row{display:flex;align-items:center;gap:8px;margin-top:6px;}
-
-/* ══════════════════════════════════════════════
-   DAILY TASK FORM (orange theme, matches brand)
-   ══════════════════════════════════════════════ */
-.dt-card{background:var(--card);border-radius:18px;padding:30px 32px;box-shadow:0 4px 20px rgba(217,99,106,.08);border:1px solid #FBE4E5;}
-.dt-topbar{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#FFF3F3,#FBD9DB);border-radius:10px;padding:12px 18px;margin-bottom:22px;}
-.dt-time{color:#A63F43;font-weight:600;font-size:13px;font-family:var(--font-mono);}
-.dt-welcome{color:#475569;font-size:14px;}
-.dt-welcome b{color:var(--foreground);}
-.dt-title{font-size:30px;font-weight:800;text-align:center;background:linear-gradient(135deg,#1B1B1B,#A63F43);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:24px;letter-spacing:.5px;font-style:italic;}
-.dt-meta-row{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;margin-bottom:20px;}
-.dt-meta-field{display:flex;align-items:center;gap:10px;}
-.dt-meta-field label{font-size:13px;font-weight:600;color:var(--foreground);}
-.dt-meta-field select,.dt-meta-field input{padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--card);font-family:inherit;color:var(--foreground);min-width:200px;}
-.dt-meta-field select:focus,.dt-meta-field input:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-.dt-meta-field input:disabled{background:#fef3c7;color:#92400e;font-weight:600;}
-.dt-locked{background:#fef3c7;border:1.5px solid #fbbf24;color:#92400e;padding:14px 18px;border-radius:10px;font-size:13px;margin-bottom:18px;font-weight:500;}
-.dt-table-wrap{border-radius:12px;overflow:hidden;border:1px solid #FBE4E5;margin-bottom:18px;}
-.dt-table{width:100%;border-collapse:collapse;}
-.dt-table thead th{background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;padding:14px 12px;font-size:12px;font-weight:700;text-align:left;text-transform:uppercase;letter-spacing:.6px;}
-.dt-table tbody td{padding:10px 8px;border-bottom:1px solid #FBE4E5;background:var(--card);}
-.dt-table tbody tr:last-child td{border-bottom:none;}
-.dt-table tbody tr:hover td{background:#FFF3F3;}
-.dt-table input[type="text"],.dt-table input[type="number"],.dt-table select,.dt-table textarea{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;outline:none;font-family:inherit;background:#fafafa;color:var(--foreground);resize:vertical;}
-.dt-table textarea{min-height:36px;line-height:1.4;}
-.dt-table input:focus,.dt-table select:focus,.dt-table textarea:focus{border-color:#D9636A;background:var(--card);box-shadow:0 0 0 2px rgba(217,99,106,.12);}
-.dt-row-btn{padding:7px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit;width:100%;}
-.dt-btn-dup{background:#10b981;color:#fff;}
-.dt-btn-dup:hover{background:#059669;transform:translateY(-1px);}
-.dt-btn-del{background:#ef4444;color:#fff;}
-.dt-btn-del:hover{background:#dc2626;transform:translateY(-1px);}
-.dt-summary{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:14px 20px;background:linear-gradient(135deg,#FFF3F3,#FBD9DB);border-radius:10px;margin-bottom:20px;}
-.dt-summary span{font-size:14px;font-weight:600;color:#475569;}
-.dt-summary strong{font-size:18px;color:#A63F43;font-weight:800;}
-.dt-actions{display:flex;justify-content:flex-end;gap:12px;}
-.dt-btn{padding:11px 22px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit;letter-spacing:.3px;}
-.dt-btn-add{background:#10b981;color:#fff;box-shadow:0 4px 12px rgba(16,185,129,.25);}
-.dt-btn-add:hover{background:#059669;transform:translateY(-2px);box-shadow:0 6px 16px rgba(16,185,129,.35);}
-.dt-btn-submit{background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;box-shadow:0 4px 14px rgba(217,99,106,.35);}
-.dt-btn-submit:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(217,99,106,.45);}
-.dt-btn-submit:disabled{opacity:.5;cursor:not-allowed;transform:none;}
-.dt-history{margin-top:32px;padding-top:24px;border-top:2px dashed #fef3c7;}
-.dt-history-title{font-size:15px;font-weight:700;color:var(--foreground);margin-bottom:14px;}
-.dt-history-wrap{background:var(--card);border-radius:10px;border:1px solid #FBE4E5;overflow:hidden;}
-.dt-history-day{padding:12px 16px;border-bottom:1px solid #FBE4E5;}
-.dt-history-day:last-child{border-bottom:none;}
-.dt-history-date{font-size:12px;font-weight:700;color:#A63F43;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
-.dt-history-row{display:flex;gap:8px;padding:6px 0;font-size:13px;color:#475569;flex-wrap:wrap;align-items:center;}
-.dt-history-row .pill{background:#fff7ed;color:#A63F43;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;}
-
-/* ══════════════════════════════════════════════
-   CLIENT MASTER
-   ══════════════════════════════════════════════ */
-.cm-card{background:var(--card);border-radius:18px;padding:30px 32px;box-shadow:0 4px 20px rgba(217,99,106,.08);border:1px solid #FBE4E5;}
-.cm-title{font-size:24px;font-weight:700;color:var(--foreground);margin-bottom:6px;}
-.cm-sub{color:var(--muted-foreground);font-size:13px;margin-bottom:22px;}
-.cm-add-row{display:flex;gap:10px;margin-bottom:20px;}
-.cm-add-row input{flex:1;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;outline:none;font-family:inherit;}
-.cm-add-row input:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-.cm-list-wrap{display:flex;flex-direction:column;gap:0;border:1.5px solid #FBE4E5;border-radius:12px;overflow:hidden;margin-top:10px;}
-.cm-client-row{background:#FFF3F3;border-bottom:1px solid #FBE4E5;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background .15s;}
-.cm-client-row:last-child{border-bottom:none;}
-.cm-client-row:hover,.cm-client-row.cm-active{background:#FFF3F3;}
-.cm-client-row.cm-active{border-left:3px solid #D9636A;}
-.cm-client-info{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
-.cm-client-name{font-size:14px;font-weight:600;color:var(--foreground);}
-.cm-client-arrow{font-size:11px;color:var(--faint);transition:transform .2s;}
-.cm-client-row.cm-active .cm-client-arrow{transform:rotate(180deg);}
-.cm-client-del{background:transparent;color:#ef4444;border:1.5px solid #fecaca;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;flex-shrink:0;}
-.cm-client-del:hover{background:#ef4444;color:#fff;border-color:#ef4444;}
-.cm-client-detail{display:none;background:#fffdf5;border-bottom:1px solid #FBE4E5;padding:16px 18px;}
-.cm-detail-inner{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;}
-.cm-detail-total{background:var(--card);border:1.5px solid #fde68a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px;}
-.cm-detail-label{display:block;font-size:11px;color:#92400e;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
-.cm-detail-val{display:block;font-size:26px;font-weight:800;color:#A63F43;}
-.cm-detail-workers{flex:1;min-width:220px;}
-.cm-detail-workers-title{font-size:12px;font-weight:700;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
-.cm-worker-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--card);border:1px solid #FBE4E5;border-radius:8px;margin-bottom:6px;}
-.cm-worker-rank{font-size:18px;width:24px;text-align:center;}
-.cm-worker-name{flex:1;font-size:13px;font-weight:600;color:var(--foreground);}
-.cm-worker-dept{font-size:11px;color:var(--faint);background:var(--muted);border-radius:4px;padding:2px 6px;}
-.cm-worker-hrs{font-size:13px;font-weight:700;color:#A63F43;white-space:nowrap;}
-
-/* ══════════════════════════════════════════════
-   COMPLIANCE TRACKER
-   ══════════════════════════════════════════════ */
-.cp-card{background:var(--card);border-radius:18px;padding:30px 32px;box-shadow:0 4px 20px rgba(217,99,106,.08);border:1px solid #FBE4E5;}
-.cp-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:12px;}
-.cp-title{font-size:24px;font-weight:700;color:var(--foreground);}
-.cp-sub{color:var(--muted-foreground);font-size:13px;margin-bottom:18px;}
-.cp-dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin:0 2px;}
-.cp-dot-yes{background:#10b981;}
-.cp-dot-no{background:#ef4444;}
-.cp-filter-row{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
-.cp-filter-row input,.cp-filter-row select{padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:inherit;}
-.cp-filter-row input{flex:1;min-width:200px;}
-.cp-filter-row input:focus,.cp-filter-row select:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-.cp-grid-wrap{overflow-x:auto;border-radius:12px;border:1px solid #FBE4E5;}
-.cp-grid{width:100%;border-collapse:collapse;font-size:13px;}
-.cp-grid th{background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;padding:12px 10px;font-weight:700;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}
-.cp-grid th:first-child,.cp-grid th:nth-child(2),.cp-grid th:nth-child(3){text-align:left;}
-.cp-grid td{padding:10px;border-bottom:1px solid #FBE4E5;background:var(--card);text-align:center;}
-.cp-grid tr:hover td{background:#FFF3F3;}
-.cp-grid td:first-child{font-weight:600;color:var(--foreground);text-align:left;}
-.cp-grid td:nth-child(2),.cp-grid td:nth-child(3){text-align:left;color:var(--muted-foreground);font-size:12px;}
-.cp-cell-yes{color:#10b981;font-size:18px;font-weight:700;}
-.cp-cell-no{color:#ef4444;font-size:18px;font-weight:700;}
-.cp-cell-off{color:var(--faint);font-size:11px;font-weight:700;background:var(--muted);padding:2px 6px;border-radius:5px;display:inline-block;}
-.cp-cell-holiday{color:#92400e;font-size:11px;font-weight:700;background:#fef3c7;padding:2px 6px;border-radius:5px;display:inline-block;}
-.cp-summary-pill{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;}
-.cp-summary-good{background:#d1fae5;color:#065f46;}
-.cp-summary-bad{background:#fee2e2;color:#991b1b;}
-.cp-summary-meh{background:#fef3c7;color:#92400e;}
-
-/* ══════════════════════════════════════════════
-   DAILY REPORTS (month-wise admin view)
-   ══════════════════════════════════════════════ */
-.dr-card{background:var(--card);border-radius:18px;padding:30px 32px;box-shadow:0 4px 20px rgba(217,99,106,.08);border:1px solid #FBE4E5;}
-.dr-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
-.dr-title{font-size:24px;font-weight:700;color:var(--foreground);}
-.dr-month-picker{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.dr-month-picker label{font-size:13px;font-weight:600;color:#475569;}
-.dr-month-picker input[type="month"]{padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:inherit;background:var(--card);color:var(--foreground);}
-.dr-month-picker input[type="month"]:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-.dr-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px;}
-.dr-stat{background:linear-gradient(135deg,#FFF3F3,#FBD9DB);border-radius:12px;padding:18px 20px;border:1.5px solid #FBE4E5;}
-.dr-stat-label{font-size:11px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;}
-.dr-stat-value{font-size:26px;font-weight:800;color:#A63F43;}
-.dr-stat-sub{font-size:11px;color:var(--muted-foreground);margin-top:4px;}
-.dr-section-title{font-size:14px;font-weight:700;color:var(--foreground);margin:18px 0 10px;padding-bottom:8px;border-bottom:2px dashed #fef3c7;}
-.dr-filter-row{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
-.dr-filter-row input,.dr-filter-row select{padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:inherit;}
-.dr-filter-row input{flex:1;min-width:200px;}
-.dr-filter-row input:focus,.dr-filter-row select:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-.dr-table-wrap{overflow-x:auto;border-radius:12px;border:1px solid #FBE4E5;margin-bottom:18px;max-height:500px;overflow-y:auto;}
-.dr-table{width:100%;border-collapse:collapse;font-size:13px;}
-.dr-table th{position:sticky;top:0;background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;padding:11px 12px;font-weight:700;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;z-index:1;}
-.dr-table td{padding:9px 12px;border-bottom:1px solid #FBE4E5;background:var(--card);color:var(--foreground);}
-.dr-table tr:hover td{background:#FFF3F3;}
-.dr-table .pill-min{background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block;}
-.dr-table .pill-tag{background:#fff7ed;color:#A63F43;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;display:inline-block;}
-.dr-table .pill-dept{background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;display:inline-block;}
-
-/* Reminder admin panel inside Daily Reports */
-.dr-reminder-panel{background:linear-gradient(135deg,#fef3c7,#fde68a);border:1.5px solid #f59e0b;border-radius:12px;padding:18px 22px;margin-bottom:22px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}
-.dr-reminder-info{flex:1;min-width:240px;}
-.dr-reminder-title{font-size:15px;font-weight:700;color:#92400e;margin-bottom:4px;}
-.dr-reminder-sub{font-size:12px;color:#78350f;line-height:1.5;}
-.dr-reminder-sub b{color:#92400e;}
-.dr-reminder-actions{display:flex;gap:10px;flex-wrap:wrap;}
-.dr-reminder-result{background:var(--card);border-radius:10px;border:1.5px solid var(--border);padding:16px 20px;margin-bottom:18px;font-size:13px;line-height:1.6;}
-.dr-reminder-result.success{border-color:#10b981;background:#ecfdf5;color:#065f46;}
-.dr-reminder-result.error{border-color:#ef4444;background:#fef2f2;color:#991b1b;}
-.dr-reminder-result h4{margin-bottom:8px;color:inherit;font-size:14px;}
-.dr-reminder-result ul{margin:6px 0 6px 20px;}
-.dr-reminder-result li{margin:2px 0;font-size:12px;}
-
-/* ══════════════════════════════════════════════
-   LEAVE TRACKER (orange theme — matches brand)
-   ══════════════════════════════════════════════ */
-.lv-card{background:var(--card);border-radius:18px;padding:28px 32px;box-shadow:0 4px 20px rgba(217,99,106,.08);border:1px solid #FBE4E5;}
-.lv-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
-.lv-title{font-size:24px;font-weight:700;color:var(--foreground);margin-bottom:4px;}
-.lv-sub{color:var(--muted-foreground);font-size:13px;}
-.lv-add-btn{background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;border:none;padding:11px 22px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:inherit;letter-spacing:.3px;box-shadow:0 4px 14px rgba(217,99,106,.35);transition:all .2s;}
-.lv-add-btn:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(217,99,106,.45);}
-
-/* Tabs */
-.lv-tabs{display:flex;gap:4px;border-bottom:2px solid #FBE4E5;margin-bottom:18px;flex-wrap:wrap;}
-.lv-tab{padding:11px 18px;border-radius:10px 10px 0 0;font-size:13px;font-weight:600;color:#92400e;cursor:pointer;display:flex;align-items:center;gap:6px;background:transparent;border:2px solid transparent;border-bottom:none;transition:all .15s;margin-bottom:-2px;}
-.lv-tab:hover{background:#FFF3F3;}
-.lv-tab.active{background:#FFF3F3;border-color:#FBE4E5;color:#A63F43;}
-.lv-tab-ico{font-size:14px;}
-.lv-tab-badge{background:#F8AFB1;color:#1B1B1B;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:4px;min-width:18px;text-align:center;}
-
-/* Filter row */
-.lv-filter-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
-.lv-status-pills{display:flex;gap:6px;flex-wrap:wrap;}
-.lv-pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;background:var(--card);color:var(--muted-foreground);border:1.5px solid var(--border);display:inline-flex;align-items:center;gap:5px;transition:all .15s;}
-.lv-pill:hover{border-color:#D9636A;color:#A63F43;}
-.lv-pill.active{background:linear-gradient(135deg,#FFF3F3,#FBD9DB);border-color:#D9636A;color:#A63F43;}
-.lv-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
-.lv-dot-pending{background:#f59e0b;}
-.lv-dot-approved{background:#10b981;}
-.lv-dot-rejected{background:#ef4444;}
-.lv-filter-row input{padding:9px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;outline:none;font-family:inherit;min-width:240px;flex:1;max-width:340px;}
-.lv-filter-row input:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-
-/* List */
-.lv-list-wrap{display:flex;flex-direction:column;gap:14px;}
-.lv-user-group{background:var(--card);border:1.5px solid #FBE4E5;border-radius:12px;overflow:hidden;}
-.lv-user-head{background:linear-gradient(135deg,#FFF3F3,#FBD9DB);padding:11px 18px;font-size:14px;font-weight:700;color:var(--foreground);border-bottom:1.5px solid #FBE4E5;display:flex;justify-content:space-between;align-items:center;}
-.lv-user-head small{font-size:11px;color:#92400e;font-weight:600;}
-.lv-item{display:grid;grid-template-columns:1fr auto;gap:10px;padding:13px 18px;border-bottom:1px solid #FBE4E5;transition:background .15s;}
-.lv-item:last-child{border-bottom:none;}
-.lv-item:hover{background:#FFF3F3;}
-.lv-item-main{display:flex;flex-direction:column;gap:4px;}
-.lv-item-row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.lv-type-pill{font-size:12px;font-weight:700;padding:3px 10px;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
-.lv-type-full_day{background:#fee2e2;color:#991b1b;}
-.lv-type-half_day{background:#fed7aa;color:#9a3412;}
-.lv-type-work_from_home{background:#dbeafe;color:#1e40af;}
-.lv-type-extra_working{background:#dcfce7;color:#166534;}
-.lv-status{font-size:11px;font-weight:700;padding:2px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;}
-.lv-status-pending{background:#fef3c7;color:#92400e;}
-.lv-status-approved{background:#d1fae5;color:#065f46;}
-.lv-status-rejected{background:#fee2e2;color:#991b1b;}
-.lv-item-reason{font-size:13px;color:#475569;line-height:1.4;}
-.lv-item-meta{font-size:11px;color:var(--faint);}
-.lv-item-meta b{color:var(--muted-foreground);}
-.lv-item-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
-.lv-item-date{font-size:13px;font-weight:700;color:#A63F43;white-space:nowrap;}
-.lv-item-btns{display:flex;gap:6px;}
-.lv-btn-approve{background:#10b981;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;}
-.lv-btn-approve:hover{background:#059669;}
-.lv-btn-reject{background:#ef4444;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;}
-.lv-btn-reject:hover{background:#dc2626;}
-.lv-btn-delete{background:transparent;color:#ef4444;border:1.5px solid #fecaca;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;}
-.lv-btn-delete:hover{background:#ef4444;color:#fff;}
-
-/* Modal */
-.lv-modal{max-width:520px;}
-.lv-modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding-bottom:14px;border-bottom:2px dashed #fef3c7;}
-.lv-modal-title{font-size:18px;font-weight:700;color:var(--foreground);margin:0;}
-.lv-modal-close{background:transparent;border:none;font-size:18px;color:var(--faint);cursor:pointer;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;transition:all .15s;}
-.lv-modal-close:hover{background:#fef3c7;color:#92400e;}
-.lv-req{color:#ef4444;}
-.lv-modal .form-group input:disabled{background:#FFF3F3;color:#A63F43;font-weight:600;border-color:#FBE4E5;cursor:not-allowed;}
-.lv-modal .form-group input:focus:not(:disabled),
-.lv-modal .form-group textarea:focus{border-color:#D9636A;box-shadow:0 0 0 3px rgba(217,99,106,.15);}
-.lv-type-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
-.lv-type-btn{background:var(--card);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px;font-weight:600;color:var(--foreground);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;transition:all .15s;text-align:left;}
-.lv-type-btn:hover{border-color:#D9636A;background:#FFF3F3;}
-.lv-type-btn.active{background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;border-color:#D9636A;box-shadow:0 4px 14px rgba(217,99,106,.35);}
-.lv-type-ico{font-size:16px;}
-.lv-approver-hint{background:#FFF3F3;border:1.5px solid #FBE4E5;border-radius:8px;padding:10px 14px;font-size:12px;color:#A63F43;margin-top:6px;}
-.lv-save-btn{background:linear-gradient(135deg,#FBC9CA,#F8AFB1);color:#1B1B1B;border:none;padding:9px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 12px rgba(217,99,106,.3);transition:all .2s;}
-.lv-save-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(217,99,106,.4);}
-
-/* Calendar */
-.lv-cal-hint{font-size:11px;color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0;margin-left:4px;}
-.lv-calendar{background:var(--muted);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;}
-.lv-cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
-.lv-cal-nav{background:var(--card);border:1.5px solid var(--border);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:18px;font-weight:700;color:#475569;display:grid;place-items:center;font-family:inherit;transition:all .15s;}
-.lv-cal-nav:hover{border-color:#D9636A;color:#A63F43;background:#FFF3F3;}
-.lv-cal-month-label{font-size:14px;font-weight:700;color:var(--foreground);}
-.lv-cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;}
-.lv-cal-weekdays span{text-align:center;font-size:11px;font-weight:600;color:var(--faint);padding:6px 0;text-transform:uppercase;letter-spacing:.4px;}
-.lv-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
-.lv-cal-day{padding:8px 0;text-align:center;font-size:13px;font-weight:500;color:#475569;background:transparent;border:1.5px solid transparent;border-radius:8px;cursor:pointer;font-family:inherit;transition:all .12s;}
-.lv-cal-day:hover:not(.lv-cal-day-disabled):not(.lv-cal-day-selected){background:#FFF3F3;border-color:#D9636A;color:#A63F43;}
-.lv-cal-day-today{border-color:#10b981;color:#10b981;font-weight:700;}
-.lv-cal-day-selected{background:#10b981 !important;color:#fff !important;border-color:#10b981 !important;font-weight:700;box-shadow:0 2px 8px rgba(16,185,129,.4);}
-.lv-cal-day-disabled{color:#cbd5e1;cursor:not-allowed;opacity:.6;}
-.lv-cal-day-other{visibility:hidden;}
-.lv-cal-foot{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;font-weight:600;color:#10b981;}
-.lv-cal-count-ico{font-size:13px;}
-
-/* Selected dates list */
-.lv-selected-list{background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;}
-.lv-selected-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--card);border:1px solid #d1fae5;border-radius:8px;font-size:12px;}
-.lv-selected-date{flex:1;font-weight:600;color:#065f46;}
-.lv-selected-hours{display:flex;align-items:center;gap:5px;}
-.lv-selected-hours input{width:60px;padding:5px 8px;border:1.5px solid #d1fae5;border-radius:6px;font-size:12px;outline:none;font-family:inherit;text-align:center;}
-.lv-selected-hours input:focus{border-color:#10b981;}
-.lv-selected-hours-label{font-size:11px;color:#065f46;font-weight:600;}
-.lv-selected-remove{background:transparent;border:none;color:#dc2626;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;}
-.lv-selected-remove:hover{background:#fee2e2;}
-
-/* Hours pill in list view */
-.lv-hours-pill{background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:700;margin-left:4px;}
-
 /* ══════════════════════════════════════════════════════
-   MOBILE — full responsive overhaul
-   Mostly users use mobile, so every feature has to be reachable.
-══════════════════════════════════════════════════════ */
-.mobile-hamburger{display:none;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:8px;color:var(--foreground);transition:background .15s;}
-.mobile-hamburger:hover{background:var(--muted);}
-.mobile-hamburger svg{width:24px;height:24px;display:block;}
-.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;}
-.sidebar-backdrop.open{display:block;}
-
-@media (max-width:768px){
-  /* ── Sidebar → slide-in drawer ── */
-  .sidebar{width:240px;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 24px rgba(0,0,0,.18);}
-  .sidebar:hover{width:240px;}
-  .sidebar.open{transform:translateX(0);}
-  .sidebar .logo-text,.sidebar .logo-wordmark,.sidebar .nav-label-text,.sidebar .su-info,.sidebar .logout-label{opacity:1;}
-
-  /* ── Main content ── */
-  /* On phones the sidebar is an off-canvas drawer over a backdrop, so content
-     must NOT be pushed. This resets the desktop push rule, which would other-
-     wise win on specificity (0,2,1 beats 0,1,0) and shove the page off-screen. */
-  .main,.sidebar:hover ~ .main{margin-left:0;}
-  .topbar{padding:0 14px;height:54px;gap:10px;}
-  .topbar-title{font-size:15px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .mobile-hamburger{display:flex;align-items:center;justify-content:center;}
-  .topbar-right{gap:6px;flex-shrink:0;}
-
-  /* ── Pages ── */
-  .page{padding:14px 12px;}
-  .page-header{flex-wrap:wrap;gap:10px;margin-bottom:14px;}
-  .page-header h2{font-size:17px;}
-
-  /* ── Dashboard ── */
-  .dash-topbar{flex-direction:column;align-items:stretch;gap:10px;}
-  .dash-topbar h2{font-size:17px;}
-  .dash-topbar-btns{flex-wrap:wrap;}
-  .dash-topbar-btns .btn{flex:1;min-width:0;justify-content:center;font-size:12px;padding:8px 10px;}
-  /* Five cards: 2-across on small screens. Three would leave a lone card on the
-     last row and squeeze the numbers. */
-  .overview-cards{grid-template-columns:repeat(2,1fr);gap:8px;}
-  .ov-card{padding:12px 10px;}
-  .ov-card .label{font-size:11px;}
-  .ov-card .number{font-size:24px;}
-  .dash-bottom{grid-template-columns:1fr;gap:14px;}
-  .chart-card{padding:14px;}
-  .chart-wrap{height:180px;}
-
-  /* ── Topbar dropdown filters → stack ── */
-  #dashEmployeeFilter, #pcDateRangeFilter{width:100%;}
-  #pcDateRangeFilter{flex-direction:row;flex-wrap:wrap;gap:6px;}
-  #pcDateRangeFilter input{flex:1;min-width:0;}
-
-  /* ── Tab groups ── */
-  .tab-group{flex-wrap:wrap;}
-  .tab{font-size:11px;padding:5px 10px;}
-
-  /* ── Tables: allow horizontal scroll for wide tables ── */
-  .task-table-card > div,
-  .flat-tasks-scroll,
-  .mis-table-wrap,
-  .users-grid,
-  .dr-table-wrap,
-  .cp-grid-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  .flat-tasks-scroll{max-height:calc(100vh - 200px);}
-  thead th{padding:8px 10px;font-size:10px;}
-  tbody td{padding:9px 10px;font-size:12px;}
-  .action-btn{font-size:10px;padding:3px 8px;}
-
-  /* ── Modals: near-fullscreen with breathing room ── */
-  .modal-overlay{padding:8px;align-items:flex-start;padding-top:18px;}
-  .modal{width:100% !important;max-width:100% !important;padding:18px 16px;max-height:calc(100vh - 36px);border-radius:12px;}
-  .modal h3{font-size:15px;margin-bottom:14px;}
-  .form-row{grid-template-columns:1fr;gap:0;}
-  .form-group input,.form-group select,.form-group textarea{font-size:14px;padding:10px 12px;}
-  .modal-footer{flex-wrap:wrap;gap:6px;}
-  .modal-footer .btn{flex:1;min-width:0;justify-content:center;}
-
-  /* ── Buttons: bigger touch targets ── */
-  .btn{padding:9px 14px;font-size:13px;}
-  .btn-sm{padding:6px 10px;font-size:11px;}
-
-  /* ── Sidebar user/avatar bigger ── */
-  .sidebar:hover .nav-label-text,
-  .sidebar:hover .su-info,
-  .sidebar:hover .logout-label,
-  .sidebar:hover .logo-text,
-  .sidebar:hover .logo-wordmark{opacity:1;}
-
-  /* ── All Tasks page filters ── */
-  #taskSearch, #userSearch, #cpSearch, #lvSearch, #drSearch{width:100% !important;}
-
-  /* ── Leave Tracker ── */
-  .lv-card{padding:16px 12px;}
-  .lv-title{font-size:18px;}
-  .lv-type-grid{grid-template-columns:1fr;}
-  .lv-item{grid-template-columns:1fr;}
-  .lv-item-actions{align-items:flex-start;flex-direction:row;justify-content:space-between;flex-wrap:wrap;}
-  .lv-tabs{overflow-x:auto;}
-  .lv-tab{white-space:nowrap;font-size:12px;padding:9px 14px;}
-  .lv-filter-row{flex-direction:column;align-items:stretch;}
-  .lv-filter-row input{max-width:100%;width:100%;}
-  .lv-calendar{padding:10px 8px;}
-  .lv-cal-day{padding:9px 0;font-size:12px;}
-
-  /* ── Daily Task ── */
-  .dt-card,.cm-card,.cp-card,.dr-card,.profile-card{padding:18px 14px;}
-  .dt-title{font-size:22px;}
-  .dt-meta-row{flex-direction:column;align-items:stretch;gap:10px;}
-  .dt-meta-field{justify-content:space-between;flex-wrap:wrap;}
-  .dt-meta-field select,.dt-meta-field input{min-width:0;flex:1;}
-  .dt-table-wrap{overflow-x:auto;}
-  .dt-table{min-width:560px;}
-  .dt-actions{flex-direction:column;}
-  .dt-actions .dt-btn{width:100%;}
-  .dt-summary{flex-wrap:wrap;justify-content:space-between;}
-
-  /* ── Daily Reports ── */
-  .dr-header{flex-direction:column;align-items:stretch;}
-  .dr-month-picker{flex-wrap:wrap;}
-  .dr-stats{grid-template-columns:1fr 1fr;}
-  .dr-reminder-panel{flex-direction:column;align-items:stretch;}
-  .dr-reminder-actions{justify-content:stretch;}
-  .dr-reminder-actions .btn{flex:1;}
-
-  /* ── Compliance ── */
-  .cp-header{flex-direction:column;align-items:stretch;}
-  .cp-filter-row{flex-direction:column;}
-  .cp-filter-row input,.cp-filter-row select{min-width:0;width:100%;}
-
-  /* ── Unit Master ── */
-  .cm-add-row{flex-direction:column;}
-  .cm-detail-inner{flex-direction:column;gap:14px;}
-
-  /* ── FMS ── */
-  #fmsListTabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;}
-  .fms-name-tab{white-space:nowrap;flex-shrink:0;}
-  #fmsStepTabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;}
-  .fms-step-tab{white-space:nowrap;flex-shrink:0;}
-  .fms-step-rows-table{overflow-x:auto;}
-  .fms-step-rows-table table{min-width:520px;}
-  .fms-train-track{padding:18px 0 32px;}
-
-  /* ── Approvals page tabs ── */
-  #page-approvals .tab-group, #page-approvals > div:nth-child(2){flex-wrap:wrap;}
-
-  /* ── Profile ── */
-  .profile-card{max-width:100%;}
-
-  /* ── Status / role badges spacing on small screens ── */
-  .status-badge,.priority-badge,.role-badge{font-size:10px;padding:2px 6px;}
-
-  /* ── Tab-action (Delegate by Me as tab) ── */
-  .tab.tab-action{padding:5px 10px;font-size:11px;}
-
-  /* ── Set Plan / MIS modals get same treatment via .modal global rule above ── */
-}
-
-/* ── Extra small (phones <380px) ── */
-@media (max-width:380px){
-  .overview-cards{grid-template-columns:1fr;}
-  .topbar-title{font-size:14px;}
-  .dr-stats{grid-template-columns:1fr;}
-}
-</style>
-</head>
-<body>
-
-<!-- ══════════════════════════════════════
-     SIDEBAR
-══════════════════════════════════════ -->
-<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
-<aside class="sidebar" id="sidebar">
-  <div class="sidebar-logo">
-      <div class="logo-plate">
-    <!-- Colour mark on a white plate — the logo as drawn in the brand file,
-         rather than a knocked-out white version of it. -->
-    <img src="bunai-logo.png" alt="Bunai" class="sidebar-logo-img"
-      onerror="this.style.display='none';document.getElementById('sidebarLogoFallback').style.display='grid'"/>
-    <div id="sidebarLogoFallback" style="display:none;width:34px;height:34px;background:linear-gradient(135deg,#FBC9CA,#F8AFB1);border-radius:8px;place-items:center;color:#1B1B1B;font-weight:700;font-size:15px;font-style:italic;flex-shrink:0">B</div>
-      </div>
-      <!-- The real lettering, knocked out white for the ink rail. -->
-      <img src="bunai-wordmark-white.png" alt="Bunai" class="logo-wordmark"
-        onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/>
-      <div class="logo-text" style="display:none">Bunai</div>
-  </div>
-  <nav class="nav">
-    <div class="nav-item active" onclick="navigate('dashboard',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-      <span class="nav-label-text">Dashboard</span>
-    </div>
-    <div class="nav-item" onclick="navigate('alltasks',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-      <span class="nav-label-text">All Tasks</span>
-    </div>
-    <div class="nav-item" id="nav-approvals" onclick="navigate('approvals',this)" style="position:relative">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      <span class="nav-label-text">Approvals</span>
-      <span id="approvalBadge" style="display:none;position:absolute;top:6px;right:8px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;align-items:center;justify-content:center">0</span>
-      <span id="transferBadge" style="display:none;position:absolute;top:6px;right:26px;background:#7c3aed;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;align-items:center;justify-content:center">0</span>
-    </div>
-    <div class="nav-item" id="nav-users" style="display:none" onclick="navigate('users',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-      <span class="nav-label-text">Users</span>
-    </div>
-    <div class="nav-item" id="nav-mis" style="display:none" onclick="navigate('mis',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-      <span class="nav-label-text">MIS Report</span>
-    </div>
-    <div class="nav-item" id="nav-fms" style="display:none" onclick="navigate('fms',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
-      <span class="nav-label-text">FMS Admin</span>
-    </div>
-    <div class="nav-item" id="nav-ims" style="display:none" onclick="navigate('ims',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-      <span class="nav-label-text">IMS</span>
-    </div>
-    <div class="nav-item" id="nav-fms-tasks" onclick="navigate('fms-tasks',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18"/></svg>
-      <span class="nav-label-text">FMS Tasks</span>
-    </div>
-    <div class="nav-item" id="nav-merchfms" onclick="navigate('merchfms',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
-      <span class="nav-label-text">Form</span>
-    </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item" id="nav-daily" onclick="navigate('daily',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-      <span class="nav-label-text">Daily Task</span>
-    </div>
-    <div class="nav-item" id="nav-scheduler" onclick="navigate('scheduler',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      <span class="nav-label-text">Scheduler</span>
-    </div>
-    <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      <span class="nav-label-text">Leave Tracker</span>
-    </div>
-    <div class="nav-item" id="nav-clients" style="display:none" onclick="navigate('clients',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-      <span class="nav-label-text">Unit Master</span>
-    </div>
-    <div class="nav-item" id="nav-compliance" style="display:none" onclick="navigate('compliance',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
-      <span class="nav-label-text">Compliance</span>
-    </div>
-    <div class="nav-item" id="nav-dailyreports" style="display:none" onclick="navigate('dailyreports',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      <span class="nav-label-text">Daily Reports</span>
-    </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item" onclick="navigate('profile',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-      <span class="nav-label-text">Profile</span>
-    </div>
-  </nav>
-  <div class="sidebar-user" onclick="navigate('profile',document.querySelector('.nav-item[onclick*=profile]'))" style="cursor:pointer">
-    <div class="su-avatar" id="sidebarAvatar" style="overflow:hidden">?</div>
-    <div class="su-info">
-      <div class="su-name" id="sidebarName">Loading…</div>
-      <div class="su-role" id="sidebarRole"></div>
-    </div>
-  </div>
-  <div class="sidebar-bottom">
-    <button class="logout-btn" onclick="logout()">
-      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-      <span class="logout-label">Logout</span>
-    </button>
-  </div>
-</aside>
-
-<!-- ══════════════════════════════════════
-     MAIN
-══════════════════════════════════════ -->
-<div class="main" id="mainContent">
-  <div class="topbar">
-    <button class="mobile-hamburger" onclick="toggleSidebar()" aria-label="Open menu">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-    </button>
-    <div class="topbar-title" id="topbarTitle">Dashboard</div>
-    <div class="topbar-right" id="topbarActions"></div>
-  </div>
-
-  <!-- ── DASHBOARD ── -->
-  <div id="page-dashboard" class="page active">
-    <div class="dash-topbar">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <select id="dashEmployeeFilter" onchange="onPCFilterChange()"
-          style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card);display:none">
-          <option value="all">All Employees</option>
-        </select>
-        <!-- PC-only date range filter -->
-        <div id="pcDateRangeFilter" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
-          <label style="font-size:12px;color:var(--muted-foreground);font-weight:600">From:</label>
-          <input type="date" id="pcDateFrom" onchange="onPCFilterChange()"
-            style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)">
-          <label style="font-size:12px;color:var(--muted-foreground);font-weight:600">To:</label>
-          <input type="date" id="pcDateTo" onchange="onPCFilterChange()"
-            style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)">
-          <button onclick="clearPCDateFilter()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;background:var(--card);cursor:pointer;color:var(--muted-foreground)">✕ Clear</button>
-        </div>
-      </div>
-      <div class="dash-topbar-btns" id="dashBtns"></div>
-    </div>
-    <div class="overview-cards">
-      <!-- Cards act as filters for the table below. role/tabindex/keydown make them
-           reachable by keyboard — a bare clickable <div> is invisible to Tab. -->
-      <div class="ov-card total is-active" role="button" tabindex="0"
-           onclick="dashCard('all',this)" onkeydown="dashCardKey(event,'all',this)"
-           aria-pressed="true" title="Show all open tasks">
-        <div class="label">Total</div><div class="number" id="dTotal">—</div></div>
-      <div class="ov-card pending" role="button" tabindex="0"
-           onclick="dashCard('pending',this)" onkeydown="dashCardKey(event,'pending',this)"
-           aria-pressed="false" title="Show only pending tasks">
-        <div class="label">Pending</div><div class="number" id="dPending">—</div></div>
-      <div class="ov-card revised" role="button" tabindex="0"
-           onclick="dashCard('revised',this)" onkeydown="dashCardKey(event,'revised',this)"
-           aria-pressed="false" title="Show only revised tasks">
-        <div class="label">Revised</div><div class="number" id="dRevised">—</div></div>
-      <div class="ov-card completed" role="button" tabindex="0"
-           onclick="dashCard('completed',this)" onkeydown="dashCardKey(event,'completed',this)"
-           aria-pressed="false" title="Show completed tasks">
-        <div class="label">Completed</div><div class="number" id="dCompleted">—</div></div>
-      <div class="ov-card upcoming" role="button" tabindex="0"
-           onclick="dashCard('upcoming',this)" onkeydown="dashCardKey(event,'upcoming',this)"
-           aria-pressed="false" title="Show tasks due after today">
-        <div class="label">Upcoming</div><div class="number" id="dUpcoming">—</div></div>
-    </div>
-    <div class="dash-bottom">
-      <div class="task-table-card">
-        <div class="card-head">
-          <div class="card-head-title" id="dashTableTitle">All Pending Tasks</div>
-          <div class="tab-group" id="dashTypeTabGroup">
-            <div class="tab active" id="dashTabAll"   onclick="dashTab('all',this)">All</div>
-            <div class="tab"        id="dashTabDel"   onclick="dashTab('delegation',this)">Delegation</div>
-            <div class="tab"        id="dashTabChl"   onclick="dashTab('checklist',this)">Checklist</div>
-            <div class="tab"        id="dashTabFMS"   onclick="dashTab('fms',this)">FMS</div>
-          </div>
-        </div>
-        <div style="overflow-x:auto;max-height:340px;overflow-y:auto;">
-          <table style="min-width:600px">
-            <thead style="position:sticky;top:0;z-index:2;background:var(--muted)">
-              <tr>
-                <th style="white-space:nowrap">Type</th>
-                <th>Description</th>
-                <th id="dashDoerHead">Doer</th>
-                <th style="white-space:nowrap;cursor:pointer;user-select:none" onclick="toggleDashDateSort()" title="Click to sort by date">Date <span id="dashDateSortIcon" style="font-size:10px;color:var(--faint)">⇅</span></th>
-                <th id="dashPriorityHead">Priority</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="dashTbody"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="chart-card">
-        <h3>Task Overview</h3>
-        <div class="chart-wrap"><canvas id="dashChart"></canvas></div>
-        <div style="display:flex;gap:12px;justify-content:center;margin-top:10px;font-size:11px;color:var(--muted-foreground)">
-          <span style="display:flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:#10b981;display:inline-block"></span>Completed</span>
-          <span style="display:flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:#ef4444;display:inline-block"></span>Pending</span>
-          <span style="display:flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>Revised</span>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ── ALL TASKS ── -->
-  <div id="page-alltasks" class="page">
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div class="tab-group" id="tasksTypeTabGroup">
-          <div class="tab active" id="tasksTabDel" onclick="tasksTab('delegation',this)">Delegation</div>
-          <div class="tab" id="tasksTabChl" onclick="tasksTab('checklist',this)">Checklist</div>
-          <div class="tab" id="tasksTabDelByMe" onclick="tasksTab('delegatebyme',this)">Delegate by Me</div>
-          <div class="tab" id="tasksTabChlAll" onclick="tasksTab('checklist-full',this)" style="display:none">All Checklist</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <!-- PC-only: user filter + date range (desktop only) -->
-        <div id="tasksUserDateFilters" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
-          <select id="tasksUserFilter" onchange="filterTasks()"
-            style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)">
-            <option value="all">All Employees</option>
-          </select>
-          <input type="date" id="tasksDateFrom" onchange="filterTasks()"
-            style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)">
-          <span style="font-size:12px;color:var(--faint)">to</span>
-          <input type="date" id="tasksDateTo" onchange="filterTasks()"
-            style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)">
-          <button onclick="clearTasksDateFilter()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;background:var(--card);cursor:pointer;color:var(--muted-foreground)">✕ Clear</button>
-        </div>
-        <div style="position:relative">
-          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint)">🔍</span>
-          <input type="text" id="taskSearch" placeholder="Search by name, date, desc, status..." oninput="filterTasks()"
-            style="padding:8px 12px 8px 32px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;width:260px"/>
-        </div>
-        <button class="btn btn-outline" id="transferModeBtn" onclick="openNewTransferModal()"
-          style="color:#7c3aed;border-color:#c4b5fd">🔀 Transfer</button>
-        <button class="btn btn-primary" id="tasksAssignBtn" onclick="openDelegate()" style="display:none">+ Assign Task</button>
-        <button class="btn btn-outline" id="bulkDeleteBtn" onclick="openBulkDeleteModal()"
-          style="color:#dc2626;border-color:#fecaca;display:none">🗑 Bulk Delete</button>
-        <button class="btn btn-outline" id="waReminderBtn" onclick="openWaReminderModal()"
-          style="color:#16a34a;border-color:#bbf7d0;display:none">📲 WhatsApp Reminder</button>
-      </div>
-    </div>
-    <!-- Status filter tabs -->
-    <div style="display:flex;gap:8px;margin-bottom:16px;">
-      <div class="tab-group">
-        <div class="tab" id="statusTabAll" onclick="filterTaskStatus('all',this)">All</div>
-        <div class="tab active" id="statusTabPending" onclick="filterTaskStatus('pending',this)">Pending</div>
-        <div class="tab" id="statusTabUpcoming" onclick="filterTaskStatus('upcoming',this)">Upcoming</div>
-        <div class="tab" id="statusTabCompleted" onclick="filterTaskStatus('completed',this)">Completed</div>
-      </div>
-    </div>
-    <div id="tasksContent"></div>
-  </div>
-
-  <!-- ── USERS ── -->
-  <div id="page-users" class="page">
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="position:relative">
-          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint)">🔍</span>
-          <input type="text" id="userSearch" placeholder="Search by name, email, dept, role…" oninput="filterUsers()"
-            style="padding:8px 12px 8px 32px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;width:260px"/>
-        </div>
-        <button class="btn btn-primary" onclick="openAddUser()">+ Add User</button>
-      </div>
-    </div>
-    <div class="users-grid">
-      <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Department</th><th>Role</th><th>Action</th></tr></thead>
-        <tbody id="usersTbody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── PROFILE ── -->
-  <div id="page-ims" class="page" style="padding:0;">
-    <div id="imsConfigNote" style="display:none;margin:40px auto;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px 30px;">
-      <h2 style="margin:0 0 10px;font-size:18px;color:var(--foreground);">📦 Inventory (IMS) — almost ready</h2>
-      <p style="margin:0 0 14px;color:#475569;font-size:14px;line-height:1.6;">
-        To connect your Inventory Management System, open <code style="background:var(--muted);padding:1px 6px;border-radius:5px;">public/app.html</code>,
-        find <code style="background:var(--muted);padding:1px 6px;border-radius:5px;">IMS_WEBAPP_URL</code> near the top of the script, and paste your
-        deployed Apps Script web app URL (the link ending in <code style="background:var(--muted);padding:1px 6px;border-radius:5px;">/exec</code>). Then redeploy.
-      </p>
-      <p style="margin:0;color:var(--muted-foreground);font-size:12.5px;line-height:1.6;">
-        In Apps Script: <b>Deploy → New deployment → Web app</b>. Set access so only the right people can open it, then copy the web app URL.
-      </p>
-    </div>
-    <iframe id="imsFrame" title="Bunai IMS" allow="clipboard-read; clipboard-write"
-            style="display:none;width:100%;height:calc(100vh - 60px);border:0;background:#f4f8fe;"></iframe>
-  </div>
-
-  <div id="page-profile" class="page">
-    <div class="profile-card">
-
-      <!-- Profile Image Section -->
-      <div style="display:flex;align-items:center;gap:20px;margin-bottom:22px;">
-        <div style="position:relative;cursor:pointer" onclick="document.getElementById('profileImgInput').click()">
-          <div id="profileAvatar" style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,var(--brand-soft),var(--brand));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:var(--foreground);overflow:hidden;flex-shrink:0;border:3px solid var(--border);">?</div>
-          <div style="position:absolute;bottom:0;right:0;width:24px;height:24px;background:var(--brand-deep);border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;">
-            <span style="color:#fff;font-size:12px">✏️</span>
-          </div>
-        </div>
-        <div>
-          <div style="font-size:14px;font-weight:600;color:var(--foreground)" id="profileNameDisplay">—</div>
-          <div style="font-size:12px;color:var(--muted-foreground);margin-top:2px" id="profileRoleDisplay">—</div>
-          <button class="btn btn-outline" style="margin-top:8px;font-size:12px;padding:5px 12px" onclick="document.getElementById('profileImgInput').click()">📷 Change Photo</button>
-          <button class="btn btn-outline" style="margin-top:8px;margin-left:6px;font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="removeProfileImage()">✕ Remove</button>
-        </div>
-      </div>
-      <input type="file" id="profileImgInput" accept="image/*" style="display:none" onchange="handleProfileImage(event)"/>
-
-      <div class="alert success" id="profileSuccess"></div>
-      <div class="alert error" id="profileError"></div>
-      <div class="form-group"><label>Full Name</label><input type="text" id="pName"/></div>
-      <div class="form-group"><label>Email Address</label><input type="email" id="pEmail"/></div>
-      <div class="form-group"><label>Phone Number</label><input type="tel" id="pPhone" placeholder="Enter phone number"/></div>
-      <div class="section-title">Change Password</div>
-      <div class="form-group"><label>Current Password</label><input type="password" id="pCurrent" placeholder="Enter current password"/></div>
-      <div class="form-group"><label>New Password</label><input type="password" id="pNew" placeholder="Enter new password"/></div>
-      <div class="form-group"><label>Confirm Password</label><input type="password" id="pConfirm" placeholder="Confirm new password"/></div>
-      <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
-    </div>
-  </div>
-
-  <!-- ── APPROVALS ── -->
-  <div id="page-approvals" class="page">
-
-    <!-- Tabs -->
-    <div style="display:flex;gap:4px;background:var(--muted);padding:3px;border-radius:8px;width:fit-content;margin-bottom:18px">
-      <div class="tab active" id="apprTabTask" onclick="switchApprovalTab('task',this)">📋 Task Approvals</div>
-      <div class="tab" id="apprTabTransfer" onclick="switchApprovalTab('transfer',this)" style="display:none">🔀 Transfer Requests</div>
-      <div class="tab" id="apprTabLeave" onclick="switchApprovalTab('leave',this)">🗓 Leave Approvals <span id="apprLeaveBadge" style="display:none;background:#F8AFB1;color:#1B1B1B;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:4px">0</span></div>
-    </div>
-
-    <!-- Task approvals panel -->
-    <div id="approvalsPanel">
-      <div id="approvalsContent">
-        <div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">Loading…</div>
-      </div>
-    </div>
-
-    <!-- Transfer approvals panel (admin/HOD only) -->
-    <div id="transferApprovalsPanel" style="display:none">
-      <div id="transferApprovalsContent" class="flat-tasks-table" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);overflow:hidden">
-        <div class="empty">Loading…</div>
-      </div>
-    </div>
-
-    <!-- Leave approvals panel -->
-    <div id="leaveApprovalsPanel" style="display:none">
-      <div id="leaveApprovalsContent" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:6px">
-        <div class="empty">Loading…</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── FMS ADMIN ── -->
-  <div id="page-fms" class="page">
-    <div class="page-header">
-      <button class="btn btn-primary" onclick="openAddFMS()">+ Add New FMS</button>
-    </div>
-
-    <!-- FMS List tabs (top right) -->
-    <div id="fmsListTabs" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;"></div>
-
-    <!-- FMS Detail View -->
-    <div id="fmsDetailView" style="display:none">
-      <!-- Sheet info bar -->
-      <div id="fmsSheetInfoBar" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">Sheet Info</div>
-          <div id="fmsSheetInfoText" style="font-size:13px;color:var(--foreground);margin-top:2px"></div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-outline btn-sm" onclick="openEditFMS()" style="color:var(--brand-deep)">✏️ Edit FMS</button>
-          <button class="btn btn-outline btn-sm" onclick="syncFMSData()" style="color:#10b981">🔄 Sync Data</button>
-          <button class="btn btn-outline btn-sm" onclick="deleteFMSSheet(fmsActiveId)" style="color:#dc2626;border-color:#fecaca">🗑 Delete</button>
-        </div>
-      </div>
-      <!-- Step tabs -->
-      <div id="fmsStepTabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center;overflow-x:auto;padding-bottom:4px"></div>
-      <!-- Step content -->
-      <div id="fmsStepContent" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:20px;"></div>
-      <!-- Sync result -->
-      <div id="fmsSyncResult" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin-top:14px"></div>
-    </div>
-
-    <div id="fmsEmpty" class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
-      No FMS created yet. Click "+ Add New FMS" to get started.
-    </div>
-  </div>
-
-  <!-- ── FMS TASKS ── -->
-  <div id="page-fms-tasks" class="page">
-    <div class="page-header">
-      <div id="fmsTasksRefreshBtn" style="display:none">
-        <button class="btn btn-outline btn-sm" onclick="loadFMSTasks()">🔄 Refresh</button>
-      </div>
-    </div>
-
-    <!-- FMS Selector Dropdown -->
-    <div style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <div style="font-size:13px;font-weight:600;color:var(--foreground);white-space:nowrap">Select FMS:</div>
-      <select id="fmsTasksSelect" onchange="onFMSTasksSelect()"
-        style="flex:1;min-width:200px;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-weight:600;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)">
-        <option value="">-- Select an FMS --</option>
-      </select>
-    </div>
-
-    <!-- Train Container -->
-    <div id="fmsTrainContainer" style="display:none;margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:var(--muted-foreground);margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">
-        Process Flow — Click a step to view tasks
-        <span id="fmsTrainLegend" style="margin-left:12px;font-weight:400;text-transform:none">
-          <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,var(--brand-soft),var(--brand));display:inline-block"></span> Your step</span>
-          <span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:var(--foreground);display:inline-block;opacity:.5"></span> Other step</span>
-        </span>
-      </div>
-      <div class="fms-train-track" id="fmsTrainTrack">
-        <div id="fmsTrainInner" class="fms-train-scroll"></div>
-      </div>
-      <div class="fms-train-speed">
-        <span>🐢</span>
-        <input type="range" id="fmsTrainSpeedSlider" min="5" max="60" value="18" oninput="setTrainSpeed(this.value)"/>
-        <span>🐇</span>
-        <span style="margin-left:8px;color:var(--foreground);font-weight:600" id="fmsTrainSpeedLabel">18s</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto" id="fmsTrainPauseBtn" onclick="toggleTrainPause()">⏸ Pause</button>
-      </div>
-    </div>
-
-    <!-- Selected Step Info + Rows -->
-    <div id="fmsTaskStepPanel" style="display:none">
-      <div style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">Selected Step</div>
-          <div id="fmsTaskStepName" style="font-size:16px;font-weight:700;color:var(--foreground);margin-top:2px">—</div>
-          <div id="fmsTaskStepDoers" style="font-size:12px;color:var(--muted-foreground);margin-top:2px"></div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span id="fmsTaskRowCount" style="font-size:13px;color:#ef4444;font-weight:600"></span>
-          <button class="btn btn-outline btn-sm" onclick="loadFMSTaskRows()" id="fmsTaskLoadBtn">Load Tasks</button>
-        </div>
-      </div>
-
-      <!-- Rows table -->
-      <div id="fmsTaskRowsContainer">
-        <div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
-          Click "Load Tasks" to fetch pending rows for this step
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty state -->
-    <div id="fmsTasksEmpty" class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);display:none">
-      No FMS assigned to you yet.
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
-       MERCH FMS — Production Merchandising FMS - Unit 1
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-merchfms" class="page">
-    <div style="display:flex;gap:6px;margin-bottom:16px">
-      <div class="tab-group">
-        <div class="tab active" id="mfTabForm1" onclick="switchMerchFormTab('form1',this)">📦 Merchandising FMS</div>
-        <div class="tab" id="mfTabForm2" onclick="switchMerchFormTab('form2',this)">📦 Production Managment FMS</div>
-        <div class="tab" id="mfTabForm3" onclick="switchMerchFormTab('form3',this)">🧾 PO</div>
-        <div class="tab" id="mfTabForm4" onclick="switchMerchFormTab('form4',this)">📦 Merchandising FMS - <span data-unit="2"></span></div>
-      </div>
-    </div>
-
-    <div id="mfFormWrap1">
-    <div class="dt-card">
-      <h1 class="dt-title">📦 Production Merchandising FMS - <span data-unit="1"></span></h1>
-
-      <div class="dt-table-wrap" id="merchFmsTableWrap">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th>SO NO</th>
-              <th>Party Name</th>
-              <th>SKU</th>
-              <th style="width:80px">No. of Pcs</th>
-              <th>Material Name</th>
-              <th>Material Type</th>
-              <th style="width:90px">Quantity</th>
-              <th style="width:90px">Unit</th>
-              <th style="width:140px">Vendor Name</th>
-              <th style="width:150px">Status</th>
-              <th style="width:60px">Dup</th>
-              <th style="width:60px">Del</th>
-            </tr>
-          </thead>
-          <tbody id="merchFmsRowsBody"></tbody>
-        </table>
-      </div>
-
-      <div class="dt-actions" id="merchFmsActions">
-        <button class="dt-btn dt-btn-add" onclick="mfAddRow()">+ Add Row</button>
-        <button class="dt-btn dt-btn-submit" onclick="mfSubmit()">Submit All →</button>
-      </div>
-
-      <div class="alert error" id="merchFmsErr" style="display:none;margin-top:10px"></div>
-    </div>
-    </div>
-
-    <!-- Second form — PRODUCTION MANAGMENT FMS - Unit 1 → Process FMS tab, COL A to F -->
-    <div id="mfFormWrap2" style="display:none">
-    <div class="dt-card">
-      <h1 class="dt-title">📦 PRODUCTION MANAGMENT FMS - <span data-unit="1"></span></h1>
-
-      <div class="dt-table-wrap" id="merchFmsTableWrap2">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th style="width:150px">Timestamp</th>
-              <th>Doc Link</th>
-              <th style="width:110px">Actual Process Quantity</th>
-              <th>Design Number</th>
-              <th>SO Number</th>
-              <th>Party Name</th>
-              <th style="width:60px">Dup</th>
-              <th style="width:60px">Del</th>
-            </tr>
-          </thead>
-          <tbody id="merchFmsRowsBody2"></tbody>
-        </table>
-      </div>
-
-      <div class="dt-actions" id="merchFmsActions2">
-        <button class="dt-btn dt-btn-add" onclick="mfAddRow2()">+ Add Row</button>
-        <button class="dt-btn dt-btn-submit" onclick="mfSubmit2()">Submit All →</button>
-      </div>
-
-      <div style="font-size:12px;color:var(--faint);margin-top:6px">* Timestamp is added automatically when the row is created — do not fill this in</div>
-      <div class="alert error" id="merchFmsErr2" style="display:none;margin-top:10px"></div>
-    </div>
-    </div>
-
-    <!-- Third form — PO (same database/spreadsheet as Merch FMS, "PO" tab, COL C to M) -->
-    <div id="mfFormWrap3" style="display:none">
-    <div class="dt-card" id="poFormCard">
-      <h1 class="dt-title">🧾 PO — Purchase Order</h1>
-      <div style="font-size:12px;color:var(--faint);margin:-8px 0 12px">The Production department fills the PO here. Once submitted, Finance sees it below under "Complete Entries".</div>
-
-      <div class="dt-table-wrap" id="poTableWrap">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th>Order By</th>
-              <th>Party Name</th>
-              <th>Vendor Name</th>
-              <th>SO Number</th>
-              <th>Material Type</th>
-              <th>Style No</th>
-              <th style="width:110px">Qty Required</th>
-              <th style="width:100px">Price</th>
-              <th style="width:60px">Dup</th>
-              <th style="width:60px">Del</th>
-            </tr>
-          </thead>
-          <tbody id="poRowsBody"></tbody>
-        </table>
-      </div>
-
-      <div class="dt-actions" id="poActions">
-        <button class="dt-btn dt-btn-add" onclick="poAddRow()">+ Add Row</button>
-        <button class="dt-btn dt-btn-submit" onclick="poSubmit()">Submit All →</button>
-      </div>
-
-      <div class="alert error" id="poErr" style="display:none;margin-top:10px"></div>
-    </div>
-
-    <div class="dt-card" style="margin-top:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <h1 class="dt-title" style="margin:0">📋 Complete Entries</h1>
-        <button class="btn btn-outline btn-sm" onclick="loadPOEntries()">↻ Refresh</button>
-      </div>
-      <div style="font-size:12px;color:var(--faint);margin-top:4px" id="poEntriesHint"></div>
-      <div class="dt-table-wrap" style="margin-top:10px">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th>Order By</th>
-              <th>Party Name</th>
-              <th>Vendor Name</th>
-              <th>SO Number</th>
-              <th>Material Type</th>
-              <th>Style No</th>
-              <th style="width:100px">Qty Required</th>
-              <th style="width:90px">Price</th>
-              <th style="width:220px">PO Document</th>
-            </tr>
-          </thead>
-          <tbody id="poEntriesBody"></tbody>
-        </table>
-      </div>
-      <div class="empty" id="poEntriesEmpty" style="display:none">No PO entries yet.</div>
-    </div>
-    </div>
-
-    <!-- Fourth form — Production Merchandising FMS - Unit 2 → alag sheet, "Form" tab, COL C to K, Row 616+ -->
-    <div id="mfFormWrap4" style="display:none">
-    <div class="dt-card">
-      <h1 class="dt-title">📦 Production Merchandising FMS - <span data-unit="2"></span></h1>
-
-      <div class="dt-table-wrap" id="merchFmsTableWrap3">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th>SO NO</th>
-              <th>Party Name</th>
-              <th>SKU</th>
-              <th style="width:80px">No. of Pcs</th>
-              <th>Material Name</th>
-              <th>Material Type</th>
-              <th style="width:90px">Quantity</th>
-              <th style="width:90px">Unit</th>
-              <th style="width:140px">Vendor Name</th>
-              <th style="width:150px">Status</th>
-              <th style="width:60px">Dup</th>
-              <th style="width:60px">Del</th>
-            </tr>
-          </thead>
-          <tbody id="merchFmsRowsBody3"></tbody>
-        </table>
-      </div>
-
-      <div class="dt-actions" id="merchFmsActions3">
-        <button class="dt-btn dt-btn-add" onclick="mfAddRow3()">+ Add Row</button>
-        <button class="dt-btn dt-btn-submit" onclick="mfSubmit3()">Submit All →</button>
-      </div>
-
-      <div class="alert error" id="merchFmsErr3" style="display:none;margin-top:10px"></div>
-    </div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
-       DAILY TASK FORM (visible to all roles)
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-daily" class="page">
-    <div class="dt-card">
-      <div class="dt-topbar">
-        <div class="dt-time" id="dtNow">—</div>
-        <div class="dt-welcome">Welcome <b id="dtUserName">—</b></div>
-      </div>
-
-      <div class="dt-meta-row">
-        <div class="dt-meta-field">
-          <label>Entry Date:</label>
-          <select id="dtEntryDate"></select>
-        </div>
-        <div class="dt-meta-field" style="text-align:right">
-          <label>Doer Name:</label>
-          <input type="text" id="dtDoerName" disabled/>
-        </div>
-      </div>
-
-      <!-- Already-submitted notice -->
-      <div id="dtLockedNotice" class="dt-locked" style="display:none">
-        🔒 You have already submitted for this date — entries are now locked.
-      </div>
-
-      <!-- Rows table -->
-      <div class="dt-table-wrap" id="dtTableWrap">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th style="width:24%">Unit Name</th>
-              <th style="width:22%">Department</th>
-              <th>Task Description</th>
-              <th style="width:90px">Time (min)</th>
-              <th style="width:72px">Dup</th>
-              <th style="width:72px">Del</th>
-            </tr>
-          </thead>
-          <tbody id="dtRowsBody"></tbody>
-        </table>
-      </div>
-
-      <div class="dt-summary">
-        <span>Total Duration (Minutes):</span>
-        <strong id="dtTotalMin">0</strong>
-      </div>
-
-      <div class="dt-actions" id="dtActions">
-        <button class="dt-btn dt-btn-add" onclick="dtAddRow()">+ Add Row</button>
-        <button class="dt-btn dt-btn-submit" onclick="dtSubmit()">Submit All →</button>
-      </div>
-
-      <!-- Past entries -->
-      <div class="dt-history">
-        <div class="dt-history-title">📚 My Past Submissions</div>
-        <div id="dtHistoryWrap" class="dt-history-wrap"><div class="empty">No past submissions yet.</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
-       CLIENT MASTER (admin only)
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-clients" class="page">
-    <div class="cm-card">
-      <p class="cm-sub">Add or remove units here. This list will appear in the dropdown of the Daily Task form.</p>
-
-      <div class="cm-add-row">
-        <input type="text" id="cmNewClient" placeholder="Enter new unit name..." onkeydown="if(event.key==='Enter')cmAdd()"/>
-        <button class="dt-btn dt-btn-add" onclick="cmAdd()">+ Add Unit</button>
-      </div>
-
-      <!-- Bulk CSV Upload -->
-      <div style="background:#fff7ed;border:1.5px dashed #fcd34d;border-radius:10px;padding:14px 16px;margin-top:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:#92400e">📂 Bulk Upload (CSV)</div>
-            <div style="font-size:11px;color:#78350f;margin-top:2px">Upload multiple units at once. One unit name per line.</div>
-          </div>
-          <button class="dt-btn dt-btn-add" onclick="cmDownloadSample()" style="padding:6px 12px;font-size:12px">⬇ Download Sample</button>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-          <input type="file" id="cmBulkFile" accept=".csv,.txt" style="font-size:12px;flex:1;min-width:200px"/>
-          <button class="dt-btn dt-btn-add" onclick="cmBulkUpload()" style="padding:8px 14px">📤 Upload CSV</button>
-        </div>
-      </div>
-
-      <div id="cmListWrap" class="cm-list-wrap"><div class="empty">Loading units…</div></div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
-       COMPLIANCE TRACKER (admin only)
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-compliance" class="page">
-    <div class="cp-card">
-      <!-- Two views of the same data: the 7-day fill grid, and one employee in full. -->
-      <div class="tab-group" style="margin-bottom:16px">
-        <div class="tab active" id="cpTabFill" onclick="complianceTab('fill',this)">📅 Daily Fill (7-day)</div>
-        <div class="tab" id="cpTab360" onclick="complianceTab('e360',this)">👤 Employee 360</div>
-      </div>
-      <div id="cpFillView">
-      <div class="cp-header">
-        <button class="dt-btn dt-btn-add" onclick="loadCompliance()">🔄 Refresh</button>
-      </div>
-      <p class="cp-sub">Last 7 days — who filled the Daily Task and when. <span class="cp-dot cp-dot-yes"></span> = filled · <span class="cp-dot cp-dot-no"></span> = missed</p>
-
-      <div class="cp-filter-row">
-        <input type="text" id="cpSearch" placeholder="🔍 Search by name / email / department..." oninput="renderCompliance()"/>
-        <select id="cpRoleFilter" onchange="renderCompliance()">
-          <option value="">All Roles</option>
-          <option value="admin">Admin</option>
-          <option value="hod">HOD</option>
-          <option value="pc">PC</option>
-          <option value="user">User</option>
-        </select>
-      </div>
-
-      <div id="cpGridWrap" class="cp-grid-wrap"><div class="empty">Loading...</div></div>
-      </div><!-- /cpFillView -->
-
-      <div id="cpE360View" style="display:none">
-        <p class="cp-sub">One employee, everything in one place — delegation, checklist, daily reports, units and meetings. Built for increment-time review.</p>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-          <select id="e360User" onchange="loadEmp360()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
-          <input type="date" id="e360From" onchange="loadEmp360()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"/>
-          <input type="date" id="e360To" onchange="loadEmp360()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"/>
-          <button class="btn btn-outline btn-sm" onclick="e360Range(0)">This Month</button>
-          <button class="btn btn-outline btn-sm" onclick="e360Range(3)">3M</button>
-          <button class="btn btn-outline btn-sm" onclick="e360Range(6)">6M</button>
-          <button class="btn btn-outline btn-sm" onclick="e360Range(12)">12M</button>
-          <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 Print</button>
-        </div>
-        <div id="e360Body"><div class="empty">Pick an employee</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
-       DAILY REPORTS — month-wise admin report
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-dailyreports" class="page">
-    <div class="dr-card">
-      <div class="dr-header">
-        <div class="dr-month-picker">
-          <label>Month:</label>
-          <input type="month" id="drMonth" onchange="loadDailyReports()"/>
-          <button class="dt-btn dt-btn-add" onclick="drExportCSV()">⬇ Export CSV</button>
-        </div>
-      </div>
-
-
-      <!-- Top stats -->
-      <div class="dr-stats" id="drStats"></div>
-
-      <!-- Per-user summary -->
-      <div class="dr-section-title">📊 Per-User Summary</div>
-      <div id="drSummaryWrap" class="dr-table-wrap">
-        <div class="empty">Loading...</div>
-      </div>
-
-      <!-- Detailed entries -->
-      <div class="dr-section-title">📝 All Entries (this month)</div>
-      <div class="dr-filter-row">
-        <input type="text" id="drSearch" placeholder="🔍 Search by name / unit / description..." oninput="renderDREntries()"/>
-        <select id="drUserFilter" onchange="renderDREntries()">
-          <option value="">All Users</option>
-        </select>
-      </div>
-      <div id="drEntriesWrap" class="dr-table-wrap">
-        <div class="empty">Loading...</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
-       SCHEDULER — month calendar + day timeline
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-scheduler" class="page">
-    <div class="tab-group" style="margin-bottom:14px">
-      <div class="tab active" id="schTabCal" onclick="schedulerTab('calendar',this)">📅 Calendar</div>
-      <div class="tab" id="schTabList" onclick="schedulerTab('list',this)">📋 Meetings</div>
-    </div>
-    <div id="schCalView"><div class="empty">Loading…</div></div>
-    <div id="schListView" style="display:none">
-      <div class="page-header">
-        <div class="tab-group" id="mtgStatusTabs">
-          <div class="tab active" onclick="mtgFilter('upcoming',this)">Upcoming</div>
-          <div class="tab" onclick="mtgFilter('all',this)">All</div>
-          <div class="tab" onclick="mtgFilter('done',this)">Done</div>
-          <div class="tab" onclick="mtgFilter('cancelled',this)">Cancelled</div>
-        </div>
-        <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule Meeting</button>
-      </div>
-      <div id="meetingsList"></div>
-    </div>
-  </div>
-  <!-- ══════════════════════════════════════════════════════
-       LEAVE TRACKER — all users
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-leaves" class="page">
-    <div class="lv-card">
-      <div class="lv-header">
-        <div>
-          <p class="lv-sub">Apply for leave, work-from-home, or extra working. <span id="lvApproverLine" style="color:#92400e;font-weight:600"></span></p>
-        </div>
-        <button class="lv-add-btn" onclick="openLeaveForm()">
-          <span style="font-size:18px;line-height:1">＋</span> Apply for Leave
-        </button>
-      </div>
-
-      <div class="lv-tabs">
-        <div class="lv-tab active" data-tab="mine" onclick="lvSwitchTab('mine',this)">
-          <span class="lv-tab-ico">👤</span> My Leaves
-        </div>
-        <div class="lv-tab" data-tab="team" id="lvTabTeam" onclick="lvSwitchTab('team',this)" style="display:none">
-          <span class="lv-tab-ico">👥</span> Team Leaves
-        </div>
-      </div>
-
-      <div class="lv-filter-row">
-        <div class="lv-status-pills">
-          <div class="lv-pill active" data-status="" onclick="lvSetStatus('',this)">All</div>
-          <div class="lv-pill" data-status="pending" onclick="lvSetStatus('pending',this)">
-            <span class="lv-dot lv-dot-pending"></span> Pending
-          </div>
-          <div class="lv-pill" data-status="approved" onclick="lvSetStatus('approved',this)">
-            <span class="lv-dot lv-dot-approved"></span> Approved
-          </div>
-          <div class="lv-pill" data-status="rejected" onclick="lvSetStatus('rejected',this)">
-            <span class="lv-dot lv-dot-rejected"></span> Rejected
-          </div>
-        </div>
-        <input type="text" id="lvSearch" placeholder="🔍 Search by name / reason / type..." oninput="renderLeaves()"/>
-      </div>
-
-      <div id="lvListWrap" class="lv-list-wrap"><div class="empty">Loading…</div></div>
-    </div>
-  </div>
-
-  <!-- ── MIS REPORT ── -->
-  <div id="page-mis" class="page">
-    <div class="page-header">
-      <button id="setPlanBtn" class="btn btn-primary" onclick="openSetPlanModal()" style="display:none">📅 Set Plan</button>
-    </div>
-
-    <!-- Filters -->
-    <div style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:18px;margin-bottom:18px;">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);margin-bottom:4px;text-transform:uppercase">Start Date</div>
-          <input type="date" id="misStart" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;"/>
-        </div>
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);margin-bottom:4px;text-transform:uppercase">End Date</div>
-          <input type="date" id="misEnd" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;"/>
-        </div>
-        <div style="align-self:flex-end">
-          <button class="btn btn-primary" onclick="generateMIS()">Generate</button>
-        </div>
-        <div style="align-self:flex-end">
-          <button class="btn btn-outline" onclick="exportMIS()">⬇ Export CSV</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:14px;">
-        <div class="tab-group">
-          <div class="tab active" id="misTabDel" onclick="switchMisTab('delegation',this)">Delegation MIS</div>
-          <div class="tab" id="misTabChl" onclick="switchMisTab('checklist',this)">Checklist MIS</div>
-          <div class="tab" id="misTabFMS" onclick="switchMisTab('fms',this)">FMS MIS</div>
-          <div class="tab" id="misTabAll" onclick="switchMisTab('all',this)">All MIS</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Results -->
-    <div id="misResults">
-      <div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
-        Select date range and click Generate
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ══════════════════════════════════════
-     DELEGATE TASK MODAL (Admin only)
-══════════════════════════════════════ -->
-<!-- Schedule / edit a meeting -->
-<!-- Tasks behind one week of the Employee 360 table -->
-<div class="modal-overlay" id="weekTasksModal">
-  <div class="modal" style="width:680px">
-    <h3 id="weekTasksTitle">📋 Week tasks</h3>
-    <div id="weekTasksBody"></div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('weekTasksModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="meetingModal">
-  <div class="modal" style="width:620px">
-    <h3 id="mtgModalTitle">📅 Schedule Meeting</h3>
-    <input type="hidden" id="mtgId"/>
-    <div class="alert error" id="mtgErr"></div>
-
-    <div class="form-group">
-      <label>Title</label>
-      <input type="text" id="mtgTitle" placeholder="What is this meeting about?"/>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Date</label>
-        <input type="date" id="mtgDate" onchange="mtgLoadSlots()"/>
-      </div>
-      <div class="form-group">
-        <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-        <select id="mtgClient"><option value="">— No Unit —</option></select>
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Start</label>
-        <input type="time" id="mtgStart" onchange="mtgSyncEnd();mtgLoadSlots()"/>
-      </div>
-      <div class="form-group">
-        <label>Duration</label>
-        <select id="mtgDuration" onchange="mtgSyncEnd()">
-          <option value="15">15 min</option>
-          <option value="30" selected>30 min</option>
-          <option value="45">45 min</option>
-          <option value="60">1 hour</option>
-          <option value="90">1.5 hours</option>
-          <option value="120">2 hours</option>
-        </select>
-        <div style="font-size:11px;color:var(--faint);margin-top:5px">Ends at <b id="mtgEndLabel">—</b></div>
-        <input type="hidden" id="mtgEnd"/>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Attendees</label>
-      <select id="mtgAttendees" multiple size="5" onchange="mtgLoadSlots()"
-        style="width:100%;padding:6px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
-      <div style="font-size:11px;color:var(--faint);margin-top:4px">Ctrl / Cmd + click to pick more than one</div>
-    </div>
-
-    <!-- Availability for the chosen day; clicking a free slot fills start/end. -->
-    <div class="form-group">
-      <label>Availability <span style="color:var(--faint);font-weight:400;font-size:11px">(click a free slot)</span></label>
-      <div id="mtgSlots" style="font-size:12px;color:var(--faint)">Pick a date to see open slots</div>
-    </div>
-
-    <div class="form-group">
-      <label>Meeting Link <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <input type="url" id="mtgLink" placeholder="https://meet.google.com/..."/>
-    </div>
-
-    <div class="form-group">
-      <label>Agenda <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <textarea id="mtgAgenda" placeholder="Points to cover…"></textarea>
-    </div>
-
-    <!-- Recurrence is create-only; editing one occurrence must not rewrite a series. -->
-    <div id="mtgRepeatWrap">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Repeat</label>
-          <select id="mtgFreq" onchange="mtgFreqChange()">
-            <option value="">Does not repeat</option>
-            <option value="daily">Daily</option>
-            <option value="weekday">Every day except Sunday</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="custom">Custom days</option>
-          </select>
-        </div>
-        <div class="form-group" id="mtgUntilWrap" style="display:none">
-          <label>Repeat Until</label>
-          <input type="date" id="mtgUntil"/>
-        </div>
-      </div>
-      <div class="form-group" id="mtgDaysWrap" style="display:none">
-        <label>Repeat On</label>
-        <div id="mtgDays" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('meetingModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveMeeting()">Save</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="delegateModal">
-  <div class="modal">
-    <h3>+ Delegate Task</h3>
-    <div class="alert error" id="delegateErr"></div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Doer (Assign To)</label>
-        <select id="dDoer"><option value="">Select Doer</option></select>
-      </div>
-      <div class="form-group">
-        <label>Due Date</label>
-        <input type="date" id="dDate"/>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Priority</label>
-        <select id="dPriority">
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="urgent">Urgent</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Approval Required</label>
-        <select id="dApproval" onchange="onDelegateApprovalChange()">
-          <option value="no">No Approval</option>
-          <option value="yes">Yes Approval</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group" id="dApproverGroup" style="display:none">
-      <label>Approver</label>
-      <select id="dApprover" onchange="onDelegateApproverChange()"><option value="">Select Approver</option></select>
-      <div id="dApproverEmail" style="margin-top:6px;font-size:12px;color:var(--brand-deep);font-weight:500;display:none">
-        📧 <span id="dApproverEmailText"></span>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <select id="dClient"><option value="">— No Unit —</option></select>
-    </div>
-    <div class="form-group">
-      <label>Description</label>
-      <textarea id="dDesc" placeholder="Enter task description…"></textarea>
-    </div>
-    <div class="form-group">
-      <label>URL <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <input type="url" id="dUrl" placeholder="https://docs.google.com/…" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;transition:border .2s;color:var(--foreground);background:var(--card)"/>
-    </div>
-    <div class="form-group">
-      <label>Remarks</label>
-      <textarea id="dRemarks" placeholder="Any remarks…" style="min-height:50px"></textarea>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between;align-items:center">
-      <button class="btn btn-outline" onclick="closeModal('delegateModal')">Close</button>
-      <button class="btn btn-primary" onclick="saveDelegate()">Assign</button>
-    </div>
-    <!-- Bulk Upload -->
-    <div class="bulk-section">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="flex:1;height:1px;background:var(--border)"></div>
-        <span style="font-size:11px;color:var(--faint);font-weight:600">OR BULK UPLOAD CSV</span>
-        <div style="flex:1;height:1px;background:var(--border)"></div>
-      </div>
-      <div class="file-row">
-        <input type="file" id="bulkFile" accept=".csv" style="font-size:12px;flex:1"/>
-        <button class="btn btn-green btn-sm" onclick="uploadCSV()">⬆ Upload CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="downloadSample()">⬇ Sample</button>
-      </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Format: doer_email, approver_email, due_date, priority, approval, description, remarks, client_name</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     CHECKLIST TASK MODAL (Admin only)
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="checklistModal">
-  <div class="modal">
-    <h3>+ Add Checklist Task</h3>
-    <div class="alert error" id="checklistErr"></div>
-    <div class="alert success" id="checklistSuccess"></div>
-
-    <div class="form-group">
-      <label>Select Employee</label>
-      <select id="cDoer"><option value="">Select Employee</option></select>
-    </div>
-
-    <div class="form-group">
-      <label>Frequency</label>
-      <select id="cFrequency">
-        <option value="daily">Daily (365 tasks/year)</option>
-        <option value="weekly">Weekly (52 tasks/year)</option>
-        <option value="alternative_week">Alternative Week (26 tasks/year)</option>
-        <option value="monthly">Monthly (12 tasks/year)</option>
-        <option value="quarterly">Quarterly (4 tasks/year)</option>
-        <option value="yearly">Yearly (1 task/year)</option>
-      </select>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Start Date</label>
-        <input type="date" id="cDate"/>
-      </div>
-      <div class="form-group">
-        <label>End Date <span style="color:var(--faint);font-weight:400;font-size:11px">(kab tak chalegi)</span></label>
-        <input type="date" id="cEndDate"/>
-        <div style="font-size:11px;color:var(--faint);margin-top:4px">Leave blank to generate tasks for 1 year by default</div>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <select id="cClient"><option value="">— No Unit —</option></select>
-    </div>
-
-    <div class="form-group">
-      <label>Task Name / Description</label>
-      <input type="text" id="cDesc" placeholder="Enter task name…"/>
-    </div>
-
-    <div class="form-group">
-      <label>Remarks</label>
-      <input type="text" id="cRemarks" placeholder="Any remarks…"/>
-    </div>
-
-    <!-- Preview -->
-    <div id="cPreview" style="background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;display:none">
-      <strong>Preview:</strong> <span id="cPreviewText"></span>
-    </div>
-
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-outline" onclick="closeModal('checklistModal')">Close</button>
-      <button class="btn btn-primary" onclick="saveChecklist()" id="cGenerateBtn">Generate Tasks</button>
-    </div>
-
-    <div class="bulk-section">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="flex:1;height:1px;background:var(--border)"></div>
-        <span style="font-size:11px;color:var(--faint);font-weight:600">OR BULK UPLOAD CSV</span>
-        <div style="flex:1;height:1px;background:var(--border)"></div>
-      </div>
-      <div class="file-row">
-        <input type="file" id="bulkFileC" accept=".csv" style="font-size:12px;flex:1"/>
-        <button class="btn btn-green btn-sm" onclick="uploadCSVC()">⬆ Upload CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="downloadSampleC()">⬇ Sample</button>
-      </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Format: user_email, frequency (daily/weekly/monthly/yearly/quarterly/alternative_week), start_date, <b>end_date (optional)</b>, description, remarks — tasks auto-generate!</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     HOLIDAYS MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="holidayModal">
-  <div class="modal" style="max-width:560px">
-    <h3>🗓 Holidays</h3>
-    <div class="alert error" id="holidayErr"></div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Date</label>
-        <input type="date" id="hDate"/>
-      </div>
-      <div class="form-group">
-        <label>Holiday Name</label>
-        <input type="text" id="hName" placeholder="e.g. Diwali"/>
-      </div>
-    </div>
-    <button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="addHoliday()">+ Add Holiday</button>
-
-    <!-- Bulk Upload -->
-    <div style="background:#fff7ed;border:1.5px dashed #fcd34d;border-radius:10px;padding:14px 16px;margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:#92400e">📂 Bulk Upload (CSV)</div>
-          <div style="font-size:11px;color:#78350f;margin-top:2px">Format: <code>date,name</code> per line — date as YYYY-MM-DD or DD-MM-YYYY</div>
-        </div>
-        <button class="btn btn-outline btn-sm" onclick="downloadHolidaySample()" style="padding:6px 12px;font-size:12px">⬇ Sample</button>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-        <input type="file" id="holidayBulkFile" accept=".csv,.txt" style="font-size:12px;flex:1;min-width:200px"/>
-        <button class="btn btn-green btn-sm" onclick="uploadHolidayBulk()" style="padding:8px 14px">📤 Upload CSV</button>
-      </div>
-    </div>
-
-    <div style="font-size:12px;font-weight:600;color:var(--muted-foreground);margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">Holiday List</div>
-    <div id="holidayList" style="max-height:260px;overflow-y:auto"></div>
-    <div style="margin-top:16px">
-      <button class="btn btn-outline" style="width:100%" onclick="closeModal('holidayModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     FMS - EDIT MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="fmsEditModal">
-  <div class="modal" style="width:780px;max-width:96vw;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <h3 style="margin:0">✏️ Edit FMS</h3>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-outline btn-sm" onclick="addFMSStep()">+ Add Step</button>
-        <button class="btn btn-outline btn-sm" id="editFmsDupModeBtn" style="color:#7c3aed;border-color:#c4b5fd" onclick="toggleFMSDupMode()">📋 Duplicate</button>
-        <button class="btn btn-sm" id="editFmsDupConfirmBtn" style="display:none;background:#7c3aed;color:#fff" onclick="confirmFMSDup()">Duplicate Selected</button>
-      </div>
-    </div>
-
-    <!-- Sheet basics -->
-    <div style="background:var(--muted);border-radius:10px;padding:14px;margin-bottom:16px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group" style="margin:0">
-          <label>FMS Name <span style="color:var(--faint);font-weight:400;font-size:11px">(display name)</span></label>
-          <input type="text" id="editFmsFmsName" placeholder="e.g. Production Flow" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Google Sheet Tab Name</label>
-          <input type="text" id="editFmsSheetName" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Sheet ID</label>
-          <input type="text" id="editFmsSheetId" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Header Row</label>
-          <input type="number" id="editFmsHeaderRow" min="1" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step navigator -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-      <div id="editFmsStepNav" style="display:flex;gap:6px;flex-wrap:wrap;flex:1"></div>
-      <div style="display:flex;gap:6px">
-        <button id="editFmsDeleteModeBtn" class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#fecaca" onclick="toggleFMSDeleteMode()">🗑 Select to Delete</button>
-        <button id="fmsConfirmDeleteBtn" class="btn btn-danger btn-sm" style="display:none" onclick="confirmFMSDelete()">Delete Selected</button>
-      </div>
-    </div>
-
-    <!-- Steps container -->
-    <div id="fmsEditStepsContainer" style="display:flex;flex-direction:column;gap:16px"></div>
-
-    <div class="alert error" id="fmsEditErr" style="margin-top:12px"></div>
-
-    <div class="modal-footer" style="justify-content:space-between;margin-top:20px">
-      <button class="btn btn-outline" onclick="closeModal('fmsEditModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveEditFMS()">💾 Save Changes</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     FMS - ADD NEW MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="fmsAddModal">
-  <div class="modal" style="max-width:480px">
-    <h3>+ Add New FMS</h3>
-    <div class="alert error" id="fmsAddErr"></div>
-    <div class="form-group">
-      <label>FMS Name <span style="color:var(--faint);font-weight:400;font-size:11px">(display name — shown in tabs & dropdown)</span></label>
-      <input type="text" id="fmsFmsName" placeholder="e.g. Production Flow, RM Purchase"/>
-    </div>
-    <div class="form-group">
-      <label>Google Sheet Tab Name <span style="color:var(--faint);font-weight:400;font-size:11px">(exact name of the sheet tab)</span></label>
-      <input type="text" id="fmsSheetName" placeholder="e.g. Sheet1, RM BOP"/>
-    </div>
-    <div class="form-group">
-      <label>Google Sheet ID</label>
-      <input type="text" id="fmsSheetId" placeholder="Google Sheet ID or full URL"/>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Header Row <span style="color:var(--faint);font-weight:400;font-size:11px">(which row holds the headers)</span></label>
-        <input type="number" id="fmsHeaderRow" value="1" min="1"/>
-      </div>
-      <div class="form-group">
-        <label>Total Number of Steps</label>
-        <input type="number" id="fmsTotalSteps" value="1" min="1" max="20"/>
-      </div>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-outline" onclick="closeModal('fmsAddModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="proceedToShareNotice()">Config Now →</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     FMS - SHARE NOTICE (7 sec)
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="fmsShareModal">
-  <div class="modal" style="max-width:440px;text-align:center">
-    <div style="font-size:36px;margin-bottom:16px">📊</div>
-    <h3 style="margin-bottom:12px">Share Your Sheet</h3>
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;margin-bottom:20px;">
-      <p style="font-size:14px;color:var(--foreground);line-height:1.6">
-        Share your FMS Sheet to this email so data can sync:
-      </p>
-      <div id="fmsShareEmail" style="margin-top:10px;font-size:15px;font-weight:700;color:var(--brand-deep);background:#eff6ff;padding:10px;border-radius:8px;letter-spacing:.3px;word-break:break-all;">
-      </div>
-      <button onclick="copyFMSEmail()" style="margin-top:8px;background:none;border:1px solid var(--brand-deep);color:var(--brand-deep);padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer">📋 Copy Email</button>
-    </div>
-    <button id="fmsSkipBtn" class="btn btn-primary" style="width:100%;pointer-events:none;opacity:.6" onclick="proceedToStepsConfig()">
-      Skip (<span id="fmsCountdown">7</span>s)
-    </button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     FMS - STEPS CONFIG MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="fmsStepsModal">
-  <div class="modal" style="width:780px;max-width:96vw;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <h3 style="margin:0">Configure Steps</h3>
-      <button class="btn btn-outline btn-sm" onclick="addFMSStep()">+ Add More</button>
-    </div>
-
-    <!-- Delete mode toggle -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <button id="fmsAddDeleteModeBtn" class="btn btn-outline btn-sm" onclick="toggleFMSDeleteModeAdd()"
-        style="color:#dc2626;border-color:#fecaca">🗑 Select to Delete</button>
-      <button id="fmsAddConfirmDeleteBtn" class="btn btn-danger btn-sm" style="display:none" onclick="confirmFMSDeleteAdd()">Delete Selected</button>
-    </div>
-
-    <div id="fmsStepsContainer" style="display:flex;flex-direction:column;gap:16px"></div>
-
-    <div class="modal-footer" style="justify-content:space-between;margin-top:20px">
-      <button class="btn btn-outline" onclick="closeModal('fmsStepsModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveFMS()">💾 Save FMS</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     REVISE DATE MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="reviseDateModal">
-  <div class="modal" style="max-width:380px">
-    <h3>🔄 Request Revision</h3>
-    <input type="hidden" id="reviseTaskId"/>
-    <input type="hidden" id="reviseTaskType"/>
-    <div class="alert error" id="reviseErr"></div>
-    <div class="form-group">
-      <label>New Due Date</label>
-      <input type="date" id="reviseDate"/>
-      <div style="font-size:12px;color:var(--muted-foreground);margin-top:4px">Cannot select a date before today</div>
-    </div>
-    <div class="form-group">
-      <label>Reason for Revision</label>
-      <textarea id="reviseReason" placeholder="Reason for revision..." style="min-height:70px;width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;resize:vertical"></textarea>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-outline" onclick="closeModal('reviseDateModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitRevise()">Send Request</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     EDIT TASK MODAL (Admin only)
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="editTaskModal">
-  <div class="modal">
-    <h3>✏️ Edit Task</h3>
-    <input type="hidden" id="editTId"/>
-    <input type="hidden" id="editTType"/>
-    <div class="alert error" id="editTaskErr"></div>
-    <div class="form-group">
-      <label>Description</label>
-      <textarea id="editTDesc" style="min-height:70px;width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;resize:vertical"></textarea>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Due Date</label>
-        <input type="date" id="editTDate"/>
-      </div>
-      <div class="form-group" id="editTPriorityWrap">
-        <label>Priority</label>
-        <select id="editTPriority">
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="urgent">Urgent</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group" id="editTApprovalWrap">
-      <label>Approval Required</label>
-      <select id="editTApproval">
-        <option value="no">No</option>
-        <option value="yes">Yes</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Remarks</label>
-      <input type="text" id="editTRemarks" placeholder="Remarks..."/>
-    </div>
-    <div class="form-group" id="editTUrlWrap">
-      <label>URL <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <input type="url" id="editTUrl" placeholder="https://docs.google.com/…" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;color:var(--foreground);background:var(--card)"/>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-outline" onclick="closeModal('editTaskModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveEditTask()">Save Changes</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     TASK DETAIL MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="taskDetailModal">
-  <div class="modal" style="width:560px;max-width:96vw">
-    <h3 id="tdTitle" style="margin-bottom:18px">📋 Task Detail</h3>
-    <div id="tdBody" style="display:flex;flex-direction:column;gap:12px;font-size:13.5px;color:var(--foreground)"></div>
-    <div class="modal-footer" style="margin-top:18px">
-      <button class="btn btn-outline" onclick="closeModal('taskDetailModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     MIS DETAIL MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="misDetailModal">
-  <div class="modal" style="width:680px;max-width:95vw">
-    <h3 id="misDetailTitle">Task Details</h3>
-    <div id="misDetailScore" style="background:var(--muted);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:18px;"></div>
-    <div style="font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">All Tasks in Date Range</div>
-    <div style="max-height:360px;overflow-y:auto;border-radius:8px;border:1px solid var(--border);">
-      <table>
-        <thead><tr><th>Description</th><th>Assigned By</th><th>Due Date</th><th>Status</th><th></th></tr></thead>
-        <tbody id="misDetailBody"></tbody>
-      </table>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('misDetailModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     COMMENT MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="commentModal">
-  <div class="modal">
-    <h3>💬 Comments</h3>
-    <input type="hidden" id="commentTaskId"/>
-    <input type="hidden" id="commentTaskType"/>
-    <div id="commentsList" style="max-height:280px;overflow-y:auto;margin-bottom:16px;"></div>
-    <div style="display:flex;gap:8px;">
-      <input type="text" id="commentInput" placeholder="Write a comment…"
-        style="flex:1;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;"
-        onkeydown="if(event.key==='Enter')addComment()"/>
-      <button class="btn btn-primary btn-sm" onclick="addComment()">Send</button>
-    </div>
-    <div class="modal-footer" style="margin-top:12px">
-      <button class="btn btn-outline" onclick="closeModal('commentModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     ADD/EDIT USER MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="userModal">
-  <div class="modal" style="max-width:520px">
-    <h3 id="userModalTitle">Add User</h3>
-    <div class="alert error" id="userErr"></div>
-    <div class="alert success" id="userSuccess"></div>
-    <input type="hidden" id="editUserId"/>
-    <div class="form-row">
-      <div class="form-group"><label>Full Name</label><input type="text" id="uName" placeholder="Enter full name"/></div>
-      <div class="form-group"><label>Email <span style="color:var(--faint);font-weight:400;font-size:11px">(login)</span></label><input type="email" id="uEmail" placeholder="Enter login email"/></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Phone Number</label><input type="tel" id="uPhone" placeholder="Enter phone number"/></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Department</label><input type="text" id="uDepartment" placeholder="e.g. Sales, Production"/></div>
-    </div>
-    <div class="form-group">
-      <label>Password <span id="pwdOptional" style="color:var(--faint);font-weight:400;text-transform:none">(leave blank to keep current)</span></label>
-      <input type="password" id="uPassword" placeholder="Enter password"/>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>App Role <span style="color:var(--faint);font-weight:400;font-size:11px">(app permissions)</span></label>
-        <select id="uRole">
-          <option value="user">User</option>
-          <option value="hod">HOD</option>
-          <option value="pc">PC (View + Approve)</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="form-group"><label>User Role <span style="color:var(--faint);font-weight:400;font-size:11px">(leave approval hierarchy)</span></label>
-        <select id="uUserRole">
-          <option value="user">User</option>
-          <option value="hod">HOD</option>
-          <option value="pc">PC</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-    </div>
-    <!-- Off-days are managed globally via the Holiday tab (applies to all users) -->
-    <div class="form-group" style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:9px 12px;margin-top:6px">
-      <div style="font-size:12px;color:#1e40af;line-height:1.5">
-        ℹ️ <b>Week off / holidays</b> are managed globally from the <b>Holiday tab</b> (Dashboard → 🗓 Holidays). Same off-days apply to all users.
-      </div>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-outline" onclick="closeModal('userModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveUser()">Save</button>
-    </div>
-    <!-- Bulk Upload — always visible at bottom -->
-    <div class="bulk-section">
-      <label style="font-size:12px;font-weight:600;color:var(--foreground);text-transform:uppercase;letter-spacing:.4px">Bulk Add Users (CSV)</label>
-      <div class="file-row">
-        <input type="file" id="bulkUserFile" accept=".csv" style="font-size:12px;"/>
-        <button class="btn btn-outline btn-sm" onclick="uploadUsersCSV()">Upload CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="downloadUserSample()">Sample</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     FMS DONE MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="fmsDoneModal">
-  <div class="modal" style="max-width:500px">
-    <h3>✅ Mark as Done</h3>
-    <input type="hidden" id="fmsDoneFmsId"/>
-    <input type="hidden" id="fmsDoneStepId"/>
-    <input type="hidden" id="fmsDoneRowNum"/>
-    <input type="hidden" id="fmsDonePlanVal"/>
-    <div class="alert error" id="fmsDoneErr"></div>
-    <!-- Row data preview -->
-    <div id="fmsDoneRowPreview" style="background:var(--muted);border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;border:1px solid var(--border);max-height:160px;overflow-y:auto"></div>
-    <!-- Plan time -->
-    <div style="display:flex;gap:12px;margin-bottom:14px">
-      <div style="flex:1">
-        <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Plan Value</div>
-        <div id="fmsDonePlanDisplay" style="font-size:15px;font-weight:700;color:var(--brand-deep);background:#eff6ff;padding:10px 14px;border-radius:8px"></div>
-      </div>
-      <div style="flex:1">
-        <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Actual (Now)</div>
-        <div id="fmsDoneActualDisplay" style="font-size:15px;font-weight:700;color:#10b981;background:#f0fdf4;padding:10px 14px;border-radius:8px"></div>
-      </div>
-    </div>
-    <!-- Delay reason (shown if actual > plan) -->
-    <div id="fmsDoneDelaySection" style="display:none">
-      <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:600;color:#92400e;margin-bottom:8px">⚠️ Delay Detected — Reason Required</div>
-        <input type="text" id="fmsDoneDelayReason" placeholder="Reason for delay..." style="width:100%;padding:9px 12px;border:1.5px solid #fcd34d;border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)"/>
-      </div>
-    </div>
-    <!-- Extra input fields (shown when step has extraRows configured) -->
-    <div id="fmsDoneExtraSection" style="display:none;margin-bottom:16px">
-      <div style="font-size:13px;font-weight:600;color:var(--foreground);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">📝 Additional Fields</div>
-      <div id="fmsDoneExtraFields"></div>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-outline" onclick="closeModal('fmsDoneModal')">Cancel</button>
-      <button class="btn btn-green" onclick="saveFMSDone()" id="fmsDoneSaveBtn">💾 Save to Sheet</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     BULK DELETE MODAL
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="bulkDeleteModal">
-  <div class="modal" style="max-width:600px">
-    <h3>🗑 Bulk Delete Tasks</h3>
-    <div class="alert error" id="bulkDeleteErr"></div>
-
-    <!-- STEP 1: From User (admin/HOD only) -->
-    <div id="bdStep1" style="display:none">
-      <div class="form-group">
-        <label>Select Doer (whose tasks to delete)</label>
-        <select id="bdFromUser" onchange="onBdFromChange()"
-          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)">
-          <option value="">-- Select user --</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- STEP 2: Date -->
-    <div id="bdStep2" style="display:none">
-      <div class="form-group">
-        <label>Select Date</label>
-        <input type="date" id="bdDate" onchange="onBdDateChange()"
-          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-      </div>
-    </div>
-
-    <!-- STEP 3: Tasks list -->
-    <div id="bdStep3" style="display:none">
-      <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
-        Tasks on — <span id="bdDateLabel" style="color:#dc2626"></span>
-      </div>
-      <div id="bdTasksList" style="background:var(--muted);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto;margin-bottom:14px"></div>
-
-      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#dc2626;margin-bottom:12px">
-        ⚠️ This action is permanent and cannot be undone!
-      </div>
-
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-outline" onclick="closeModal('bulkDeleteModal')">Cancel</button>
-        <button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626" onclick="bulkDeleteSelected()">🗑 Delete Selected</button>
-        <button class="btn btn-danger btn-sm" onclick="bulkDeleteAll()">🗑 Delete All</button>
-      </div>
-    </div>
-
-    <!-- Checklist series delete (admin only) — pick a user, then choose which checklists to delete -->
-    <div id="bdYearSection" style="display:none;margin-top:18px;border-top:1.5px dashed #fecaca;padding-top:16px">
-      <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:10px">🗓 Delete Checklist (choose karke)</div>
-      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
-        <div style="flex:1;min-width:160px">
-          <label style="font-size:12px;font-weight:600;color:var(--muted-foreground);display:block;margin-bottom:4px">Employee</label>
-          <select id="bdYearUser" onchange="onBdYearUserChange()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)">
-            <option value="">-- Select Employee --</option>
-          </select>
-          <div id="bdYearUserEmail" style="display:none;margin-top:5px;padding:5px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1d4ed8;font-weight:600">📧 <span id="bdYearUserEmailText"></span></div>
-        </div>
-      </div>
-
-      <!-- Checklist series list -->
-      <div id="bdChkWrap" style="display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">
-            Which checklist do you want to delete? — <span id="bdChkCount" style="color:#dc2626"></span>
-          </div>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-outline btn-sm" onclick="bdChkToggleAll(true)">Select All</button>
-            <button class="btn btn-outline btn-sm" onclick="bdChkToggleAll(false)">Clear</button>
-          </div>
-        </div>
-
-        <input type="text" id="bdChkSearch" oninput="renderBdChecklistGroups()" placeholder="🔍 Checklist name search…"
-          style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;margin-bottom:8px"/>
-
-        <div id="bdChkList" style="background:var(--muted);border:1px solid var(--border);border-radius:8px;max-height:280px;overflow-y:auto;margin-bottom:12px"></div>
-
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-          <label style="font-size:12px;font-weight:600;color:var(--muted-foreground);white-space:nowrap">Delete scope</label>
-          <select id="bdChkScope" style="flex:1;min-width:200px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)">
-            <option value="all">Entire checklist (history + future)</option>
-            <option value="future">Only pending tasks from today onward</option>
-          </select>
-        </div>
-
-        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#dc2626;margin-bottom:12px">
-          ⚠️ Only the selected checklists will be deleted. This action is permanent!
-        </div>
-
-        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626" onclick="deleteSelectedChecklists()">🗑 Delete Selected</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteAllChecklists()">🗑 Delete ALL Checklist</button>
-        </div>
-      </div>
-      <div id="bdChkEmpty" style="display:none;padding:12px;background:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--faint);text-align:center">No checklists found for this employee.</div>
-    </div>
-
-    <!-- Cancel before step 3 -->
-    <div id="bdCancelBtn" style="margin-top:12px;text-align:right">
-      <button class="btn btn-outline" onclick="closeModal('bulkDeleteModal')">Cancel</button>
-    </div>
-  </div>
-</div>
-<!-- ══════════════════════════════════════
-     WHATSAPP CHECKLIST REMINDER (Admin)
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="waReminderModal">
-  <div class="modal" style="max-width:620px">
-    <h3>📲 Checklist WhatsApp Reminder</h3>
-    <div class="alert error" id="waRemErr"></div>
-    <div class="alert success" id="waRemSuc"></div>
-
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:12px;color:#166534;margin-bottom:14px">
-      Runs automatically every day at <b>10:00 AM (IST)</b> — each employee receives <b>all of that day’s checklist tasks in a single message</b>.
-      There is a <b>4-5 minute gap</b> between messages (to avoid spam filters), so a large batch takes a while to finish — messages keep sending in the background on their own.
-    </div>
-
-    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
-      <div style="flex:1;min-width:150px">
-        <label style="font-size:12px;font-weight:600;color:var(--muted-foreground);display:block;margin-bottom:4px">Date</label>
-        <input type="date" id="waRemDate" onchange="loadWaReminderPreview()"
-          style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-      </div>
-      <button class="btn btn-outline btn-sm" style="margin-bottom:1px" onclick="loadWaReminderPreview()">🔄 Preview</button>
-      <button class="btn btn-green btn-sm" style="margin-bottom:1px" onclick="sendWaReminderNow()">📤 Send Now (Test)</button>
-    </div>
-
-    <div id="waRemSummary" style="font-size:12px;color:var(--muted-foreground);margin-bottom:8px"></div>
-    <div id="waRemList" style="background:var(--muted);border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;margin-bottom:14px"></div>
-
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('waReminderModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="transferModal">
-  <div class="modal" style="max-width:600px">
-    <h3>🔀 Transfer Tasks</h3>
-    <div class="alert error" id="transferErr"></div>
-
-    <!-- STEP 1: From User (admin/HOD only) -->
-    <div id="transferStep1" style="display:none">
-      <div class="form-group">
-        <label id="transferFromLabel">Select Doer (whose tasks to transfer)</label>
-        <select id="transferFromUser" onchange="onTransferFromChange()"
-          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)">
-          <option value="">-- Select user --</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- STEP 2: Date selection -->
-    <div id="transferStep2" style="display:none">
-      <div class="form-group">
-        <label>Select Date</label>
-        <input type="date" id="transferDate" onchange="onTransferDateChange()"
-          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-      </div>
-    </div>
-
-    <!-- STEP 3: Tasks list -->
-    <div id="transferStep3" style="display:none">
-      <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
-        Tasks on selected date — <span id="transferDateLabel" style="color:#7c3aed"></span>
-      </div>
-      <div id="transferTasksListNew" style="background:var(--muted);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;margin-bottom:12px"></div>
-
-      <!-- To User -->
-      <div class="form-group">
-        <label>Transfer To <span style="color:#ef4444">*</span></label>
-        <select id="transferToUser"
-          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)">
-          <option value="">-- Select user --</option>
-        </select>
-      </div>
-
-      <div style="background:#faf5ff;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;font-size:12px;color:#7c3aed;margin-bottom:12px">
-        ℹ️ Task will be transferred after approval
-      </div>
-
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-outline" onclick="closeModal('transferModal')">Cancel</button>
-        <button class="btn btn-outline" style="border-color:#7c3aed;color:#7c3aed" onclick="submitTransferSelected()">✅ Transfer Selected</button>
-        <button class="btn btn-sm" style="background:#7c3aed;color:#fff;padding:8px 16px;border-radius:8px;font-family:var(--font-sans);font-weight:600;cursor:pointer;border:none" onclick="submitTransferAll()">🔀 Transfer All</button>
-      </div>
-    </div>
-
-    <!-- Cancel before step 3 -->
-    <div id="transferCancelBtn" style="margin-top:12px;text-align:right">
-      <button class="btn btn-outline" onclick="closeModal('transferModal')">Cancel</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- ── SET PLAN MODAL ── -->
-<div class="modal-overlay" id="setPlanModal">
-  <div class="modal" style="max-width:440px">
-    <h3 style="margin-bottom:18px">📅 Set Next Week Plan</h3>
-    <div class="alert error" id="setPlanErr"></div>
-    <div class="form-group">
-      <label>Select Employee <span style="color:#ef4444">*</span></label>
-      <select id="planEmpSelect" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;background:var(--card)">
-        <option value="">Select Employee</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Start Date of Week <span style="color:#ef4444">*</span></label>
-      <input type="date" id="planStartDate" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-    </div>
-    <div class="form-group">
-      <label style="display:flex;align-items:center;gap:6px">
-        Improvement Target (%)
-        <span style="font-size:11px;color:var(--faint);font-weight:400">— optional, the goal set in the meeting</span>
-      </label>
-      <div style="position:relative">
-        <input type="number" id="planImprovementPct" min="-100" max="100" placeholder="e.g. -30 (meaning bring it down by 30%)"
-          style="width:100%;padding:9px 12px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;box-sizing:border-box"/>
-      </div>
-      <div id="planPctPreview" style="margin-top:6px;font-size:12px;color:var(--muted-foreground);min-height:18px"></div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:20px">
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#7c3aed,var(--brand-deep));border:none" onclick="saveWeekPlan()">Save Plan</button>
-      <button class="btn btn-outline" onclick="closeModal('setPlanModal')">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── DELEGATE BY ME MODAL ─────────────────────────────────────── -->
-<div class="modal-overlay" id="delegateByMeModal">
-  <div class="modal" style="max-width:900px;max-height:90vh;display:flex;flex-direction:column">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h3 style="margin:0">📤 Tasks Delegated by Me</h3>
-      <button class="btn btn-outline" onclick="closeModal('delegateByMeModal')" style="padding:5px 12px;font-size:12px">✕ Close</button>
-    </div>
-    <!-- Sub-tabs: Pending / Completed -->
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <div class="tab-group">
-        <div class="tab active" id="dbmTabPending" onclick="filterDbmStatus('pending',this)">Pending</div>
-        <div class="tab" id="dbmTabCompleted" onclick="filterDbmStatus('completed',this)">Completed</div>
-      </div>
-      <div style="position:relative;margin-left:auto">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint)">🔍</span>
-        <input type="text" id="dbmSearch" placeholder="Search…" oninput="renderDbmTable()"
-          style="padding:7px 12px 7px 30px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:220px"/>
-      </div>
-    </div>
-    <div style="flex:1;overflow:auto" id="dbmContent">
-      <div class="empty">Loading…</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════
-     LEAVE TRACKER — APPLY FORM
-══════════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="leaveModal">
-  <div class="modal lv-modal">
-    <div class="lv-modal-head">
-      <h3 class="lv-modal-title">🗓 Leave Tracker Form</h3>
-      <button class="lv-modal-close" onclick="closeModal('leaveModal')">✕</button>
-    </div>
-    <div class="alert error" id="leaveErr"></div>
-
-    <div class="form-group">
-      <label>Timestamp <span class="lv-req">*</span></label>
-      <input type="text" id="lvTimestamp" disabled/>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Employee Name <span class="lv-req">*</span></label>
-        <input type="text" id="lvEmpName" disabled/>
-      </div>
-      <div class="form-group">
-        <label>Employee Email <span class="lv-req">*</span></label>
-        <input type="text" id="lvEmpEmail" disabled/>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Leave Type <span class="lv-req">*</span></label>
-      <div class="lv-type-grid" id="lvTypeGrid">
-        <button type="button" class="lv-type-btn" data-type="full_day" onclick="lvPickType('full_day',this)">
-          <span class="lv-type-ico">🛌</span> Full Day Leave
-        </button>
-        <button type="button" class="lv-type-btn" data-type="half_day" onclick="lvPickType('half_day',this)">
-          <span class="lv-type-ico">⏱</span> Half Day Leave
-        </button>
-        <button type="button" class="lv-type-btn" data-type="work_from_home" onclick="lvPickType('work_from_home',this)">
-          <span class="lv-type-ico">🏠</span> Work From Home
-        </button>
-        <button type="button" class="lv-type-btn" data-type="extra_working" onclick="lvPickType('extra_working',this)">
-          <span class="lv-type-ico">⚡</span> Extra Working
-        </button>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Select Dates <span class="lv-req">*</span> <span class="lv-cal-hint">📅 (click individual dates to select/deselect)</span></label>
-      <div class="lv-calendar" id="lvCalendar">
-        <div class="lv-cal-head">
-          <button type="button" class="lv-cal-nav" onclick="lvCalNav(-1)">‹</button>
-          <div class="lv-cal-month-label" id="lvCalMonthLabel">—</div>
-          <button type="button" class="lv-cal-nav" onclick="lvCalNav(1)">›</button>
-        </div>
-        <div class="lv-cal-weekdays">
-          <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
-        </div>
-        <div class="lv-cal-grid" id="lvCalGrid"></div>
-        <div class="lv-cal-foot">
-          <span class="lv-cal-count-ico">📅</span>
-          <span id="lvCalCount">0 dates selected</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="form-group" id="lvSelectedBox" style="display:none">
-      <label id="lvSelectedLabel">Selected Dates</label>
-      <div id="lvSelectedList" class="lv-selected-list"></div>
-    </div>
-
-    <div class="form-group">
-      <label>Reason <span class="lv-req">*</span></label>
-      <textarea id="lvReason" placeholder="Reason for leave (sick, personal work, urgent matter…)"></textarea>
-    </div>
-
-    <div class="lv-approver-hint" id="lvApproverHint" style="display:none">
-      ℹ️ Approval will be sent to: <b id="lvApproverHintName"></b>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('leaveModal')">Cancel</button>
-      <button class="lv-save-btn" onclick="saveLeave()">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── LEAVE APPROVAL DECISION MODAL ── -->
-<div class="modal-overlay" id="leaveDecisionModal">
-  <div class="modal" style="max-width:420px">
-    <h3 id="lvDecisionTitle">Decide Leave</h3>
-    <div class="alert error" id="lvDecisionErr"></div>
-    <div id="lvDecisionInfo" style="background:#FFF3F3;border:1px solid #FBE4E5;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.6"></div>
-    <div class="form-group">
-      <label>Note (optional)</label>
-      <textarea id="lvDecisionNote" placeholder="Add a note for the requester…" style="min-height:60px"></textarea>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('leaveDecisionModal')">Cancel</button>
-      <button class="btn btn-danger" id="lvRejectBtn" onclick="submitLeaveDecision('reject')">Reject</button>
-      <button class="btn btn-green" id="lvApproveBtn" onclick="submitLeaveDecision('approve')">Approve</button>
-    </div>
-  </div>
-</div>
-
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
-<script>
+   Bunai Task Manager — application script
+   Extracted from frontend/app.html so the markup, the styles and the
+   behaviour are three files instead of one 9 000-line document. The server
+   serves each with its own content-hash ETag, so editing one does not
+   invalidate the browser cache of the other two.
+   ══════════════════════════════════════════════════════ */
+// ── Delegate-by-me modal (was the first inline <script>) ──
 // ══════════════════════════════════════════════════════
 // DELEGATE BY ME — shows all tasks delegated by the current logged-in user to others
 // ══════════════════════════════════════════════════════
@@ -3022,8 +90,8 @@ function renderDbmTable() {
       </div>
     </div>`;
 }
-</script>
-<script>
+
+// ── Main application (was the second inline <script>) ──
 // ══════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════
@@ -3093,7 +161,6 @@ async function init() {
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('nav-dailyreports').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
-      document.getElementById('waReminderBtn').style.display = 'inline-flex';
     }
     // PO — Production department fills it, Finance department uploads doc against it,
     // Admin sees/does everything.
@@ -3204,7 +271,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',scheduler:'Scheduler',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',scheduler:'Scheduler',pms:'PMS — Production',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -3276,8 +343,180 @@ function navigate(page, el, fromHash) {
   if (page==='dailyreports') loadDailyReports();
   if (page==='leaves') loadLeaves();
   if (page==='scheduler') loadScheduler();
+  if (page==='pms') loadPMS();
   if (page==='ims') loadIMS();
+  if (page==='stock') loadStock();
   window.scrollTo(0,0);
+}
+
+// ══════════════════════════════════════════════════════
+// STOCK — Vinculum warehouse stock
+// Reads /api/stock, which reads the synced tables. Nothing here talks to
+// Vinculum directly, so the page renders instantly regardless of their API.
+// ══════════════════════════════════════════════════════
+let _stockTimer = null;
+function stockDebounced() {
+  clearTimeout(_stockTimer);
+  _stockTimer = setTimeout(loadStock, 300);   // typing shouldn't fire a query per keystroke
+}
+
+function stockTile(label, value, note, tone) {
+  const colors = { good: '#16a34a', warn: '#d97706', bad: '#dc2626' };
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+    <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">${label}</div>
+    <div style="font-size:22px;font-weight:700;line-height:1.2;margin-top:4px;color:${colors[tone] || 'var(--foreground)'};font-variant-numeric:tabular-nums">${value}</div>
+    ${note ? `<div style="font-size:11.5px;color:var(--faint);margin-top:2px">${note}</div>` : ''}
+  </div>`;
+}
+
+// Kicks off a sync and watches it, rather than waiting on one long request.
+// A run takes about ten minutes — 20 SKUs per call, plus a forced pause when
+// the API's 40-call quota trips — and the server returns as soon as it has
+// started. From then on the page just polls, so closing the tab, a flaky
+// network or a server restart cannot make a healthy sync look failed.
+let _stockPoll = null;
+
+// An alert() is wrong for a job this long — six minutes later the user is on
+// another page or another tab, and a modal that hijacks whatever they are doing
+// to announce a background task is an interruption, not a courtesy. This says
+// the same thing in place, and waits there until it is read.
+function stockNotice(kind, text) {
+  const el = document.getElementById('stockNotice');
+  if (!el) return;
+  if (!text) { el.style.display = 'none'; return; }
+  const skin = {
+    ok:   ['#ECFDF3', '#A6F4C5', '#05603A'],
+    busy: ['#FFF8E6', '#FDE68A', '#8A5A00'],
+    bad:  ['#FEF3F2', '#FECDCA', '#B42318'],
+  }[kind] || ['#F8FAFC', '#E2E8F0', '#334155'];
+  el.style.background = skin[0];
+  el.style.border = '1px solid ' + skin[1];
+  el.style.color = skin[2];
+  el.textContent = text;
+  el.style.display = 'block';
+}
+
+function stockWatch(on) {
+  const btn = document.getElementById('stockSyncBtn');
+  clearInterval(_stockPoll);
+  if (!on) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sync now'; }
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing… (~6 min)'; }
+  // Every 20s: cheap for a job this long, and quick enough that the page
+  // notices the finish without the user reaching for refresh.
+  _stockPoll = setInterval(async () => {
+    try {
+      const d = await api('/api/stock');
+      if (d.lastSync && d.lastSync.ended_at) {
+        stockWatch(false);
+        stockNotice(d.lastSync.ok ? 'ok' : 'bad', d.lastSync.ok
+          ? `Sync finished — ${d.lastSync.rows_seen} stock rows updated. Any new low-stock tasks are in All Tasks.`
+          : `Sync failed — ${d.lastSync.error || 'no error recorded'}`);
+        await loadStock();
+      }
+    } catch (_) { /* a blip mid-poll is not a failed sync — keep watching */ }
+  }, 20000);
+}
+
+async function syncStockNow() {
+  try {
+    await api('/api/stock/sync', 'POST');
+    stockNotice('busy', 'Sync started. It takes about six minutes — you can leave this page, it keeps running.');
+    stockWatch(true);
+    await loadStock();
+  } catch (e) {
+    const busy = (e.message || '').includes('already running');
+    stockNotice(busy ? 'busy' : 'bad',
+      busy ? e.message : 'Could not start the sync — ' + (e.message || 'unknown error'));
+    if (busy) stockWatch(true);
+  }
+}
+
+async function loadStock() {
+  const body = document.getElementById('stockBody');
+  const tiles = document.getElementById('stockSynced');
+  const syncBtn = document.getElementById('stockSyncBtn');
+  if (syncBtn) syncBtn.style.display = (ME && ME.role === 'admin') ? '' : 'none';
+  try {
+    const q = document.getElementById('stockSearch').value.trim();
+    const low = document.getElementById('stockLow').value;
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (low !== '') params.set('low', low);
+
+    const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
+
+    if (d.notConfigured) {
+      document.getElementById('stockTiles').innerHTML = '';
+      body.innerHTML = `<tr><td colspan="4" class="empty">Stock sync isn't set up on this server yet — run <code>node vinculum-sync.js sync</code>.</td></tr>`;
+      tiles.textContent = '';
+      return;
+    }
+
+    const totalUnits = d.totals.reduce((s, t) => s + Number(t.units || 0), 0);
+    document.getElementById('stockTiles').innerHTML =
+      stockTile('Total units', totalUnits.toLocaleString('en-IN'), `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`) +
+      d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'), `${t.skus} SKUs in stock`)).join('') +
+      (d.counts && d.counts.out_of_stock > 0
+        ? stockTile('Out of stock', d.counts.out_of_stock, 'quantity is zero', 'bad') : '');
+
+    // The sync timestamp is the honest part of this page: stale data that looks
+    // current is worse than no data, so say plainly when it last ran.
+    const agoText = ts => {
+      const mins = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+      return mins < 60 ? `${mins} min ago`
+           : mins < 1440 ? `${Math.round(mins / 60)} hr ago`
+           : `${Math.round(mins / 1440)} days ago`;
+    };
+
+    // How old the data is comes from the last SUCCESSFUL run; a failed retry
+    // afterwards does not make the numbers on screen any less real. The failure
+    // is worth saying, but as a second line, not by hiding the age.
+    if (d.lastOk) {
+      tiles.textContent = `Synced ${agoText(d.lastOk.started_at)}`;
+      tiles.style.color = 'var(--faint)';
+    } else {
+      tiles.textContent = 'Never synced';
+      tiles.style.color = '#d97706';
+    }
+
+    // The log row is written when a run starts, so ok=0 with no end time means
+    // "still going", not "failed" — reading it as a failure would cry wolf on
+    // every sync while it runs.
+    if (d.lastSync && !d.lastSync.ended_at) {
+      tiles.textContent = `Syncing now — started ${agoText(d.lastSync.started_at)}`;
+      tiles.style.color = '#d97706';
+      // Landing on the page mid-run (someone else started it, or a refresh)
+      // should pick the watch back up, not leave the button looking idle.
+      if (!_stockPoll) {
+        stockNotice('busy', 'A sync is already running. This page will update on its own when it finishes.');
+        stockWatch(true);
+      }
+    } else if (d.lastSync && !d.lastSync.ok &&
+               (!d.lastOk || new Date(d.lastSync.started_at) > new Date(d.lastOk.started_at))) {
+      tiles.textContent += ` · last attempt failed: ${d.lastSync.error || 'no error recorded'}`;
+      tiles.style.color = '#dc2626';
+    }
+
+    body.innerHTML = d.rows.length ? d.rows.map(r => {
+      const qty = Number(r.qty);
+      const colour = qty <= 0 ? '#dc2626' : qty <= 5 ? '#d97706' : 'var(--foreground)';
+      return `<tr>
+        <td style="white-space:nowrap;font-family:var(--font-mono);font-size:12px">${dtEscape(r.sku)}</td>
+        <td>${dtEscape(r.description || '—')}</td>
+        <td style="white-space:nowrap">${dtEscape(r.warehouse)}</td>
+        <td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:${colour}">${qty.toLocaleString('en-IN')}</td>
+      </tr>`;
+    }).join('') + (d.truncated
+      ? `<tr><td colspan="4" style="text-align:center;font-size:12px;color:var(--faint);padding:10px">Showing the first 500 — narrow the search to see the rest</td></tr>`
+      : '')
+      : `<tr><td colspan="4" class="empty">No stock matches this filter</td></tr>`;
+
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="4" class="empty">Could not load stock — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -7797,79 +5036,10 @@ async function deleteAllChecklists() {
 }
 
 
-// ══════════════════════════════════════════════════════
-// WHATSAPP CHECKLIST REMINDER — preview / manual test (admin)
-// ══════════════════════════════════════════════════════
-function openWaReminderModal() {
-  document.getElementById('waRemErr').style.display = 'none';
-  document.getElementById('waRemSuc').style.display = 'none';
-  document.getElementById('waRemList').innerHTML = '';
-  document.getElementById('waRemSummary').textContent = '';
-  document.getElementById('waRemDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('waReminderModal').classList.add('open');
-  loadWaReminderPreview();
-}
-
-async function loadWaReminderPreview() {
-  const date = document.getElementById('waRemDate').value;
-  const list = document.getElementById('waRemList');
-  const sum  = document.getElementById('waRemSummary');
-  document.getElementById('waRemErr').style.display = 'none';
-  document.getElementById('waRemSuc').style.display = 'none';
-  if (!date) return;
-
-  list.innerHTML = '<div style="padding:10px;color:var(--faint);font-size:13px">Loading…</div>';
-  const data = await api(`/api/whatsapp/checklist-daily-preview?date=${date}`);
-  if (data.error) {
-    list.innerHTML = '';
-    const e = document.getElementById('waRemErr');
-    e.textContent = data.error; e.style.display = 'block';
-    return;
-  }
-
-  const rows = data.preview || [];
-  sum.textContent = `${rows.length} employees have checklists · ${data.willSend} will receive a message${rows.length - data.willSend > 0 ? ` · ${rows.length - data.willSend} have no phone number` : ''}`;
-
-  if (!rows.length) {
-    list.innerHTML = '<div style="padding:14px;color:var(--faint);font-size:13px;text-align:center">No pending checklists on this date</div>';
-    return;
-  }
-
-  list.innerHTML = rows.map(p => `
-    <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-        <span style="font-size:13px;font-weight:700;color:var(--foreground)">${dtEscape(p.name || '')}</span>
-        <span style="font-size:11px;background:#eff6ff;color:#1d4ed8;padding:1px 7px;border-radius:8px;font-weight:600">${p.taskCount} task</span>
-        ${p.hasPhone
-          ? `<span style="font-size:11px;color:#16a34a;font-weight:600">📱 ${dtEscape(p.phone)}</span>`
-          : `<span style="font-size:11px;color:#dc2626;font-weight:600">⚠️ no phone number — message will not be sent</span>`}
-      </div>
-      <pre style="margin:0;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;font-family:var(--font-sans);color:#334155">${dtEscape(p.message || '')}</pre>
-    </div>`).join('');
-}
-
-async function sendWaReminderNow() {
-  const date = document.getElementById('waRemDate').value;
-  if (!date) { alert('Date select karein'); return; }
-  if (!confirm(`⚠️ ${date} checklist — send the WhatsApp message?\n\nThis is a REAL message — it will go to employees.\nThere is a 4-5 minute gap between messages, so they are sent gradually in the background (not all at once).\n(This is separate from the automatic 10 AM message.)\n\nProceed?`)) return;
-
-  const errEl = document.getElementById('waRemErr');
-  const sucEl = document.getElementById('waRemSuc');
-  errEl.style.display = 'none'; sucEl.style.display = 'none';
-
-  const r = await api('/api/whatsapp/checklist-daily-run', 'POST', { date, force: 1 });
-  if (r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
-
-  if (r.skipped) {
-    sucEl.textContent = `ℹ️ ${r.reason || 'Already run for this date'}`;
-    sucEl.style.display = 'block';
-    return;
-  }
-
-  const est = r.estimateMinutes ? ` — sending all of them takes about ${r.estimateMinutes} min (4-5 min gap per message)` : '';
-  sucEl.innerHTML = `✅ <b>${r.queued || 0} messages queued</b> (${r.users || 0} employee, ${r.tasks || 0} task).${est}<br>Messages will keep sending in the background — you can close this window.`;
-  sucEl.style.display = 'block';
-}
+// The admin "WhatsApp Reminder" preview/test panel was removed from All Tasks.
+// The daily 10 AM job itself is untouched — it runs on the server's schedule,
+// and /api/whatsapp/checklist-daily-preview and -run are still there for a
+// manual trigger if one is ever needed again.
 
 let _transferFromUserId = null;
 let _transferDateTasks = [];
@@ -9665,11 +6835,135 @@ function schPickDay(iso) {
   renderScheduler(new Date(new Date(_schMonth).setDate(1 - _schMonth.getDay())));
 }
 
+// ══════════════════════════════════════════════════════
+// PMS — read-only production view
+// ══════════════════════════════════════════════════════
+let _pms = null;
+let _pmsOpen = null;   // SO number expanded in the detail panel
+
+async function loadPMS() {
+  const box = document.getElementById('pmsBody');
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  const d = await api('/api/pms/orders');
+  if (d.error) { box.innerHTML = `<div class="empty" style="color:#dc2626">${dtEscape(d.error)}</div>`; return; }
+  _pms = d;
+  renderPMS();
+}
+
+function pmsFilterChange() { renderPMS(); }
+
+function renderPMS() {
+  const d = _pms;
+  const q = (document.getElementById('pmsSearch')?.value || '').toLowerCase();
+  const unit = document.getElementById('pmsUnit')?.value || 'all';
+  const stat = document.getElementById('pmsStatus')?.value || 'all';
+
+  const rows = d.orders.filter(o => {
+    const matchQ = !q || [o.so, o.party, o.style].join(' ').toLowerCase().includes(q);
+    const matchU = unit === 'all' || o.unit === unit;
+    const matchS = stat === 'all'
+      ? true
+      : stat === 'blocked'  ? o.blocked
+      : stat === 'running'  ? (o.process.length > 0 && o.progressPct < 100)
+      : /* done */            o.progressPct === 100;
+    return matchQ && matchU && matchS;
+  });
+
+  const units = [...new Set(d.orders.map(o => o.unit))];
+  const uSel = document.getElementById('pmsUnit');
+  if (uSel && uSel.options.length <= 1) {
+    uSel.innerHTML = '<option value="all">All units</option>' + units.map(u => `<option>${dtEscape(u)}</option>`).join('');
+  }
+
+  const statusPill = s => {
+    const map = { 'Raise PO': ['#fef2f2', '#dc2626'], 'Material Issue': ['#fffbeb', '#d97706'], 'Inhouse': ['#f0fdf4', '#16a34a'] };
+    const [bg, fg] = map[s] || ['var(--muted)', 'var(--muted-foreground)'];
+    return `<span style="background:${bg};color:${fg};font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);white-space:nowrap">${dtEscape(s)}</span>`;
+  };
+
+  const detail = o => `
+    <div style="padding:14px 18px;border-top:1px solid var(--border);background:var(--muted)">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:6px">Material — Merch FMS</div>
+          <table style="width:100%;background:var(--card);border-radius:var(--radius-sm)"><thead><tr>
+            <th>Material</th><th>Qty</th><th>Vendor</th><th>Status</th></tr></thead><tbody>
+            ${o.materials.map(m => `<tr><td>${dtEscape(m.name)}<div style="font-size:10px;color:var(--faint)">${m.type}</div></td>
+              <td style="white-space:nowrap">${m.qty} ${m.uom}</td><td>${dtEscape(m.vendor)}</td><td>${statusPill(m.status)}</td></tr>`).join('')}
+          </tbody></table>
+        </div>
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:6px">Purchase orders</div>
+          ${o.pos.length ? `<table style="width:100%;background:var(--card);border-radius:var(--radius-sm)"><thead><tr>
+            <th>PO</th><th>Vendor</th><th>Qty</th><th>Rate</th><th>Date</th></tr></thead><tbody>
+            ${o.pos.map(p => `<tr><td>${dtEscape(p.poNo)}</td><td>${dtEscape(p.vendor)}</td><td>${p.qty}</td><td>${p.price}</td><td style="white-space:nowrap">${fmtDate(p.date)}</td></tr>`).join('')}
+          </tbody></table>` : '<div class="empty" style="font-size:12px;background:var(--card);border-radius:var(--radius-sm)">No PO raised yet</div>'}
+
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);font-weight:600;margin:12px 0 6px">Production — Process FMS</div>
+          ${o.process.length ? `<div style="background:var(--card);border-radius:var(--radius-sm);padding:10px">
+            ${d.stages.map(st => {
+              const hit = o.process.find(p => p.stage === st);
+              return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0">
+                <span style="width:14px">${hit ? '✅' : '⬜'}</span>
+                <span style="flex:1;${hit ? '' : 'color:var(--faint)'}">${st}</span>
+                <span style="color:var(--muted-foreground)">${hit ? hit.qty + ' pcs · ' + fmtDate(hit.date) : '—'}</span>
+              </div>`;
+            }).join('')}</div>` : '<div class="empty" style="font-size:12px;background:var(--card);border-radius:var(--radius-sm)">Not started</div>'}
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('pmsBody').innerHTML = `
+    <div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:var(--radius);padding:10px 14px;font-size:12px;margin-bottom:12px">
+      <b>Sample data.</b> This screen reads nothing yet — it shows the shape only. Point the sheet IDs in <code>.env</code> at your Merch FMS, Process FMS and PO sheets and it fills with the real thing. Nothing here ever writes back.
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <input type="text" id="pmsSearch" oninput="pmsFilterChange()" placeholder="🔍 SO, party or style…"
+        style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:var(--font-sans)"/>
+      <select id="pmsUnit" onchange="pmsFilterChange()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--card)"><option value="all">All units</option></select>
+      <select id="pmsStatus" onchange="pmsFilterChange()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--card)">
+        <option value="all">All orders</option>
+        <option value="blocked">Blocked — material not ordered</option>
+        <option value="running">In production</option>
+        <option value="done">Completed</option>
+      </select>
+    </div>
+
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);overflow:hidden">
+      <div class="flat-tasks-scroll">
+        <table style="min-width:860px;width:100%"><thead><tr>
+          <th>SO</th><th>Party</th><th>Style</th><th>Pcs</th><th>Unit</th>
+          <th>Material</th><th>Stage</th><th>Progress</th>
+        </tr></thead><tbody>
+        ${rows.length ? rows.map(o => `
+          <tr onclick="pmsToggle('${o.so}')" style="cursor:pointer" title="Click for the full trail">
+            <td style="white-space:nowrap;font-weight:600">${dtEscape(o.so)}${o.blocked ? ' <span style="color:#dc2626">●</span>' : ''}</td>
+            <td>${dtEscape(o.party)}</td>
+            <td style="white-space:nowrap">${dtEscape(o.style)}</td>
+            <td>${o.pcs}</td>
+            <td style="white-space:nowrap">${dtEscape(o.unit)}</td>
+            <td style="white-space:nowrap">${o.awaitingPO ? `<span style="color:#dc2626;font-weight:600">${o.awaitingPO} awaiting PO</span>` : `<span style="color:#16a34a">ready</span>`}</td>
+            <td style="white-space:nowrap">${o.lastStage ? dtEscape(o.lastStage) + `<div style="font-size:10px;color:var(--faint)">${o.lastQty} pcs · ${fmtDate(o.lastDate)}</div>` : '<span style="color:var(--faint)">not started</span>'}</td>
+            <td style="min-width:110px">
+              <span style="display:block;height:7px;background:var(--muted);border-radius:99px;overflow:hidden">
+                <span style="display:block;height:100%;width:${o.progressPct}%;background:${o.progressPct === 100 ? '#16a34a' : 'var(--brand-mid)'}"></span></span>
+              <span style="font-size:10px;color:var(--muted-foreground)">${o.progressPct}%</span>
+            </td>
+          </tr>
+          ${_pmsOpen === o.so ? `<tr><td colspan="8" style="padding:0">${detail(o)}</td></tr>` : ''}
+        `).join('') : `<tr><td colspan="8" class="empty">No orders match</td></tr>`}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+function pmsToggle(so) {
+  _pmsOpen = _pmsOpen === so ? null : so;
+  renderPMS();
+}
+
 init();
 setDefaultMISDates();
 initModalCloseButtons();
 initPasswordToggles();
 applyUnitNames();
-</script>
-</body>
-</html>
