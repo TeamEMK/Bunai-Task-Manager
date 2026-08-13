@@ -161,7 +161,6 @@ async function init() {
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('nav-dailyreports').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
-      document.getElementById('waReminderBtn').style.display = 'inline-flex';
     }
     // PO — Production department fills it, Finance department uploads doc against it,
     // Admin sees/does everything.
@@ -5037,79 +5036,10 @@ async function deleteAllChecklists() {
 }
 
 
-// ══════════════════════════════════════════════════════
-// WHATSAPP CHECKLIST REMINDER — preview / manual test (admin)
-// ══════════════════════════════════════════════════════
-function openWaReminderModal() {
-  document.getElementById('waRemErr').style.display = 'none';
-  document.getElementById('waRemSuc').style.display = 'none';
-  document.getElementById('waRemList').innerHTML = '';
-  document.getElementById('waRemSummary').textContent = '';
-  document.getElementById('waRemDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('waReminderModal').classList.add('open');
-  loadWaReminderPreview();
-}
-
-async function loadWaReminderPreview() {
-  const date = document.getElementById('waRemDate').value;
-  const list = document.getElementById('waRemList');
-  const sum  = document.getElementById('waRemSummary');
-  document.getElementById('waRemErr').style.display = 'none';
-  document.getElementById('waRemSuc').style.display = 'none';
-  if (!date) return;
-
-  list.innerHTML = '<div style="padding:10px;color:var(--faint);font-size:13px">Loading…</div>';
-  const data = await api(`/api/whatsapp/checklist-daily-preview?date=${date}`);
-  if (data.error) {
-    list.innerHTML = '';
-    const e = document.getElementById('waRemErr');
-    e.textContent = data.error; e.style.display = 'block';
-    return;
-  }
-
-  const rows = data.preview || [];
-  sum.textContent = `${rows.length} employees have checklists · ${data.willSend} will receive a message${rows.length - data.willSend > 0 ? ` · ${rows.length - data.willSend} have no phone number` : ''}`;
-
-  if (!rows.length) {
-    list.innerHTML = '<div style="padding:14px;color:var(--faint);font-size:13px;text-align:center">No pending checklists on this date</div>';
-    return;
-  }
-
-  list.innerHTML = rows.map(p => `
-    <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-        <span style="font-size:13px;font-weight:700;color:var(--foreground)">${dtEscape(p.name || '')}</span>
-        <span style="font-size:11px;background:#eff6ff;color:#1d4ed8;padding:1px 7px;border-radius:8px;font-weight:600">${p.taskCount} task</span>
-        ${p.hasPhone
-          ? `<span style="font-size:11px;color:#16a34a;font-weight:600">📱 ${dtEscape(p.phone)}</span>`
-          : `<span style="font-size:11px;color:#dc2626;font-weight:600">⚠️ no phone number — message will not be sent</span>`}
-      </div>
-      <pre style="margin:0;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;font-family:var(--font-sans);color:#334155">${dtEscape(p.message || '')}</pre>
-    </div>`).join('');
-}
-
-async function sendWaReminderNow() {
-  const date = document.getElementById('waRemDate').value;
-  if (!date) { alert('Date select karein'); return; }
-  if (!confirm(`⚠️ ${date} checklist — send the WhatsApp message?\n\nThis is a REAL message — it will go to employees.\nThere is a 4-5 minute gap between messages, so they are sent gradually in the background (not all at once).\n(This is separate from the automatic 10 AM message.)\n\nProceed?`)) return;
-
-  const errEl = document.getElementById('waRemErr');
-  const sucEl = document.getElementById('waRemSuc');
-  errEl.style.display = 'none'; sucEl.style.display = 'none';
-
-  const r = await api('/api/whatsapp/checklist-daily-run', 'POST', { date, force: 1 });
-  if (r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
-
-  if (r.skipped) {
-    sucEl.textContent = `ℹ️ ${r.reason || 'Already run for this date'}`;
-    sucEl.style.display = 'block';
-    return;
-  }
-
-  const est = r.estimateMinutes ? ` — sending all of them takes about ${r.estimateMinutes} min (4-5 min gap per message)` : '';
-  sucEl.innerHTML = `✅ <b>${r.queued || 0} messages queued</b> (${r.users || 0} employee, ${r.tasks || 0} task).${est}<br>Messages will keep sending in the background — you can close this window.`;
-  sucEl.style.display = 'block';
-}
+// The admin "WhatsApp Reminder" preview/test panel was removed from All Tasks.
+// The daily 10 AM job itself is untouched — it runs on the server's schedule,
+// and /api/whatsapp/checklist-daily-preview and -run are still there for a
+// manual trigger if one is ever needed again.
 
 let _transferFromUserId = null;
 let _transferDateTasks = [];

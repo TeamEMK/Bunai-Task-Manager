@@ -271,8 +271,6 @@
         <button class="btn btn-primary" id="tasksAssignBtn" onclick="openDelegate()" style="display:none">+ Assign Task</button>
         <button class="btn btn-outline" id="bulkDeleteBtn" onclick="openBulkDeleteModal()"
           style="color:#dc2626;border-color:#fecaca;display:none">🗑 Bulk Delete</button>
-        <button class="btn btn-outline" id="waReminderBtn" onclick="openWaReminderModal()"
-          style="color:#16a34a;border-color:#bbf7d0;display:none">📲 WhatsApp Reminder</button>
       </div>
     </div>
     <!-- Status filter tabs -->
@@ -1783,39 +1781,6 @@
     </div>
   </div>
 </div>
-<!-- ══════════════════════════════════════
-     WHATSAPP CHECKLIST REMINDER (Admin)
-══════════════════════════════════════ -->
-<div class="modal-overlay" id="waReminderModal">
-  <div class="modal" style="max-width:620px">
-    <h3>📲 Checklist WhatsApp Reminder</h3>
-    <div class="alert error" id="waRemErr"></div>
-    <div class="alert success" id="waRemSuc"></div>
-
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:12px;color:#166534;margin-bottom:14px">
-      Runs automatically every day at <b>10:00 AM (IST)</b> — each employee receives <b>all of that day’s checklist tasks in a single message</b>.
-      There is a <b>4-5 minute gap</b> between messages (to avoid spam filters), so a large batch takes a while to finish — messages keep sending in the background on their own.
-    </div>
-
-    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
-      <div style="flex:1;min-width:150px">
-        <label style="font-size:12px;font-weight:600;color:var(--muted-foreground);display:block;margin-bottom:4px">Date</label>
-        <input type="date" id="waRemDate" onchange="loadWaReminderPreview()"
-          style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>
-      </div>
-      <button class="btn btn-outline btn-sm" style="margin-bottom:1px" onclick="loadWaReminderPreview()">🔄 Preview</button>
-      <button class="btn btn-green btn-sm" style="margin-bottom:1px" onclick="sendWaReminderNow()">📤 Send Now (Test)</button>
-    </div>
-
-    <div id="waRemSummary" style="font-size:12px;color:var(--muted-foreground);margin-bottom:8px"></div>
-    <div id="waRemList" style="background:var(--muted);border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;margin-bottom:14px"></div>
-
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('waReminderModal')">Close</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="transferModal">
   <div class="modal" style="max-width:600px">
     <h3>🔀 Transfer Tasks</h3>
