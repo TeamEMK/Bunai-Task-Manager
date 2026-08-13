@@ -2,15 +2,19 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
-    { "src": "server.js", "use": "@vercel/node" }
+    { "src": "backend/server.js", "use": "@vercel/node", "config": { "includeFiles": "frontend/**" } }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "server.js" }
+    { "src": "/(.*)", "dest": "backend/server.js" }
   ],
   "crons": [
     {
       "path": "/api/cron/checklist-reminder",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/vinculum-sync",
+      "schedule": "30 0 * * *"
     }
   ]
 }

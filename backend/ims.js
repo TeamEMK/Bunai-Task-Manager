@@ -27,12 +27,15 @@ const AVG_WINDOW_DAYS = 45;
 // ── Service account auth (lazy, cached) ──
 let _sheets = null;
 // Look for a service-account key file the user dropped into the project
-// (e.g. bunai/secrets/credentials.json). Never looks inside public/.
+// (e.g. bunai/secrets/credentials.json). Never looks inside frontend/.
 function findKeyFile() {
   const fs = require('fs'); const path = require('path');
   const names = ['service-account.json', 'serviceaccount.json', 'credentials.json',
                  'credential.json', 'sa-key.json', 'key.json', 'google-credentials.json'];
-  const dirs = [path.join(__dirname, 'secrets'), __dirname];
+  // This file lives in backend/, but secrets/ and credentials.json sit at the
+  // repo root next to .env — both are searched, root first.
+  const root = path.join(__dirname, '..');
+  const dirs = [path.join(root, 'secrets'), root, path.join(__dirname, 'secrets'), __dirname];
   const list = [];
   if (process.env.GOOGLE_SERVICE_ACCOUNT_FILE) list.push(process.env.GOOGLE_SERVICE_ACCOUNT_FILE);
   for (const d of dirs) for (const n of names) list.push(path.join(d, n));
