@@ -37,7 +37,10 @@ bunai/
 │   │   └── utils/             # dates, collections, scores, spreadsheet cells
 │   ├── ims.js                 # IMS sheet readers
 │   ├── vinculum.js            # Vin eRetail API client
-│   └── vinculum-sync.js       # Stock sync job + its own tables
+│   ├── vinculum-sync.js       # Stock sync job + its own tables
+│   └── scripts/               # Standalone diagnostics, never imported by the app
+│       ├── test-db.js         # Prove the DB credentials work
+│       └── test-vinculum.js   # Probe the Vin eRetail API
 │
 ├── frontend/                  # Everything the browser downloads
 │   ├── index.html             # Login page
@@ -51,6 +54,11 @@ bunai/
 ├── data/                      # Exports and seeds (gitignored except its README)
 │   └── vin-skus.csv           # SKU list the Vinculum stock sync reads
 │
+├── docs/                      # Everything that is prose, not code
+│   ├── DEPLOY.md              # Vercel + Railway walkthrough
+│   ├── IMS-SETUP.md
+│   └── VINCULUM-API-*.md
+│
 ├── package.json               # start → node backend/server.js
 ├── vercel.json
 ├── .env                       # Your secrets (fill this in — never commit)
@@ -58,11 +66,15 @@ bunai/
 └── credentials.json.example   # Template — copy to credentials.json (gitignored)
 ```
 
-Three top-level folders, three jobs: `backend/` is code that runs on the server,
-`frontend/` is what the browser downloads, `data/` is neither. `backend/` never
-imports from the other two — it only *serves* `frontend/` (`config.publicDir`)
-and *reads* `data/` when you run a seed. `.env` and `credentials.json` stay at
-the root because both halves of the deployment read them.
+Four top-level folders, four jobs: `backend/` is code that runs on the server,
+`frontend/` is what the browser downloads, `data/` is neither, `docs/` is prose.
+`backend/` never imports from the others — it only *serves* `frontend/`
+(`config.publicDir`) and *reads* `data/` when you run a seed. `.env` and
+`credentials.json` stay at the root because both halves of the deployment read
+them.
+
+Anything inside `frontend/` is public. Nothing that explains the setup, and
+certainly no key, belongs there.
 
 Text assets are served brotli/gzip-compressed with a content-hash `ETag`, so a
 repeat visit re-downloads nothing that has not changed.
