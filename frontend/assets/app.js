@@ -159,7 +159,6 @@ async function init() {
       document.getElementById('nav-ims').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
-      document.getElementById('nav-dailyreports').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
     }
     // PO — Production department fills it, Finance department uploads doc against it,
@@ -271,7 +270,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',daily:'Daily Task Form',scheduler:'Scheduler',pms:'PMS — Production',clients:'Unit Master',compliance:'Compliance Tracker',dailyreports:'Daily Reports',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Unit Master',compliance:'Employee 360',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -337,12 +336,9 @@ function navigate(page, el, fromHash) {
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
   if (page==='merchfms') loadMerchFMS();
-  if (page==='daily') loadDailyForm();
   if (page==='clients') loadClients();
-  if (page==='compliance') loadCompliance();
-  if (page==='dailyreports') loadDailyReports();
+  if (page==='compliance') loadEmp360();
   if (page==='leaves') loadLeaves();
-  if (page==='scheduler') loadScheduler();
   if (page==='pms') loadPMS();
   if (page==='ims') loadIMS();
   if (page==='stock') loadStock();
@@ -2277,6 +2273,10 @@ async function saveProfile() {
 // ══════════════════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════════════════
+// Escapes text before it goes into innerHTML. Named dt* because it started in
+// the daily-task form; it outlived that feature and is used all over the app.
+function dtEscape(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 async function api(url,method='GET',body=null) {
   const token = localStorage.getItem('authToken');
   const opts={method, headers:{'Content-Type':'application/json'}, credentials:'include'};
@@ -5207,223 +5207,8 @@ async function handleTransfer(id, action) {
 }
 
 // ══════════════════════════════════════════════════════
-// 📅 DAILY TASK FORM
-// ══════════════════════════════════════════════════════
-let DT_CLIENTS = [];
-let DT_DEPARTMENTS = [];
-let DT_LOCKED = false;
-
-function dtPad(n){ return n<10 ? '0'+n : n; }
-function dtFormatDate(d){ return `${d.getFullYear()}-${dtPad(d.getMonth()+1)}-${dtPad(d.getDate())}`; }
-function dtFormatDDMMYYYY(d){ return `${dtPad(d.getDate())}/${dtPad(d.getMonth()+1)}/${d.getFullYear()}`; }
-
-function dtTickClock(){
-  const now = new Date();
-  const t = `${dtFormatDDMMYYYY(now)} ${dtPad(now.getHours())}:${dtPad(now.getMinutes())}:${dtPad(now.getSeconds())}`;
-  const el = document.getElementById('dtNow');
-  if (el) el.textContent = t;
-}
-setInterval(dtTickClock, 1000);
-
-async function loadDailyForm(){
-  dtTickClock();
-  document.getElementById('dtUserName').textContent = ME.name;
-  document.getElementById('dtDoerName').value = ME.name;
-
-  // Date dropdown — today + yesterday only
-  const sel = document.getElementById('dtEntryDate');
-  sel.innerHTML = '';
-  const today = new Date();
-  for (let i = 0; i < 2; i++){
-    const d = new Date(today); d.setDate(d.getDate() - i);
-    const v = dtFormatDate(d);
-    const label = i === 0 ? `Today (${dtFormatDDMMYYYY(d)})` : `Yesterday (${dtFormatDDMMYYYY(d)})`;
-    const opt = document.createElement('option');
-    opt.value = v; opt.textContent = label;
-    sel.appendChild(opt);
-  }
-  sel.onchange = dtCheckLockAndRender;
-
-  // Load clients + departments
-  try {
-    const [clients, departments] = await Promise.all([
-      api('/api/clients'),
-      api('/api/departments')
-    ]);
-    DT_CLIENTS = Array.isArray(clients) ? clients : [];
-    DT_DEPARTMENTS = Array.isArray(departments) ? departments : [];
-  } catch(e) {
-    DT_CLIENTS = []; DT_DEPARTMENTS = [];
-  }
-
-  await dtCheckLockAndRender();
-  await dtLoadHistory();
-}
-
-async function dtCheckLockAndRender(){
-  const date = document.getElementById('dtEntryDate').value;
-  try {
-    const r = await api('/api/daily-tasks/status?date=' + date);
-    DT_LOCKED = !!r.submitted;
-  } catch(e) { DT_LOCKED = false; }
-
-  const lockNotice = document.getElementById('dtLockedNotice');
-  const tableWrap = document.getElementById('dtTableWrap');
-  const actions = document.getElementById('dtActions');
-
-  if (DT_LOCKED) {
-    lockNotice.style.display = 'block';
-    tableWrap.style.display = 'none';
-    actions.style.display = 'none';
-  } else {
-    lockNotice.style.display = 'none';
-    tableWrap.style.display = 'block';
-    actions.style.display = 'flex';
-    // Reset rows to a single empty row
-    document.getElementById('dtRowsBody').innerHTML = '';
-    dtAddRow();
-  }
-  dtRecalcTotal();
-}
-
-function dtClientOptions(selected){
-  let html = '<option value="">--select--</option>';
-  for (const c of DT_CLIENTS) {
-    const sel = (selected === c.name) ? 'selected' : '';
-    html += `<option value="${dtEscape(c.name)}" ${sel}>${dtEscape(c.name)}</option>`;
-  }
-  return html;
-}
-function dtDeptOptions(selected){
-  let html = '<option value="">--select--</option>';
-  for (const d of DT_DEPARTMENTS) {
-    const sel = (selected === d) ? 'selected' : '';
-    html += `<option value="${dtEscape(d)}" ${sel}>${dtEscape(d)}</option>`;
-  }
-  return html;
-}
-function dtEscape(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-function dtAddRow(prefill){
-  const tbody = document.getElementById('dtRowsBody');
-  const tr = document.createElement('tr');
-  tr.className = 'dt-row';
-  tr.innerHTML = `
-    <td><select class="dt-client">${dtClientOptions(prefill?.client)}</select></td>
-    <td><select class="dt-dept">${dtDeptOptions(prefill?.dept)}</select></td>
-    <td><textarea class="dt-desc" placeholder="What did you do?">${dtEscape(prefill?.desc||'')}</textarea></td>
-    <td><input type="number" min="1" class="dt-time" value="${prefill?.time||''}" placeholder="0" oninput="dtRecalcTotal()"/></td>
-    <td><button class="dt-row-btn dt-btn-dup" onclick="dtDupRow(this)">Dup</button></td>
-    <td><button class="dt-row-btn dt-btn-del" onclick="dtDelRow(this)">Del</button></td>
-  `;
-  tbody.appendChild(tr);
-}
-
-function dtDupRow(btn){
-  const tr = btn.closest('tr');
-  const prefill = {
-    client: tr.querySelector('.dt-client').value,
-    dept: tr.querySelector('.dt-dept').value,
-    desc: tr.querySelector('.dt-desc').value,
-    time: tr.querySelector('.dt-time').value,
-  };
-  dtAddRow(prefill);
-  dtRecalcTotal();
-}
-function dtDelRow(btn){
-  const tbody = document.getElementById('dtRowsBody');
-  if (tbody.children.length <= 1) {
-    showToast('At least 1 row required','error');
-    return;
-  }
-  btn.closest('tr').remove();
-  dtRecalcTotal();
-}
-function dtRecalcTotal(){
-  let total = 0;
-  document.querySelectorAll('.dt-time').forEach(inp => {
-    const v = parseInt(inp.value) || 0;
-    if (v > 0) total += v;
-  });
-  const el = document.getElementById('dtTotalMin');
-  if (el) el.textContent = total;
-}
-
-async function dtSubmit(){
-  if (DT_LOCKED) { showToast('Already submitted for this date','error'); return; }
-  const date = document.getElementById('dtEntryDate').value;
-  const rows = [];
-  for (const tr of document.querySelectorAll('#dtRowsBody tr')) {
-    const client = tr.querySelector('.dt-client').value.trim();
-    const dept = tr.querySelector('.dt-dept').value.trim();
-    const desc = tr.querySelector('.dt-desc').value.trim();
-    const time = parseInt(tr.querySelector('.dt-time').value) || 0;
-    if (!client || !desc || time <= 0) {
-      showToast('Each row needs Unit, Description and Time (>0)','error');
-      return;
-    }
-    rows.push({ client_name: client, department: dept, description: desc, duration_min: time });
-  }
-  if (!rows.length) { showToast('Add at least 1 row','error'); return; }
-
-  const btn = document.querySelector('.dt-btn-submit');
-  btn.disabled = true; btn.textContent = 'Submitting...';
-  try {
-    const r = await api('/api/daily-tasks', 'POST', { entry_date: date, rows });
-    if (r.error) { showToast(r.error, 'error'); }
-    else {
-      showToast(`✅ ${r.count} entries submitted!`);
-      DT_LOCKED = true;
-      await dtCheckLockAndRender();
-      await dtLoadHistory();
-    }
-  } catch(e) {
-    showToast('Submit failed: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Submit All →';
-  }
-}
-
-async function dtLoadHistory(){
-  const wrap = document.getElementById('dtHistoryWrap');
-  try {
-    const rows = await api('/api/daily-tasks/mine');
-    if (!rows || !rows.length) {
-      wrap.innerHTML = '<div class="empty">No past submissions yet.</div>';
-      return;
-    }
-    // Group by date
-    const byDate = {};
-    for (const r of rows) {
-      if (!byDate[r.entry_date]) byDate[r.entry_date] = [];
-      byDate[r.entry_date].push(r);
-    }
-    let html = '';
-    for (const date of Object.keys(byDate)) {
-      const items = byDate[date];
-      const total = items.reduce((a,b) => a + (b.duration_min||0), 0);
-      html += `<div class="dt-history-day">
-        <div class="dt-history-date">📅 ${date}  ·  ${items.length} task${items.length>1?'s':''}  ·  ${total} min total</div>`;
-      for (const it of items) {
-        html += `<div class="dt-history-row">
-          <span class="pill">${dtEscape(it.client_name)}</span>
-          ${it.department ? `<span class="pill" style="background:#dbeafe;color:#1e40af">${dtEscape(it.department)}</span>` : ''}
-          <span style="flex:1">${dtEscape(it.description)}</span>
-          <span style="color:#A63F43;font-weight:600">${it.duration_min} min</span>
-        </div>`;
-      }
-      html += `</div>`;
-    }
-    wrap.innerHTML = html;
-  } catch(e) {
-    wrap.innerHTML = '<div class="empty">Failed to load history</div>';
-  }
-}
-
-// ══════════════════════════════════════════════════════
 // 🏢 CLIENT MASTER (admin)
 // ══════════════════════════════════════════════════════
-let CM_OPEN_ID = null;
 
 async function loadClients(){
   const wrap = document.getElementById('cmListWrap');
@@ -5438,80 +5223,16 @@ async function loadClients(){
     let html = '';
     for (const c of clients) {
       const safeName = dtEscape(c.name);
-      html += `<div class="cm-client-row" data-cm-id="${c.id}" onclick="cmToggleDetail(${c.id})">
+      html += `<div class="cm-client-row" data-cm-id="${c.id}">
         <div class="cm-client-info">
           <span class="cm-client-name">${safeName}</span>
-          <span class="cm-client-arrow">▼</span>
         </div>
-        <button class="cm-client-del" onclick="event.stopPropagation();cmDelete(${c.id},'${safeName}')">Remove</button>
-      </div>
-      <div class="cm-client-detail" id="cm-detail-${c.id}"></div>`;
+        <button class="cm-client-del" onclick="cmDelete(${c.id},'${safeName}')">Remove</button>
+      </div>`;
     }
     wrap.innerHTML = html;
   } catch(e) {
     wrap.innerHTML = '<div class="empty">Failed to load units</div>';
-  }
-}
-
-async function cmToggleDetail(id) {
-  const detail = document.getElementById('cm-detail-' + id);
-  const row = document.querySelector(`[data-cm-id="${id}"]`);
-
-  if (CM_OPEN_ID === id) {
-    detail.style.display = 'none';
-    row.classList.remove('cm-active');
-    CM_OPEN_ID = null;
-    return;
-  }
-
-  // Close any open panel
-  if (CM_OPEN_ID) {
-    const prev = document.getElementById('cm-detail-' + CM_OPEN_ID);
-    const prevRow = document.querySelector(`[data-cm-id="${CM_OPEN_ID}"]`);
-    if (prev) prev.style.display = 'none';
-    if (prevRow) prevRow.classList.remove('cm-active');
-  }
-
-  detail.style.display = 'block';
-  row.classList.add('cm-active');
-  CM_OPEN_ID = id;
-
-  if (detail.dataset.loaded) return;
-  detail.innerHTML = '<div style="padding:14px;text-align:center;color:var(--faint);font-size:13px">Loading stats…</div>';
-
-  try {
-    const stats = await api('/api/clients/' + id + '/stats');
-    detail.dataset.loaded = '1';
-    const totalHrs = (stats.total_minutes / 60).toFixed(1);
-    const medals = ['🥇','🥈','🥉'];
-    let workersHtml = '';
-    if (!stats.top_workers || !stats.top_workers.length) {
-      workersHtml = '<div style="color:var(--faint);font-size:13px;padding:6px 0">No work recorded yet</div>';
-    } else {
-      for (let i = 0; i < stats.top_workers.length; i++) {
-        const w = stats.top_workers[i];
-        const hrs = (w.total_minutes / 60).toFixed(1);
-        workersHtml += `<div class="cm-worker-row">
-          <span class="cm-worker-rank">${medals[i]}</span>
-          <span class="cm-worker-name">${dtEscape(w.name)}</span>
-          ${w.department ? `<span class="cm-worker-dept">${dtEscape(w.department)}</span>` : ''}
-          <span class="cm-worker-hrs">${hrs} hrs</span>
-        </div>`;
-      }
-    }
-    detail.innerHTML = `<div class="cm-detail-inner">
-      <div class="cm-detail-total">
-        <span class="cm-detail-label">Total Hours</span>
-        <span class="cm-detail-val">${totalHrs}</span>
-        <span style="font-size:11px;color:#92400e;font-weight:600">hrs</span>
-      </div>
-      <div class="cm-detail-workers">
-        <div class="cm-detail-workers-title">Top 3 Contributors</div>
-        ${workersHtml}
-      </div>
-    </div>`;
-  } catch(e) {
-    detail.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">Failed to load stats</div>';
   }
 }
 
@@ -5584,242 +5305,6 @@ async function cmBulkUpload() {
   } catch(e) {
     showToast('Failed to upload: ' + e.message, 'error');
   }
-}
-
-// ══════════════════════════════════════════════════════
-// 📊 COMPLIANCE TRACKER (admin)
-// ══════════════════════════════════════════════════════
-let CP_DATA = null;
-
-async function loadCompliance(){
-  const wrap = document.getElementById('cpGridWrap');
-  wrap.innerHTML = '<div class="empty">Loading...</div>';
-  try {
-    CP_DATA = await api('/api/compliance/last7');
-    renderCompliance();
-  } catch(e) {
-    wrap.innerHTML = '<div class="empty">Failed to load compliance data</div>';
-  }
-}
-
-function renderCompliance(){
-  if (!CP_DATA) return;
-  const wrap = document.getElementById('cpGridWrap');
-  const search = (document.getElementById('cpSearch')?.value || '').toLowerCase();
-  const roleF = document.getElementById('cpRoleFilter')?.value || '';
-
-  const dates = CP_DATA.dates;
-  let users = CP_DATA.users;
-
-  if (search) {
-    users = users.filter(u =>
-      u.name.toLowerCase().includes(search) ||
-      u.email.toLowerCase().includes(search) ||
-      (u.department||'').toLowerCase().includes(search)
-    );
-  }
-  if (roleF) users = users.filter(u => u.role === roleF);
-
-  if (!users.length) { wrap.innerHTML = '<div class="empty">No users match filters</div>'; return; }
-
-  let html = `<table class="cp-grid"><thead><tr>
-    <th style="text-align:left">Name</th>
-    <th style="text-align:left">Role</th>
-    <th style="text-align:left">Department</th>`;
-  for (const d of dates) {
-    const dt = new Date(d);
-    const dayLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
-    html += `<th>${dayLabel}<br><span style="font-weight:400;font-size:10px;opacity:.85">${d.slice(5)}</span></th>`;
-  }
-  html += `<th>Score</th></tr></thead><tbody>`;
-
-  for (const u of users) {
-    // Working days = days that aren't user's off/holiday
-    const workingDays = u.status.filter(s => !s.off).length;
-    const filledCnt = u.status.filter(s => s.filled).length;
-    const denom = workingDays || 1;
-    const pct = Math.round((filledCnt/denom)*100);
-    const pillClass = pct >= 80 ? 'cp-summary-good' : pct >= 50 ? 'cp-summary-meh' : 'cp-summary-bad';
-
-    html += `<tr>
-      <td>${dtEscape(u.name)}</td>
-      <td>${u.role}</td>
-      <td>${dtEscape(u.department)}</td>`;
-    for (const s of u.status) {
-      let cell;
-      if (s.off) {
-        cell = s.isHoliday
-          ? '<span class="cp-cell-holiday" title="Holiday">🎉 Off</span>'
-          : '<span class="cp-cell-off" title="Week off">Off</span>';
-      } else if (s.filled) {
-        cell = '<span class="cp-cell-yes">✓</span>';
-      } else {
-        cell = '<span class="cp-cell-no">✗</span>';
-      }
-      html += `<td>${cell}</td>`;
-    }
-    html += `<td><span class="cp-summary-pill ${pillClass}">${filledCnt}/${workingDays} (${pct}%)</span></td></tr>`;
-  }
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-}
-
-// ══════════════════════════════════════════════════════
-// 📈 DAILY REPORTS (admin, month-wise)
-// ══════════════════════════════════════════════════════
-let DR_DATA = null;
-
-async function loadDailyReports(){
-  const monthInput = document.getElementById('drMonth');
-  if (!monthInput.value) {
-    const now = new Date();
-    monthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  }
-  document.getElementById('drStats').innerHTML = '<div class="empty">Loading...</div>';
-  document.getElementById('drSummaryWrap').innerHTML = '<div class="empty">Loading...</div>';
-  document.getElementById('drEntriesWrap').innerHTML = '<div class="empty">Loading...</div>';
-
-  try {
-    DR_DATA = await api('/api/daily-tasks/report?month=' + monthInput.value);
-    if (DR_DATA.error) throw new Error(DR_DATA.error);
-    renderDRStats();
-    renderDRSummary();
-    renderDREntriesUserDropdown();
-    renderDREntries();
-  } catch(e) {
-    document.getElementById('drStats').innerHTML = `<div class="empty">Failed: ${e.message}</div>`;
-    document.getElementById('drSummaryWrap').innerHTML = '';
-    document.getElementById('drEntriesWrap').innerHTML = '';
-  }
-}
-
-function renderDRStats(){
-  const d = DR_DATA;
-  const totalHours = (d.total_minutes / 60).toFixed(1);
-  const monthLabel = new Date(d.month + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  document.getElementById('drStats').innerHTML = `
-    <div class="dr-stat">
-      <div class="dr-stat-label">Month</div>
-      <div class="dr-stat-value" style="font-size:20px">${monthLabel}</div>
-    </div>
-    <div class="dr-stat">
-      <div class="dr-stat-label">Total Entries</div>
-      <div class="dr-stat-value">${d.total_entries}</div>
-      <div class="dr-stat-sub">across ${d.summary.length} user${d.summary.length===1?'':'s'}</div>
-    </div>
-    <div class="dr-stat">
-      <div class="dr-stat-label">Total Time</div>
-      <div class="dr-stat-value">${d.total_minutes}<span style="font-size:14px"> min</span></div>
-      <div class="dr-stat-sub">≈ ${totalHours} hours</div>
-    </div>
-    <div class="dr-stat">
-      <div class="dr-stat-label">Active Users</div>
-      <div class="dr-stat-value">${d.summary.length}</div>
-      <div class="dr-stat-sub">submitted at least once</div>
-    </div>
-  `;
-}
-
-function renderDRSummary(){
-  const wrap = document.getElementById('drSummaryWrap');
-  if (!DR_DATA.summary.length) {
-    wrap.innerHTML = '<div class="empty">No submissions in this month yet.</div>';
-    return;
-  }
-  let html = `<table class="dr-table"><thead><tr>
-    <th>User</th><th>Department</th><th>Days Filled</th>
-    <th>Total Tasks</th><th>Total Minutes</th><th>Hours</th><th>Avg/Day</th>
-  </tr></thead><tbody>`;
-  for (const u of DR_DATA.summary) {
-    const hours = (u.total_minutes / 60).toFixed(1);
-    const avg = u.days_filled > 0 ? Math.round(u.total_minutes / u.days_filled) : 0;
-    html += `<tr>
-      <td><b>${dtEscape(u.name)}</b><br><span style="color:var(--muted-foreground);font-size:11px">${dtEscape(u.email)}</span></td>
-      <td>${dtEscape(u.department || '—')}</td>
-      <td>${u.days_filled} day${u.days_filled===1?'':'s'}</td>
-      <td>${u.total_tasks}</td>
-      <td><span class="pill-min">${u.total_minutes} min</span></td>
-      <td>${hours} hr</td>
-      <td>${avg} min/day</td>
-    </tr>`;
-  }
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-}
-
-function renderDREntriesUserDropdown(){
-  const sel = document.getElementById('drUserFilter');
-  const cur = sel.value;
-  let html = '<option value="">All Users</option>';
-  for (const u of DR_DATA.summary) {
-    const selected = cur == u.user_id ? 'selected' : '';
-    html += `<option value="${u.user_id}" ${selected}>${dtEscape(u.name)}</option>`;
-  }
-  sel.innerHTML = html;
-}
-
-function renderDREntries(){
-  if (!DR_DATA) return;
-  const wrap = document.getElementById('drEntriesWrap');
-  const search = (document.getElementById('drSearch')?.value || '').toLowerCase();
-  const userId = document.getElementById('drUserFilter')?.value || '';
-
-  let entries = DR_DATA.entries;
-  if (userId) entries = entries.filter(e => String(e.user_id) === String(userId));
-  if (search) {
-    entries = entries.filter(e =>
-      e.doer_name.toLowerCase().includes(search) ||
-      e.client_name.toLowerCase().includes(search) ||
-      (e.description||'').toLowerCase().includes(search) ||
-      (e.department||'').toLowerCase().includes(search)
-    );
-  }
-
-  if (!entries.length) {
-    wrap.innerHTML = '<div class="empty">No entries match the filters.</div>';
-    return;
-  }
-
-  let html = `<table class="dr-table"><thead><tr>
-    <th>Date</th><th>User</th><th>Unit</th><th>Department</th>
-    <th>Description</th><th>Time</th>
-  </tr></thead><tbody>`;
-  for (const e of entries) {
-    html += `<tr>
-      <td><b>${e.entry_date}</b></td>
-      <td>${dtEscape(e.doer_name)}</td>
-      <td><span class="pill-tag">${dtEscape(e.client_name)}</span></td>
-      <td>${e.department ? `<span class="pill-dept">${dtEscape(e.department)}</span>` : '—'}</td>
-      <td>${dtEscape(e.description)}</td>
-      <td><span class="pill-min">${e.duration_min} min</span></td>
-    </tr>`;
-  }
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-}
-
-function drExportCSV(){
-  if (!DR_DATA || !DR_DATA.entries.length) {
-    showToast('No data to export', 'error'); return;
-  }
-  const rows = [['Date', 'User', 'Email', 'Unit', 'Department', 'Description', 'Minutes']];
-  for (const e of DR_DATA.entries) {
-    rows.push([
-      e.entry_date,
-      (e.doer_name||'').replace(/,/g,';'),
-      e.doer_email,
-      (e.client_name||'').replace(/,/g,';'),
-      (e.department||'').replace(/,/g,';'),
-      (e.description||'').replace(/,/g,';').replace(/\n/g,' '),
-      e.duration_min
-    ]);
-  }
-  const csv = rows.map(r => r.join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = `daily_tasks_${DR_DATA.month}.csv`;
-  a.click();
-  showToast('✅ CSV downloaded');
 }
 
 // ══════════════════════════════════════════════════════
@@ -6261,243 +5746,6 @@ function to12h(hhmm) {
   return hour + ":" + String(m).padStart(2, "0") + " " + suffix;
 }
 
-// ══════════════════════════════════════════════════════
-// MEETINGS
-// ══════════════════════════════════════════════════════
-let _meetings = [];
-let mtgStatusFilter = 'upcoming';
-
-function mtgFilter(f, el) {
-  mtgStatusFilter = f;
-  document.querySelectorAll('#mtgStatusTabs .tab').forEach(t => t.classList.remove('active'));
-  if (el) el.classList.add('active');
-  renderMeetings();
-}
-
-async function loadMeetings() {
-  const box = document.getElementById('meetingsList');
-  box.innerHTML = '<div class="empty">Loading meetings…</div>';
-  const r = await api('/api/meetings');
-  _meetings = Array.isArray(r) ? r : [];
-  renderMeetings();
-}
-
-function renderMeetings() {
-  const box = document.getElementById('meetingsList');
-  const today = new Date().toISOString().slice(0, 10);
-  const list = _meetings.filter(m =>
-    mtgStatusFilter === 'all'       ? true :
-    mtgStatusFilter === 'done'      ? m.status === 'done' :
-    mtgStatusFilter === 'cancelled' ? m.status === 'cancelled' :
-    // "Upcoming" = still scheduled and not in the past.
-    (m.status === 'scheduled' && m.meeting_date >= today)
-  );
-
-  if (!list.length) {
-    box.innerHTML = `<div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs)">No meetings here</div>`;
-    return;
-  }
-
-  const statusPill = s => {
-    const map = { scheduled: ['#eff6ff', '#1d4ed8', 'Scheduled'], done: ['#f0fdf4', '#16a34a', 'Done'], cancelled: ['#fef2f2', '#dc2626', 'Cancelled'] };
-    const [bg, fg, label] = map[s] || map.scheduled;
-    return `<span style="background:${bg};color:${fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:var(--radius-full)">${label}</span>`;
-  };
-
-  box.innerHTML = list.map(m => {
-    const mine = String(m.organizer_id) === String(ME.id) || ME.role === 'admin';
-    const people = (m.attendees || []).map(a => dtEscape(a.name)).join(', ') || '—';
-    return `<div class="user-task-block" style="margin-bottom:10px">
-      <div style="padding:14px 18px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:1;min-width:220px">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span style="font-weight:700">${dtEscape(m.title)}</span>
-            ${statusPill(m.status)}
-            ${m.client_name ? `<span style="background:var(--brand-tint);color:var(--brand-deep);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px">🏢 ${dtEscape(m.client_name)}</span>` : ''}
-          </div>
-          <div style="font-size:12px;color:var(--muted-foreground);margin-top:5px">
-            📅 ${fmtDate(m.meeting_date)} · ⏰ ${to12h(m.start_time)} – ${to12h(m.end_time)}
-          </div>
-          <div style="font-size:12px;color:var(--muted-foreground);margin-top:3px">
-            👤 ${dtEscape(m.organizer_name || '')} &nbsp;·&nbsp; 👥 ${people}
-          </div>
-          ${m.agenda ? `<div style="font-size:12px;color:var(--muted-foreground);margin-top:5px">📝 ${dtEscape(m.agenda)}</div>` : ''}
-          ${m.meet_link ? `<div style="margin-top:6px"><a href="${dtEscape(m.meet_link)}" target="_blank" rel="noopener" style="color:var(--brand-deep);font-size:12px;font-weight:600">🔗 Join link</a></div>` : ''}
-        </div>
-        ${mine ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${m.status === 'scheduled' ? `
-            <button class="action-btn done" onclick="setMeetingStatus(${m.id},'done')">Done</button>
-            <button class="action-btn edit" onclick="openMeetingModal(${m.id})">✏️</button>
-            <button class="action-btn delete" onclick="setMeetingStatus(${m.id},'cancelled')">Cancel</button>` : `
-            <button class="action-btn" style="background:var(--muted);color:var(--muted-foreground)" onclick="setMeetingStatus(${m.id},'scheduled')">Reopen</button>`}
-        </div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function setMeetingStatus(id, status) {
-  const r = await api(`/api/meetings/${id}/status`, 'PUT', { status });
-  if (r.error) return showToast(r.error, 'error');
-  showToast(status === 'done' ? '✅ Marked done' : status === 'cancelled' ? '🚫 Cancelled' : '↩️ Reopened');
-  loadMeetings();
-}
-
-const MTG_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-async function openMeetingModal(id) {
-  document.getElementById('mtgErr').style.display = 'none';
-  document.getElementById('mtgId').value = id || '';
-  document.getElementById('mtgModalTitle').textContent = id ? '✏️ Edit Meeting' : '📅 Schedule Meeting';
-  // Recurrence applies to a new series only — editing one occurrence should not
-  // silently regenerate the rest.
-  document.getElementById('mtgRepeatWrap').style.display = id ? 'none' : 'block';
-
-  // Units + people, both needed before we can prefill.
-  const [clients, users] = await Promise.all([api('/api/clients'), api('/api/users')]);
-  const cSel = document.getElementById('mtgClient');
-  cSel.innerHTML = '<option value="">— No Unit —</option>' +
-    (Array.isArray(clients) ? clients : []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
-
-  const others = (Array.isArray(users) ? users : []).filter(u => String(u.id) !== String(ME.id));
-  document.getElementById('mtgAttendees').innerHTML = others.length
-    ? others.map(u => `<option value="${u.id}">${dtEscape(u.name)}${u.department ? ' · ' + dtEscape(u.department) : ''}</option>`).join('')
-    : '<option disabled>No other users yet</option>';
-
-  document.getElementById('mtgDays').innerHTML = MTG_DAY_LABELS.map((d, i) => `
-    <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;background:var(--muted);padding:4px 9px;border-radius:var(--radius-full);cursor:pointer">
-      <input type="checkbox" class="mtg-day" value="${i}"/> ${d}
-    </label>`).join('');
-
-  const set = (elId, v) => { document.getElementById(elId).value = v; };
-  if (id) {
-    const m = await api(`/api/meetings/${id}`);
-    if (m.error) return showToast(m.error, 'error');
-    set('mtgTitle', m.title || ''); set('mtgDate', m.meeting_date || '');
-    set('mtgStart', m.start_time || ''); set('mtgEnd', m.end_time || '');
-    // Reflect the saved length in the picker, snapping to the nearest option.
-    if (m.start_time && m.end_time) {
-      const [sh, sm] = m.start_time.split(':').map(Number);
-      const [eh, em] = m.end_time.split(':').map(Number);
-      const mins = (eh * 60 + em) - (sh * 60 + sm);
-      const opts = [15, 30, 45, 60, 90, 120];
-      const near = opts.reduce((a2, b2) => Math.abs(b2 - mins) < Math.abs(a2 - mins) ? b2 : a2, 30);
-      set('mtgDuration', String(near));
-      document.getElementById('mtgEndLabel').textContent = to12h(m.end_time);
-    }
-    set('mtgClient', m.client_id || ''); set('mtgLink', m.meet_link || '');
-    set('mtgAgenda', m.agenda || '');
-    const ids = new Set((m.attendees || []).map(a => String(a.id)));
-    [...document.getElementById('mtgAttendees').options].forEach(o => { o.selected = ids.has(o.value); });
-  } else {
-    ['mtgTitle', 'mtgStart', 'mtgEnd', 'mtgLink', 'mtgAgenda', 'mtgUntil'].forEach(k => set(k, ''));
-    set('mtgDate', new Date().toISOString().slice(0, 10));
-    set('mtgClient', ''); set('mtgFreq', ''); set('mtgDuration', '30');
-    document.getElementById('mtgEndLabel').textContent = '—';
-    mtgFreqChange();
-  }
-  document.getElementById('meetingModal').classList.add('open');
-  mtgLoadSlots();
-}
-
-function mtgFreqChange() {
-  const f = document.getElementById('mtgFreq').value;
-  document.getElementById('mtgUntilWrap').style.display = f ? 'block' : 'none';
-  document.getElementById('mtgDaysWrap').style.display = f === 'custom' ? 'block' : 'none';
-}
-
-function mtgSelectedAttendees() {
-  return [...document.getElementById('mtgAttendees').selectedOptions].map(o => parseInt(o.value, 10)).filter(Boolean);
-}
-
-async function mtgLoadSlots() {
-  const date = document.getElementById('mtgDate').value;
-  const box = document.getElementById('mtgSlots');
-  if (!date) { box.textContent = 'Pick a date to see open slots'; return; }
-  const ids = mtgSelectedAttendees();
-  const r = await api(`/api/meetings/slots?date=${date}&userIds=${ids.join(',')}`);
-  if (r.error) { box.textContent = r.error; return; }
-  if (r.off) {
-    box.innerHTML = `<span style="color:#dc2626;font-weight:600">${dtEscape(r.reason)} — no slots</span>`;
-    return;
-  }
-  box.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px">` + r.slots.map(s => {
-    const taken = s.booked || s.conflictForSelection;
-    const bg = taken ? '#fef2f2' : 'var(--muted)';
-    const fg = taken ? '#dc2626' : 'var(--foreground)';
-    const title = taken ? 'Someone selected is busy' : 'Click to use this slot';
-    return `<button type="button" title="${title}" onclick="mtgPickSlot('${s.start}')"
-      style="background:${bg};color:${fg};border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;${taken ? 'text-decoration:line-through' : ''}">${to12h(s.start)}</button>`;
-  }).join('') + `</div>`;
-}
-
-// End time is derived from start + duration, so the two can never disagree.
-function mtgSyncEnd() {
-  const start = document.getElementById("mtgStart").value;
-  const mins = parseInt(document.getElementById("mtgDuration").value, 10) || 30;
-  const endEl = document.getElementById("mtgEnd");
-  const lbl = document.getElementById("mtgEndLabel");
-  if (!start) { endEl.value = ""; lbl.textContent = "—"; return; }
-  const [h, m] = start.split(":").map(Number);
-  const t = h * 60 + m + mins;
-  const hh = String(Math.floor(t / 60) % 24).padStart(2, "0");
-  const mm = String(t % 60).padStart(2, "0");
-  endEl.value = hh + ":" + mm;
-  lbl.textContent = to12h(endEl.value);
-}
-
-function mtgPickSlot(start) {
-  document.getElementById('mtgStart').value = start;
-  mtgSyncEnd();
-}
-
-async function saveMeeting() {
-  const err = document.getElementById('mtgErr');
-  err.style.display = 'none';
-  const id = document.getElementById('mtgId').value;
-  const body = {
-    title: document.getElementById('mtgTitle').value.trim(),
-    agenda: document.getElementById('mtgAgenda').value.trim(),
-    client_id: document.getElementById('mtgClient').value || null,
-    meeting_date: document.getElementById('mtgDate').value,
-    start_time: document.getElementById('mtgStart').value,
-    end_time: document.getElementById('mtgEnd').value,
-    meet_link: document.getElementById('mtgLink').value.trim(),
-    attendee_ids: mtgSelectedAttendees(),
-  };
-  if (!body.title)        { err.textContent = 'Title is required'; err.style.display = 'block'; return; }
-  if (!body.meeting_date) { err.textContent = 'Please pick a date'; err.style.display = 'block'; return; }
-  if (!body.start_time || !body.end_time) { err.textContent = 'Please set a start and end time'; err.style.display = 'block'; return; }
-
-  if (!id) {
-    const freq = document.getElementById('mtgFreq').value;
-    if (freq) {
-      body.frequency = freq;
-      body.repeat_until = document.getElementById('mtgUntil').value;
-      body.repeat_days = [...document.querySelectorAll('.mtg-day:checked')].map(c => parseInt(c.value, 10));
-    }
-  }
-
-  const r = id ? await api(`/api/meetings/${id}`, 'PUT', body)
-               : await api('/api/meetings', 'POST', body);
-  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
-  closeModal('meetingModal');
-  showToast(id ? '✅ Meeting updated' : `✅ ${r.count > 1 ? r.count + ' meetings' : 'Meeting'} scheduled`);
-  loadMeetings();
-}
-
-
-
-// Compliance page has two views; Employee 360 loads lazily on first open.
-function complianceTab(which, el) {
-  document.querySelectorAll('#page-compliance .tab-group .tab').forEach(t => t.classList.remove('active'));
-  if (el) el.classList.add('active');
-  const fill = which === 'fill';
-  document.getElementById('cpFillView').style.display = fill ? 'block' : 'none';
-  document.getElementById('cpE360View').style.display = fill ? 'none' : 'block';
-  if (!fill) loadEmp360();
-}
-
 // Quick ranges. 0 = this calendar month; N = the last N months ending today.
 function e360Range(months) {
   const now = new Date();
@@ -6567,7 +5815,7 @@ function renderEmp360(d) {
   const gc = gradeColor(sc.grade);
 
   const catRows = Object.entries(sc.categories).map(([k, v]) => {
-    const nice = { delegation: 'Delegation', checklist: 'Checklist', dailyReport: 'Daily Report', meetings: 'Meetings', clients: 'Units' }[k] || k;
+    const nice = { delegation: 'Delegation', checklist: 'Checklist', clients: 'Units' }[k] || k;
     if (v === null) {
       // Nothing to measure — say so rather than showing a misleading zero.
       return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
@@ -6582,17 +5830,11 @@ function renderEmp360(d) {
       <span style="width:34px;text-align:right;font-size:11px;color:var(--faint)">${sc.weights[k]}%</span></div>`;
   }).join('');
 
-  const dr = d.dailyReport;
-  const entries = d.recentEntries.length ? d.recentEntries.slice(0, 8).map(e =>
-    `<tr><td style="white-space:nowrap">${fmtDate(e.entry_date)}</td><td>${dtEscape(e.description || '')}</td>
-     <td style="white-space:nowrap">${dtEscape(e.client_name || '—')}</td><td style="white-space:nowrap">${e.duration_min} min</td></tr>`).join('')
-    : `<tr><td colspan="4" class="empty">No entries in this range</td></tr>`;
-
   const units = d.clients.list.length ? d.clients.list.map(c =>
     `<tr><td>${dtEscape(c.name)}</td>
      <td><span class="status-badge ${c.is_active ? 'completed' : 'pending'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
-     <td>${c.tasks}</td><td>${c.pending}</td><td>${c.meetings}</td></tr>`).join('')
-    : `<tr><td colspan="5" class="empty">No units handled</td></tr>`;
+     <td>${c.tasks}</td><td>${c.pending}</td></tr>`).join('')
+    : `<tr><td colspan="4" class="empty">No units handled</td></tr>`;
 
   const weekly = d.weekly.length ? d.weekly.map(w =>
     `<tr onclick="openWeekTasks('${w.weekStart}','${w.weekEnd}')" style="cursor:pointer" title="Click to see this week's tasks">
@@ -6627,25 +5869,13 @@ function renderEmp360(d) {
       ${card(label('Checklist') + `<div style="display:flex;flex-wrap:wrap;gap:8px 4px;justify-content:space-around">
         ${stat('total', d.checklist.total)}${stat('done', d.checklist.completed, '#16a34a')}
         ${stat('pending', d.checklist.pending, '#dc2626')}${stat('overdue', d.checklist.overdue, '#dc2626')}</div>`)}
-      ${card(label('Meetings') + `<div style="display:flex;flex-wrap:wrap;gap:8px 4px;justify-content:space-around">
-        ${stat('organised', d.meetings.organized.total)}${stat('done', d.meetings.organized.done, '#16a34a')}
-        ${stat('cancelled', d.meetings.organized.cancelled, '#dc2626')}${stat('attended', d.meetings.attended)}</div>`)}
-      ${card(label('Daily Report') +
-        row('Days filled', `${dr.daysFilled} / ${dr.workingDays}`) +
-        row('Fill rate', `${dr.fillPct}%`) +
-        row('Hours logged', `${dr.hours} h`) +
-        row('Entries', dr.entries))}
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
       ${card(label(`Units handled — ${d.clients.active} active / ${d.clients.total}`) +
         `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
-          <th>Unit</th><th>Status</th><th>Tasks</th><th>Pending</th><th>Meetings</th>
+          <th>Unit</th><th>Status</th><th>Tasks</th><th>Pending</th>
         </tr></thead><tbody>${units}</tbody></table></div>`)}
-      ${card(label('Recent daily entries') +
-        `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
-          <th>Date</th><th>Work</th><th>Unit</th><th>Time</th>
-        </tr></thead><tbody>${entries}</tbody></table></div>`)}
     </div>
 
     ${card(label('Week by week — committed vs achieved') +
@@ -6676,163 +5906,6 @@ async function openWeekTasks(from, to) {
       <td style="white-space:nowrap">${dtEscape(t.client_name || '—')}</td>
       <td><span class="status-badge ${t.status}">${t.status}</span></td>
     </tr>`).join('')}</tbody></table></div>`;
-}
-
-// ══════════════════════════════════════════════════════
-// SCHEDULER — month calendar with a day timeline beside it
-// ══════════════════════════════════════════════════════
-let _schMonth = null;          // first of the displayed month
-let _schDay = null;            // YYYY-MM-DD selected in the day panel
-let _schMeetings = [];
-let _schTasks = [];
-
-const SCH_ISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-function schShift(months) {
-  _schMonth = new Date(_schMonth.getFullYear(), _schMonth.getMonth() + months, 1);
-  loadScheduler();
-}
-function schToday() {
-  const n = new Date();
-  _schMonth = new Date(n.getFullYear(), n.getMonth(), 1);
-  _schDay = SCH_ISO(n);
-  loadScheduler();
-}
-
-async function loadScheduler() {
-  if (!_schMonth) {
-    const n = new Date();
-    _schMonth = new Date(n.getFullYear(), n.getMonth(), 1);
-    _schDay = SCH_ISO(n);
-  }
-  // Fetch the whole visible grid, not just the month — the grid spills into the
-  // neighbouring months and those cells should not look empty.
-  const first = new Date(_schMonth);
-  const gridStart = new Date(first);
-  gridStart.setDate(1 - first.getDay());
-  const gridEnd = new Date(gridStart);
-  gridEnd.setDate(gridStart.getDate() + 41);
-
-  const from = SCH_ISO(gridStart), to = SCH_ISO(gridEnd);
-  const [mtg, del, chl] = await Promise.all([
-    api(`/api/meetings?from=${from}&to=${to}`),
-    api('/api/tasks?type=delegation'),
-    api('/api/tasks?type=checklist'),
-  ]);
-  _schMeetings = Array.isArray(mtg) ? mtg : [];
-
-  // Tasks arrive grouped for admins and flat for everyone else.
-  const flat = d => {
-    if (!d || d.error) return [];
-    if (Array.isArray(d.grouped)) return d.grouped.flatMap(g => g.tasks || []);
-    return d.tasks || [];
-  };
-  _schTasks = [...flat(del), ...flat(chl)].filter(t => t.due_date >= from && t.due_date <= to);
-
-  renderScheduler(gridStart);
-}
-
-function renderScheduler(gridStart) {
-  const box = document.getElementById('schCalView');
-  const monthLabel = _schMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  const todayIso = SCH_ISO(new Date());
-  const thisMonth = _schMonth.getMonth();
-
-  const byDay = {};
-  for (const m of _schMeetings) (byDay[m.meeting_date] = byDay[m.meeting_date] || { m: [], t: [] }).m.push(m);
-  for (const t of _schTasks) (byDay[t.due_date] = byDay[t.due_date] || { m: [], t: [] }).t.push(t);
-
-  let cells = '';
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(gridStart);
-    d.setDate(gridStart.getDate() + i);
-    const iso = SCH_ISO(d);
-    const outside = d.getMonth() !== thisMonth;
-    const bucket = byDay[iso] || { m: [], t: [] };
-    const isSunday = d.getDay() === 0;
-
-    const chips = [
-      ...bucket.m.slice(0, 2).map(m =>
-        `<div style="font-size:10px;background:var(--brand-tint);color:var(--brand-deep);border-left:2px solid var(--brand-mid);padding:2px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${m.status !== 'scheduled' ? 'text-decoration:line-through;opacity:.6' : ''}">${to12h(m.start_time)} ${dtEscape(m.title)}</div>`),
-      ...bucket.t.slice(0, 1).map(t =>
-        `<div style="font-size:10px;background:#fff7ed;color:#b45309;border-left:2px solid #f59e0b;padding:2px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">📋 ${dtEscape(t.description || '')}</div>`),
-    ].join('');
-    const extra = (bucket.m.length + bucket.t.length) - (Math.min(bucket.m.length, 2) + Math.min(bucket.t.length, 1));
-
-    cells += `<div onclick="schPickDay('${iso}')" style="min-height:96px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;cursor:pointer;background:${_schDay === iso ? 'var(--brand-tint)' : outside ? 'var(--muted)' : 'var(--card)'};overflow:hidden">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:12px;font-weight:${iso === todayIso ? '700' : '500'};color:${outside ? 'var(--faint)' : 'var(--foreground)'};${iso === todayIso ? 'background:var(--brand-mid);color:#fff;border-radius:99px;width:20px;height:20px;display:inline-grid;place-items:center' : ''}">${d.getDate()}</span>
-        ${isSunday ? '<span style="font-size:9px;color:#dc2626;font-weight:600">Off</span>' : ''}
-      </div>
-      ${chips}
-      ${extra > 0 ? `<div style="font-size:10px;color:var(--muted-foreground)">+ ${extra} more</div>` : ''}
-    </div>`;
-  }
-
-  const dayMeetings = _schMeetings.filter(m => m.meeting_date === _schDay)
-    .sort((a, b) => a.start_time < b.start_time ? -1 : 1);
-  const dayTasks = _schTasks.filter(t => t.due_date === _schDay);
-
-  // Hourly rail across business hours, with each meeting placed on its start hour.
-  let timeline = '';
-  // Same window as the availability grid: 8:30 AM start, last slot ends 7 PM.
-  for (let h = 8; h <= 18; h++) {
-    const hits = dayMeetings.filter(m => Number(m.start_time.split(':')[0]) === h);
-    timeline += `<div style="display:flex;gap:8px;border-top:1px dashed var(--border);min-height:38px;padding:4px 0">
-      <span style="width:58px;flex-shrink:0;font-size:11px;color:var(--muted-foreground)">${to12h(String(h).padStart(2, '0') + ':00')}</span>
-      <div style="flex:1">${hits.map(m => `<div onclick="openMeetingModal(${m.id})" style="cursor:pointer;font-size:11px;background:var(--brand-tint);border-left:3px solid var(--brand-mid);border-radius:4px;padding:4px 7px;margin-bottom:3px">
-        <b>${to12h(m.start_time)}</b> ${dtEscape(m.title)}</div>`).join('')}</div>
-    </div>`;
-  }
-
-  box.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn btn-outline btn-sm" onclick="schToday()">Today</button>
-        <button class="btn btn-outline btn-sm" onclick="schShift(-1)">←</button>
-        <button class="btn btn-outline btn-sm" onclick="schShift(1)">→</button>
-        <span style="font-size:17px;font-weight:700;letter-spacing:-.02em">${monthLabel}</span>
-      </div>
-      <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule</button>
-    </div>
-
-    <div style="display:grid;grid-template-columns:minmax(0,2.4fr) minmax(260px,1fr);gap:14px;align-items:start">
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);overflow:hidden">
-        <div style="display:grid;grid-template-columns:repeat(7,1fr)">
-          ${['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d =>
-            `<div style="padding:8px;text-align:center;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted-foreground);background:var(--muted);border-bottom:1px solid var(--border)">${d}</div>`).join('')}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(7,1fr)">${cells}</div>
-      </div>
-
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-xs);padding:14px">
-        <div style="font-size:13px;font-weight:700;margin-bottom:2px">Day · ${fmtDate(_schDay)}</div>
-        <div style="font-size:11px;color:var(--muted-foreground);margin-bottom:10px">${dayMeetings.length} meeting${dayMeetings.length === 1 ? '' : 's'} · ${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} due</div>
-        ${dayMeetings.length ? timeline : '<div class="empty" style="font-size:12px">No meetings on this date</div>'}
-        ${dayTasks.length ? `<div style="margin-top:14px">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:6px">Tasks due</div>
-          ${dayTasks.map(t => `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${dtEscape(t.description || '')}<span style="color:var(--faint)"> · ${dtEscape(t.assignedToName || '')}</span></div>`).join('')}
-        </div>` : ''}
-      </div>
-    </div>`;
-}
-
-// Calendar and list are two views of the same meetings; the list loads lazily.
-function schedulerTab(which, el) {
-  document.querySelectorAll('#page-scheduler .tab-group .tab').forEach(t => t.classList.remove('active'));
-  if (el) el.classList.add('active');
-  const cal = which === 'calendar';
-  document.getElementById('schCalView').style.display = cal ? 'block' : 'none';
-  document.getElementById('schListView').style.display = cal ? 'none' : 'block';
-  if (!cal) loadMeetings();
-}
-
-function schPickDay(iso) {
-  _schDay = iso;
-  // Opening a day should also offer to book it.
-  const dt = document.getElementById('mtgDate');
-  if (dt) dt.value = iso;
-  renderScheduler(new Date(new Date(_schMonth).setDate(1 - _schMonth.getDay())));
 }
 
 // ══════════════════════════════════════════════════════

@@ -195,39 +195,6 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
-  ['meetings', `CREATE TABLE meetings (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    agenda TEXT DEFAULT NULL,
-    client_id INT DEFAULT NULL,
-    organizer_id INT NOT NULL,
-    meeting_date DATE NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    meet_link VARCHAR(2048) DEFAULT NULL,
-    status ENUM('scheduled','cancelled','done') DEFAULT 'scheduled',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
-
-  // One row per invitee. The UNIQUE key makes re-saving an attendee list idempotent.
-  ['meeting_attendees', `CREATE TABLE meeting_attendees (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    meeting_id INT NOT NULL,
-    user_id INT NOT NULL,
-    UNIQUE KEY uq_meeting_user (meeting_id, user_id)
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
-
-  ['daily_tasks', `CREATE TABLE daily_tasks (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    entry_date DATE NOT NULL,
-    client_name VARCHAR(255) NOT NULL,
-    department VARCHAR(255) DEFAULT '',
-    description TEXT NOT NULL,
-    duration_min INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 ];
 
 // Columns added after a table first shipped. [table, column, DDL fragment]
@@ -392,28 +359,6 @@ const INDEXES = [
   ['leave_requests', 'idx_user_status', 'user_id, status'],
   // Every listing ends with ORDER BY created_at DESC LIMIT 500.
   ['leave_requests', 'idx_created', 'created_at'],
-
-  // ── meetings ──
-  ['meetings', 'idx_date', 'meeting_date'],
-  ['meetings', 'idx_organizer', 'organizer_id'],
-  ['meetings', 'idx_client', 'client_id'],
-  ['meetings', 'idx_status', 'status'],
-  // Availability grid: one date, scheduled only.
-  ['meetings', 'idx_date_status', 'meeting_date, status'],
-  ['meetings', 'idx_organizer_date', 'organizer_id, meeting_date'],
-  ['meetings', 'idx_client_date', 'client_id, meeting_date'],
-
-  ['meeting_attendees', 'idx_meeting', 'meeting_id'],
-  ['meeting_attendees', 'idx_user', 'user_id'],
-  // "which meetings is this user in" — covering.
-  ['meeting_attendees', 'idx_user_meeting', 'user_id, meeting_id'],
-
-  // ── daily_tasks ──
-  ['daily_tasks', 'idx_user_date', 'user_id, entry_date'],
-  ['daily_tasks', 'idx_entry_date', 'entry_date'],
-  // Client stats page aggregates by client_name (a string, not an FK).
-  ['daily_tasks', 'idx_client_name', 'client_name(191)'],
-  ['daily_tasks', 'idx_client_user', 'client_name(191), user_id'],
 
   // ── clients ──
   ['clients', 'idx_handler', 'handler_id'],

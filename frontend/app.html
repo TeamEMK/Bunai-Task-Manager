@@ -90,17 +90,9 @@
       <span class="nav-label-text">Form</span>
     </div>
     <div class="nav-divider"></div>
-    <div class="nav-item" id="nav-daily" onclick="navigate('daily',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-      <span class="nav-label-text">Daily Task</span>
-    </div>
     <div class="nav-item" id="nav-pms" onclick="navigate('pms',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
       <span class="nav-label-text">PMS</span>
-    </div>
-    <div class="nav-item" id="nav-scheduler" onclick="navigate('scheduler',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      <span class="nav-label-text">Scheduler</span>
     </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -112,11 +104,7 @@
     </div>
     <div class="nav-item" id="nav-compliance" style="display:none" onclick="navigate('compliance',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
-      <span class="nav-label-text">Compliance</span>
-    </div>
-    <div class="nav-item" id="nav-dailyreports" style="display:none" onclick="navigate('dailyreports',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      <span class="nav-label-text">Daily Reports</span>
+      <span class="nav-label-text">Employee 360</span>
     </div>
     <div class="nav-divider"></div>
     <div class="nav-item" onclick="navigate('profile',this)">
@@ -705,72 +693,11 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════
-       DAILY TASK FORM (visible to all roles)
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-daily" class="page">
-    <div class="dt-card">
-      <div class="dt-topbar">
-        <div class="dt-time" id="dtNow">—</div>
-        <div class="dt-welcome">Welcome <b id="dtUserName">—</b></div>
-      </div>
-
-      <div class="dt-meta-row">
-        <div class="dt-meta-field">
-          <label>Entry Date:</label>
-          <select id="dtEntryDate"></select>
-        </div>
-        <div class="dt-meta-field" style="text-align:right">
-          <label>Doer Name:</label>
-          <input type="text" id="dtDoerName" disabled/>
-        </div>
-      </div>
-
-      <!-- Already-submitted notice -->
-      <div id="dtLockedNotice" class="dt-locked" style="display:none">
-        🔒 You have already submitted for this date — entries are now locked.
-      </div>
-
-      <!-- Rows table -->
-      <div class="dt-table-wrap" id="dtTableWrap">
-        <table class="dt-table">
-          <thead>
-            <tr>
-              <th style="width:24%">Unit Name</th>
-              <th style="width:22%">Department</th>
-              <th>Task Description</th>
-              <th style="width:90px">Time (min)</th>
-              <th style="width:72px">Dup</th>
-              <th style="width:72px">Del</th>
-            </tr>
-          </thead>
-          <tbody id="dtRowsBody"></tbody>
-        </table>
-      </div>
-
-      <div class="dt-summary">
-        <span>Total Duration (Minutes):</span>
-        <strong id="dtTotalMin">0</strong>
-      </div>
-
-      <div class="dt-actions" id="dtActions">
-        <button class="dt-btn dt-btn-add" onclick="dtAddRow()">+ Add Row</button>
-        <button class="dt-btn dt-btn-submit" onclick="dtSubmit()">Submit All →</button>
-      </div>
-
-      <!-- Past entries -->
-      <div class="dt-history">
-        <div class="dt-history-title">📚 My Past Submissions</div>
-        <div id="dtHistoryWrap" class="dt-history-wrap"><div class="empty">No past submissions yet.</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
        CLIENT MASTER (admin only)
        ══════════════════════════════════════════════════════ -->
   <div id="page-clients" class="page">
     <div class="cm-card">
-      <p class="cm-sub">Add or remove units here. This list will appear in the dropdown of the Daily Task form.</p>
+      <p class="cm-sub">Add or remove units here. Units can be tagged on delegation tasks and checklists.</p>
 
       <div class="cm-add-row">
         <input type="text" id="cmNewClient" placeholder="Enter new unit name..." onkeydown="if(event.key==='Enter')cmAdd()"/>
@@ -797,37 +724,12 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════
-       COMPLIANCE TRACKER (admin only)
+       EMPLOYEE 360 (admin only)
        ══════════════════════════════════════════════════════ -->
   <div id="page-compliance" class="page">
     <div class="cp-card">
-      <!-- Two views of the same data: the 7-day fill grid, and one employee in full. -->
-      <div class="tab-group" style="margin-bottom:16px">
-        <div class="tab active" id="cpTabFill" onclick="complianceTab('fill',this)">📅 Daily Fill (7-day)</div>
-        <div class="tab" id="cpTab360" onclick="complianceTab('e360',this)">👤 Employee 360</div>
-      </div>
-      <div id="cpFillView">
-      <div class="cp-header">
-        <button class="dt-btn dt-btn-add" onclick="loadCompliance()">🔄 Refresh</button>
-      </div>
-      <p class="cp-sub">Last 7 days — who filled the Daily Task and when. <span class="cp-dot cp-dot-yes"></span> = filled · <span class="cp-dot cp-dot-no"></span> = missed</p>
-
-      <div class="cp-filter-row">
-        <input type="text" id="cpSearch" placeholder="🔍 Search by name / email / department..." oninput="renderCompliance()"/>
-        <select id="cpRoleFilter" onchange="renderCompliance()">
-          <option value="">All Roles</option>
-          <option value="admin">Admin</option>
-          <option value="hod">HOD</option>
-          <option value="pc">PC</option>
-          <option value="user">User</option>
-        </select>
-      </div>
-
-      <div id="cpGridWrap" class="cp-grid-wrap"><div class="empty">Loading...</div></div>
-      </div><!-- /cpFillView -->
-
-      <div id="cpE360View" style="display:none">
-        <p class="cp-sub">One employee, everything in one place — delegation, checklist, daily reports, units and meetings. Built for increment-time review.</p>
+      <div id="cpE360View">
+        <p class="cp-sub">One employee, everything in one place — delegation, checklist and units. Built for increment-time review.</p>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <select id="e360User" onchange="loadEmp360()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
           <input type="date" id="e360From" onchange="loadEmp360()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"/>
@@ -844,69 +746,10 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════
-       DAILY REPORTS — month-wise admin report
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-dailyreports" class="page">
-    <div class="dr-card">
-      <div class="dr-header">
-        <div class="dr-month-picker">
-          <label>Month:</label>
-          <input type="month" id="drMonth" onchange="loadDailyReports()"/>
-          <button class="dt-btn dt-btn-add" onclick="drExportCSV()">⬇ Export CSV</button>
-        </div>
-      </div>
-
-
-      <!-- Top stats -->
-      <div class="dr-stats" id="drStats"></div>
-
-      <!-- Per-user summary -->
-      <div class="dr-section-title">📊 Per-User Summary</div>
-      <div id="drSummaryWrap" class="dr-table-wrap">
-        <div class="empty">Loading...</div>
-      </div>
-
-      <!-- Detailed entries -->
-      <div class="dr-section-title">📝 All Entries (this month)</div>
-      <div class="dr-filter-row">
-        <input type="text" id="drSearch" placeholder="🔍 Search by name / unit / description..." oninput="renderDREntries()"/>
-        <select id="drUserFilter" onchange="renderDREntries()">
-          <option value="">All Users</option>
-        </select>
-      </div>
-      <div id="drEntriesWrap" class="dr-table-wrap">
-        <div class="empty">Loading...</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════
        PMS — production view, read-only over the existing sheets
        ══════════════════════════════════════════════════════ -->
   <div id="page-pms" class="page">
     <div id="pmsBody"><div class="empty">Loading…</div></div>
-  </div>
-  <!-- ══════════════════════════════════════════════════════
-       SCHEDULER — month calendar + day timeline
-       ══════════════════════════════════════════════════════ -->
-  <div id="page-scheduler" class="page">
-    <div class="tab-group" style="margin-bottom:14px">
-      <div class="tab active" id="schTabCal" onclick="schedulerTab('calendar',this)">📅 Calendar</div>
-      <div class="tab" id="schTabList" onclick="schedulerTab('list',this)">📋 Meetings</div>
-    </div>
-    <div id="schCalView"><div class="empty">Loading…</div></div>
-    <div id="schListView" style="display:none">
-      <div class="page-header">
-        <div class="tab-group" id="mtgStatusTabs">
-          <div class="tab active" onclick="mtgFilter('upcoming',this)">Upcoming</div>
-          <div class="tab" onclick="mtgFilter('all',this)">All</div>
-          <div class="tab" onclick="mtgFilter('done',this)">Done</div>
-          <div class="tab" onclick="mtgFilter('cancelled',this)">Cancelled</div>
-        </div>
-        <button class="btn btn-primary" onclick="openMeetingModal()">+ Schedule Meeting</button>
-      </div>
-      <div id="meetingsList"></div>
-    </div>
   </div>
   <!-- ══════════════════════════════════════════════════════
        LEAVE TRACKER — all users
@@ -998,7 +841,6 @@
 <!-- ══════════════════════════════════════
      DELEGATE TASK MODAL (Admin only)
 ══════════════════════════════════════ -->
-<!-- Schedule / edit a meeting -->
 <!-- Tasks behind one week of the Employee 360 table -->
 <div class="modal-overlay" id="weekTasksModal">
   <div class="modal" style="width:680px">
@@ -1006,103 +848,6 @@
     <div id="weekTasksBody"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('weekTasksModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="meetingModal">
-  <div class="modal" style="width:620px">
-    <h3 id="mtgModalTitle">📅 Schedule Meeting</h3>
-    <input type="hidden" id="mtgId"/>
-    <div class="alert error" id="mtgErr"></div>
-
-    <div class="form-group">
-      <label>Title</label>
-      <input type="text" id="mtgTitle" placeholder="What is this meeting about?"/>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Date</label>
-        <input type="date" id="mtgDate" onchange="mtgLoadSlots()"/>
-      </div>
-      <div class="form-group">
-        <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-        <select id="mtgClient"><option value="">— No Unit —</option></select>
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Start</label>
-        <input type="time" id="mtgStart" onchange="mtgSyncEnd();mtgLoadSlots()"/>
-      </div>
-      <div class="form-group">
-        <label>Duration</label>
-        <select id="mtgDuration" onchange="mtgSyncEnd()">
-          <option value="15">15 min</option>
-          <option value="30" selected>30 min</option>
-          <option value="45">45 min</option>
-          <option value="60">1 hour</option>
-          <option value="90">1.5 hours</option>
-          <option value="120">2 hours</option>
-        </select>
-        <div style="font-size:11px;color:var(--faint);margin-top:5px">Ends at <b id="mtgEndLabel">—</b></div>
-        <input type="hidden" id="mtgEnd"/>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Attendees</label>
-      <select id="mtgAttendees" multiple size="5" onchange="mtgLoadSlots()"
-        style="width:100%;padding:6px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
-      <div style="font-size:11px;color:var(--faint);margin-top:4px">Ctrl / Cmd + click to pick more than one</div>
-    </div>
-
-    <!-- Availability for the chosen day; clicking a free slot fills start/end. -->
-    <div class="form-group">
-      <label>Availability <span style="color:var(--faint);font-weight:400;font-size:11px">(click a free slot)</span></label>
-      <div id="mtgSlots" style="font-size:12px;color:var(--faint)">Pick a date to see open slots</div>
-    </div>
-
-    <div class="form-group">
-      <label>Meeting Link <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <input type="url" id="mtgLink" placeholder="https://meet.google.com/..."/>
-    </div>
-
-    <div class="form-group">
-      <label>Agenda <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <textarea id="mtgAgenda" placeholder="Points to cover…"></textarea>
-    </div>
-
-    <!-- Recurrence is create-only; editing one occurrence must not rewrite a series. -->
-    <div id="mtgRepeatWrap">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Repeat</label>
-          <select id="mtgFreq" onchange="mtgFreqChange()">
-            <option value="">Does not repeat</option>
-            <option value="daily">Daily</option>
-            <option value="weekday">Every day except Sunday</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="custom">Custom days</option>
-          </select>
-        </div>
-        <div class="form-group" id="mtgUntilWrap" style="display:none">
-          <label>Repeat Until</label>
-          <input type="date" id="mtgUntil"/>
-        </div>
-      </div>
-      <div class="form-group" id="mtgDaysWrap" style="display:none">
-        <label>Repeat On</label>
-        <div id="mtgDays" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('meetingModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveMeeting()">Save</button>
     </div>
   </div>
 </div>
