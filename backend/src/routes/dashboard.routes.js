@@ -103,12 +103,18 @@ router.get('/dashboard', requireAuth, asyncRoute(async (req, res) => {
   // Revised carries a future due date, so it is counted across all dates unless
   // the PC pinned a range.
   const revisedCond = usingPCRange ? ` AND ${dateCond}` : '';
+  // Completed is counted across all dates too — a done task is done whatever
+  // its due date. Restricting it to "today or earlier" dropped tasks completed
+  // with a future due date: they stayed in Total (COUNT(*)) but landed in no
+  // card (Completed excluded them by date, Upcoming by status), so the tiles
+  // stopped summing to Total. Counting all completed restores that.
+  const completedCond = usingPCRange ? ` AND ${dateCond}` : '';
 
   const countsSql = (table, withRevised) => `
     SELECT ${totalExpr} AS total,
            SUM(CASE WHEN t.status='pending' AND ${dateCond} THEN 1 ELSE 0 END) AS pending,
            ${withRevised ? `SUM(CASE WHEN t.status='revised'${revisedCond} THEN 1 ELSE 0 END)` : `SUM(CASE WHEN t.status='revised' AND ${dateCond} THEN 1 ELSE 0 END)`} AS revised,
-           SUM(CASE WHEN t.status='completed' AND ${dateCond} THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN t.status='completed'${completedCond} THEN 1 ELSE 0 END) AS completed,
            ${upcomingExpr} AS upcoming
       FROM ${table} t WHERE 1=1 ${userFilter}`;
 
@@ -148,12 +154,12 @@ router.get('/dashboard', requireAuth, asyncRoute(async (req, res) => {
     // grows without bound and this card is a quick look, not the archive.
     wantDelegation ? db.rows(
       `SELECT ${DELEGATION_COLUMNS} ${DELEGATION_JOINS}
-        WHERE t.status='completed' AND ${dateCond} ${userFilter}
+        WHERE t.status='completed'${completedCond} ${userFilter}
         ORDER BY t.due_date DESC LIMIT ${COMPLETED_ROW_LIMIT}`,
       [...dp, ...userParams]) : noRows,
     wantChecklist ? db.rows(
       `SELECT ${CHECKLIST_COLUMNS} ${CHECKLIST_JOINS}
-        WHERE t.status='completed' AND ${dateCond} ${userFilter}
+        WHERE t.status='completed'${completedCond} ${userFilter}
         ORDER BY t.due_date DESC LIMIT ${COMPLETED_ROW_LIMIT}`,
       [...dp, ...userParams]) : noRows,
 
