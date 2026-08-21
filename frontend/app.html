@@ -81,6 +81,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10l8 4 8-4V7l-8-4-8 4zm8 4l8-4m-8 4L4 7m8 4v10"/></svg>
       <span class="nav-label-text">Stock</span>
     </div>
+    <div class="nav-item" id="nav-sales" style="display:none" onclick="navigate('sales',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
+      <span class="nav-label-text">Sales</span>
+    </div>
     <div class="nav-item" id="nav-fms-tasks" onclick="navigate('fms-tasks',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18"/></svg>
       <span class="nav-label-text">FMS Tasks</span>
@@ -341,6 +345,34 @@
       <table>
         <thead><tr><th>SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th></tr></thead>
         <tbody id="stockBody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── SALES (order analytics from Vin eRetail order exports) ── -->
+  <div id="page-sales" class="page">
+    <div class="page-header">
+      <div>
+        <h1 class="cp-title">📈 Sales</h1>
+        <p class="cp-sub">Order analytics from the Vin eRetail order export. Imported, not live — the freshness note says how old this batch is.</p>
+      </div>
+    </div>
+
+    <div id="salesNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
+
+    <div id="salesTiles" style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:16px"></div>
+
+    <div class="cp-filter-row" style="margin-bottom:14px">
+      <button class="btn btn-sm" onclick="loadSales()">Refresh</button>
+      <span id="salesSpan" style="font-size:12px;color:var(--faint);margin-left:auto"></span>
+    </div>
+
+    <div id="salesBreakdown" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
+
+    <div class="table-container">
+      <table>
+        <thead><tr><th>Order No</th><th>Date</th><th>Channel</th><th>Type</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
+        <tbody id="salesRecentBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>

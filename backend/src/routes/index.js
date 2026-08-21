@@ -24,6 +24,7 @@ api.use(require('./clients.routes'));
 api.use(require('./leaves.routes'));
 api.use(require('./holidays.routes'));
 api.use(require('./stock.routes'));
+api.use(require('./sales.routes'));
 api.use(require('./reminders.routes'));
 api.use(require('./weekPlan.routes'));
 api.use(require('./pms.routes'));

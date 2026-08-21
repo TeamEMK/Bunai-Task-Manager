@@ -157,6 +157,7 @@ async function init() {
       document.getElementById('nav-mis').style.display = 'flex';
       document.getElementById('nav-fms').style.display = 'flex';
       document.getElementById('nav-ims').style.display = 'flex';
+      document.getElementById('nav-sales').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -270,7 +271,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Unit Master',compliance:'Employee 360',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Unit Master',compliance:'Employee 360',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -302,6 +303,7 @@ function canOpenPage(page) {
   if (!page || !document.getElementById('page-' + page)) return false;
   if (page === 'mis') return ME && (ME.role === 'admin' || ME.role === 'hod');
   if (page === 'ims') return ME && ME.role === 'admin';
+  if (page === 'sales') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
 }
@@ -319,6 +321,8 @@ function navigate(page, el, fromHash) {
   if (page === 'mis' && ME.role !== 'admin' && ME.role !== 'hod') return;
   // IMS page — admin only
   if (page === 'ims' && (!ME || ME.role !== 'admin')) return;
+  // Sales page — admin only
+  if (page === 'sales' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
@@ -342,6 +346,7 @@ function navigate(page, el, fromHash) {
   if (page==='pms') loadPMS();
   if (page==='ims') loadIMS();
   if (page==='stock') loadStock();
+  if (page==='sales') loadSales();
   window.scrollTo(0,0);
 }
 
@@ -2276,6 +2281,106 @@ async function saveProfile() {
 // Escapes text before it goes into innerHTML. Named dt* because it started in
 // the daily-task form; it outlived that feature and is used all over the app.
 function dtEscape(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ══════════════════════════════════════════════════════
+// SALES — order analytics from Vin eRetail order exports (admin only).
+// Reads /api/sales, which reads the imported vin_orders table. Export-driven,
+// not live — the freshness note keeps a stale batch from looking current.
+// ══════════════════════════════════════════════════════
+function inr(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+function salesTile(label, value, note, tone) { return stockTile(label, value, note, tone); }
+
+function salesNotice(kind, text) {
+  const el = document.getElementById('salesNotice');
+  if (!el) return;
+  if (!text) { el.style.display = 'none'; return; }
+  const skin = {
+    ok:   ['#ECFDF3', '#A6F4C5', '#05603A'],
+    busy: ['#FFF8E6', '#FDE68A', '#8A5A00'],
+    bad:  ['#FEF3F2', '#FECDCA', '#B42318'],
+  }[kind] || ['#F8FAFC', '#E2E8F0', '#334155'];
+  el.style.background = skin[0];
+  el.style.border = '1px solid ' + skin[1];
+  el.style.color = skin[2];
+  el.style.display = 'block';
+  el.textContent = text;
+}
+
+// A labelled bar row list — used for status / channel / type / state panels.
+function salesPanel(title, rows) {
+  const max = Math.max(1, ...rows.map(r => r.n));
+  const body = rows.map(r => `
+    <div style="display:flex;align-items:center;gap:8px;margin:6px 0">
+      <div style="flex:0 0 44%;font-size:12.5px;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.label}</div>
+      <div style="flex:1;background:var(--border);border-radius:6px;height:8px;overflow:hidden">
+        <div style="width:${Math.round(r.n / max * 100)}%;height:100%;background:#6366f1"></div>
+      </div>
+      <div style="flex:0 0 auto;font-size:12px;color:var(--muted-foreground);font-variant-numeric:tabular-nums">${r.n}${r.sub ? ' · ' + r.sub : ''}</div>
+    </div>`).join('');
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+    <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin-bottom:8px">${title}</div>
+    ${body || '<div class="empty">—</div>'}
+  </div>`;
+}
+
+async function loadSales() {
+  const tilesEl = document.getElementById('salesTiles');
+  const breakdownEl = document.getElementById('salesBreakdown');
+  const body = document.getElementById('salesRecentBody');
+  const spanEl = document.getElementById('salesSpan');
+  tilesEl.innerHTML = ''; breakdownEl.innerHTML = '';
+  body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+
+  const d = await api('/api/sales');
+  if (d.notConfigured) {
+    salesNotice('busy', 'No sales imported on this server yet — import a Vin eRetail order export to populate this page.');
+    body.innerHTML = `<tr><td colspan="7" class="empty">No sales imported yet.</td></tr>`;
+    return;
+  }
+  if (d.error) { body.innerHTML = `<tr><td colspan="7" class="empty">Could not load sales — ${d.error}</td></tr>`; return; }
+
+  const t = d.totals || {};
+  tilesEl.innerHTML =
+    salesTile('Total orders', Number(t.orders || 0).toLocaleString('en-IN'),
+              `${Number(t.live_orders || 0).toLocaleString('en-IN')} live · ${Number(t.cancelled || 0)} cancelled`) +
+    salesTile('Revenue', inr(t.revenue), 'excl. cancelled') +
+    salesTile('Avg order value', inr(t.aov)) +
+    salesTile('Cancelled', Number(t.cancelled || 0).toLocaleString('en-IN'),
+              t.orders ? Math.round(t.cancelled / t.orders * 100) + '% of orders' : '', 'warn');
+
+  breakdownEl.innerHTML =
+    salesPanel('By status', (d.byStatus || []).map(s => ({ label: s.status, n: s.n, sub: inr(s.amount) }))) +
+    salesPanel('By channel', (d.channels || []).map(c => ({ label: c.channel, n: c.n, sub: inr(c.revenue) }))) +
+    salesPanel('COD vs Prepaid', (d.byType || []).map(x => ({ label: x.order_type, n: x.n, sub: inr(x.revenue) }))) +
+    salesPanel('Top ship-to states', (d.topStates || []).map(s => ({ label: s.state, n: s.n, sub: inr(s.revenue) })));
+
+  if (d.span) {
+    const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+    spanEl.textContent = `Orders ${fmtD(d.span.first_order)} → ${fmtD(d.span.last_order)}`;
+    if (d.span.imported_at) {
+      const days = Math.round((Date.now() - new Date(d.span.imported_at).getTime()) / 86400000);
+      salesNotice(days > 7 ? 'busy' : 'ok',
+        `Imported ${days <= 0 ? 'today' : days + ' day(s) ago'} from the Vin order export.` +
+        (days > 7 ? ' Re-export from Vin eRetail and re-import to refresh.' : ''));
+    }
+  }
+
+  const chan = ext => /^[0-9a-f]{8}-/.test(ext || '') ? 'Myntra' : /^[0-9]+$/.test(ext || '') ? 'Shopify' : 'Other';
+  const statusPill = s => {
+    const tone = /cancel/i.test(s) ? '#dc2626' : /deliver|shipped|complete/i.test(s) ? '#16a34a' : '#d97706';
+    return `<span style="color:${tone};font-weight:600">${s || '—'}</span>`;
+  };
+  const fmtDT = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
+  body.innerHTML = (d.recent || []).map(o => `<tr>
+    <td>${o.order_no}</td>
+    <td>${fmtDT(o.order_date)}</td>
+    <td>${chan(o.ext_order_no)}</td>
+    <td>${o.order_type || ''}</td>
+    <td>${statusPill(o.status)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${inr(o.order_amount)}</td>
+    <td>${[o.ship_city, o.ship_state].filter(Boolean).join(', ')}</td>
+  </tr>`).join('') || '<tr><td colspan="7" class="empty">No orders.</td></tr>';
+}
 
 async function api(url,method='GET',body=null) {
   const token = localStorage.getItem('authToken');
