@@ -9,6 +9,7 @@ const { db } = require('../db/pool');
 const { requireAuth, requireAdmin, requireCronSecret } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 const { runVinculumSync } = require('../services/scheduler');
+const vin = require('../../vinculum');
 
 const router = express.Router();
 
@@ -63,6 +64,48 @@ router.get('/stock', requireAuth, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// Live per-SKU check — skips the snapshot and asks Vinculum right now.
+// One call covers up to 20 SKUs (the API's per-call cap) and finishes in a
+// second or two, so unlike the full six-minute sync it runs inside a normal
+// request — and works on Vercel. The snapshot is updated with what comes back,
+// so the freshly-checked rows stay correct after the page reloads.
+router.get('/stock/live', requireAuth, asyncRoute(async (req, res) => {
+  const asked = String(req.query.skus || '').split(',').map(s => s.trim()).filter(Boolean);
+  const skus = [...new Set(asked)].slice(0, 20);   // API cap is 20 per call
+  if (!skus.length) return res.status(400).json({ error: 'No SKUs to check' });
+  if (!vin.isConfigured()) return res.status(400).json({ error: 'Vinculum is not configured on this server' });
+
+  let rows;
+  try {
+    rows = await vin.fetchInventoryBatch(skus);
+  } catch (e) {
+    return res.status(502).json({ error: 'Vinculum: ' + (e.message || 'call failed') });
+  }
+
+  // Push live values into the snapshot so the table reflects them.
+  if (rows.length) {
+    await db.rows(
+      `INSERT INTO vin_inventory (sku, warehouse, qty) VALUES ?
+       ON DUPLICATE KEY UPDATE qty = VALUES(qty), synced_at = CURRENT_TIMESTAMP`,
+      [rows.map(r => [r.sku, r.warehouse, r.qty])]);
+  }
+
+  // A checked SKU absent from the response is out of stock now. Zero only the
+  // (sku, warehouse) rows we already track — don't invent new warehouse rows.
+  const seen = new Set(rows.map(r => r.sku + '|' + r.warehouse));
+  const existing = await db.rows(
+    `SELECT sku, warehouse FROM vin_inventory WHERE sku IN (${skus.map(() => '?').join(',')})`, skus);
+  const stale = existing.filter(e => !seen.has(e.sku + '|' + e.warehouse));
+  if (stale.length) {
+    await db.rows(
+      `UPDATE vin_inventory SET qty = 0, synced_at = CURRENT_TIMESTAMP
+        WHERE (sku, warehouse) IN (${stale.map(() => '(?,?)').join(',')})`,
+      stale.flatMap(e => [e.sku, e.warehouse]));
+  }
+
+  res.json({ checked: skus.length, found: rows.length, live: rows });
+}));
 
 // Manual trigger (admin) — the Stock page's "Sync now" button. Runs the same
 // job the scheduler runs, so what you test is what runs at 6 AM.

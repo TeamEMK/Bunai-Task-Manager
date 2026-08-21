@@ -501,6 +501,7 @@ async function loadStock() {
       tiles.style.color = '#dc2626';
     }
 
+    window._stockSkus = [...new Set(d.rows.map(r => r.sku))];   // for Live check
     body.innerHTML = d.rows.length ? d.rows.map(r => {
       const qty = Number(r.qty);
       const colour = qty <= 0 ? '#dc2626' : qty <= 5 ? '#d97706' : 'var(--foreground)';
@@ -517,6 +518,33 @@ async function loadStock() {
 
   } catch (e) {
     body.innerHTML = `<tr><td colspan="4" class="empty">Could not load stock — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+  }
+}
+
+// Live check — asks Vinculum for the current stock of the SKUs on screen
+// (up to 20, the API's per-call cap) right now, updates the snapshot, and
+// re-renders. This is the genuinely-live path: a single fast call, so it works
+// even on Vercel where the full sync cannot. Narrow the search first to check
+// exactly the product you want.
+async function liveCheckStock() {
+  const all = window._stockSkus || [];
+  const skus = all.slice(0, 20);
+  if (!skus.length) { stockNotice('busy', 'Nothing to check — search a SKU or product first, then Live check.'); return; }
+  const btn = document.getElementById('stockLiveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const d = await api('/api/stock/live?skus=' + encodeURIComponent(skus.join(',')));
+    if (d.error) {
+      stockNotice('bad', 'Live check failed — ' + d.error);
+    } else {
+      stockNotice('ok', `Live checked ${d.checked} SKU(s) from Vinculum just now — ${d.found} in stock.` +
+        (all.length > 20 ? ' (first 20 shown — narrow the search to check others)' : ''));
+      await loadStock();
+    }
+  } catch (e) {
+    stockNotice('bad', 'Live check failed — ' + (e.message || 'network error'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Live check'; }
   }
 }
 

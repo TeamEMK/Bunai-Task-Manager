@@ -330,6 +330,7 @@
         <option value="20">20 or fewer</option>
       </select>
       <button class="btn btn-sm" onclick="loadStock()">Refresh</button>
+      <button class="btn btn-sm" id="stockLiveBtn" onclick="liveCheckStock()" title="Ask Vinculum for the current stock of the SKUs shown (up to 20)">⚡ Live check</button>
       <button class="btn btn-sm" id="stockSyncBtn" onclick="syncStockNow()" style="display:none">Sync now</button>
       <span id="stockSynced" style="font-size:12px;color:var(--faint);margin-left:auto"></span>
     </div>

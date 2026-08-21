@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Vinculum stock sync — keeps the Stock page fresh without an always-on server.
+#
+# Vercel functions freeze the moment they respond, so the six-minute stock sync
+# can never finish there. GitHub Actions has no such limit: this job wakes up on
+# a schedule, runs the same sync against the (Railway) database, then exits —
+# free, and no extra hosting cost.
+#
+# ── One-time setup ──
+# In the repo: Settings → Secrets and variables → Actions → New repository
+# secret, and add each of these (values are the same ones the app uses):
+#     DB_HOST  DB_PORT  DB_USER  DB_PASSWORD  DB_NAME
+#     VIN_BASE_URL  VIN_API_KEY  VIN_API_OWNER  VIN_ORG_ID
+# Use the Railway PUBLIC host for DB_HOST (*.proxy.rlwy.net), not the internal one.
+#
+# Run it by hand any time from the Actions tab → this workflow → "Run workflow".
+# ─────────────────────────────────────────────────────────────────────────
+name: Vinculum stock sync
+
+on:
+  schedule:
+    - cron: '30 0 * * *'    # 06:00 IST (00:30 UTC)
+    - cron: '30 12 * * *'   # 18:00 IST (12:30 UTC)
+  workflow_dispatch: {}      # manual "Run workflow" button
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - name: Sync stock from Vinculum into the database
+        run: node backend/vinculum-sync.js sync
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
+          VIN_API_KEY: ${{ secrets.VIN_API_KEY }}
+          VIN_API_OWNER: ${{ secrets.VIN_API_OWNER }}
+          VIN_ORG_ID: ${{ secrets.VIN_ORG_ID }}
