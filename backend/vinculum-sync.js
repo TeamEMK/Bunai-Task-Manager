@@ -147,7 +147,11 @@ async function syncInventory({ log = console.log, force = false } = {}) {
     }
   }
 
-  const started = new Date();
+  // Run-start comes from the DB clock, not the client's. A machine in a
+  // different timezone than the DB (e.g. an IST laptop syncing a UTC Railway
+  // MySQL) would otherwise make every freshly-inserted row look "stale" to the
+  // zeroing step below (synced_at < started) and wipe the whole table to zero.
+  const [[{ started }]] = await pool.query('SELECT NOW() AS started');
   const [res] = await pool.query(
     'INSERT INTO vin_sync_log (kind, started_at) VALUES (?, ?)', ['inventory', started]);
   const runId = res.insertId;
