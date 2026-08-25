@@ -92,8 +92,11 @@ module.exports = {
   },
 
   whatsapp: {
-    apiKey: process.env.AUMFIG_API_KEY || '',
-    apiUrl: process.env.AUMFIG_API_URL || 'https://api.aumfig.com/api/v1/send-message',
+    // Waumfy is the current provider; the older AUMFIG_* names still work as a
+    // fallback so an un-migrated deployment keeps sending.
+    apiKey: process.env.WAUMFY_API_KEY || process.env.AUMFIG_API_KEY || '',
+    apiUrl: process.env.WAUMFY_API_URL || process.env.AUMFIG_API_URL
+      || 'https://www.waumfy.com/api/v1/send-message',
     // Random 4-5 min gap between sends — a fixed interval looks bot-like.
     gapMinMs: int(process.env.WHATSAPP_GAP_MIN_MS, 4 * 60 * 1000),
     gapMaxMs: int(process.env.WHATSAPP_GAP_MAX_MS, 5 * 60 * 1000),

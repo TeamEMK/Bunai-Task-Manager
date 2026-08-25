@@ -6,7 +6,7 @@ const express = require('express');
 const { db } = require('../db/pool');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
-const { normDate, normFreq, serverToday, formatHumanDate } = require('../utils/dates');
+const { normDate, normFreq, serverToday } = require('../utils/dates');
 const { placeholders, indexBy } = require('../utils/collections');
 const { loadHolidaysSet, isUserOffOn, nextWorkingDay } = require('../services/holidays');
 const wa = require('../services/whatsapp');
@@ -183,13 +183,15 @@ router.post('/tasks', requireAuth, asyncRoute(async (req, res) => {
        approval || 'no', 0, approverId, remarks || '', clientIdInt, url || null]);
 
     notifyTaskCreated({
-      doerId: targetUser, byId: assignedBy, clientId: null,
-      build: ({ doer, byUser }) => wa.sendDelegationMessage(doer.phone, {
+      doerId: targetUser, byId: assignedBy, clientId: clientIdInt,
+      build: ({ doer, byUser, clientName }) => wa.sendDelegationMessage(doer.phone, {
         doerName: doer.name,
         assignedByName: byUser ? byUser.name : '',
-        dueDate: formatHumanDate(effectiveDate),
-        priority: (priority || 'low').toUpperCase(),
+        dueDate: effectiveDate,
+        priority: priority || 'low',
         description: desc,
+        clientName,
+        remarks: remarks || '',
       }),
     });
   } else {

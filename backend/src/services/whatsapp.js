@@ -1,9 +1,9 @@
 // ══════════════════════════════════════════════════════
-// WHATSAPP (Aumfig) — one FIFO queue for the whole process.
+// WHATSAPP (Waumfy) — one FIFO queue for the whole process.
 //
 // Every message (delegation, checklist created, daily reminder) leaves through
 // the same queue with a 4-5 minute random gap, so WhatsApp does not read the
-// traffic as a blast and message order is preserved. Leaving AUMFIG_API_KEY
+// traffic as a blast and message order is preserved. Leaving WAUMFY_API_KEY
 // blank disables all of it silently.
 // ══════════════════════════════════════════════════════
 const config = require('../config');
@@ -22,7 +22,7 @@ function normalizePhone(raw) {
 }
 
 async function sendRaw(phone, message) {
-  if (!cfg.apiKey) return { ok: false, reason: 'disabled — AUMFIG_API_KEY not set' };
+  if (!cfg.apiKey) return { ok: false, reason: 'disabled — WAUMFY_API_KEY not set' };
   const to = normalizePhone(phone);
   if (!to) return { ok: false, reason: 'no valid phone number' };
   try {
@@ -34,12 +34,12 @@ async function sendRaw(phone, message) {
     const text = await resp.text();
     let data; try { data = JSON.parse(text); } catch { data = text; }
     if (!resp.ok) {
-      console.error('⚠️ Aumfig WhatsApp send failed:', resp.status, data);
+      console.error('⚠️ Waumfy WhatsApp send failed:', resp.status, data);
       return { ok: false, status: resp.status, data };
     }
     return { ok: true, status: resp.status, data };
   } catch (err) {
-    console.error('⚠️ Aumfig WhatsApp send error:', err.message);
+    console.error('⚠️ Waumfy WhatsApp send error:', err.message);
     return { ok: false, reason: err.message };
   }
 }
@@ -100,16 +100,29 @@ const PRIORITY_EMOJI = { high: '🔴', medium: '🟠', low: '🟢' };
 const NUM_EMOJI = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 const numBullet = (i) => (i < 10 ? NUM_EMOJI[i] : `🔹 ${i + 1}.`);
 
-// Sent when a delegation task is assigned (after the configured delay).
-function sendDelegationMessage(phone, { doerName, assignedByName, dueDate, priority, description }) {
-  const message =
-    `Hello ${doerName || ''},\n` +
-    `New Task Delegated\n` +
-    `By: ${assignedByName || ''}\n` +
-    `Due: ${dueDate || ''}\n` +
-    `Priority: ${(priority || '').toUpperCase()}\n` +
-    `Task:- ${description || ''}`;
-  return queueMessage(phone, message, { delayMs: cfg.delegationDelayMs, label: 'delegation' });
+// Sent to the doer when a delegation task is assigned (after the configured delay).
+function buildDelegationMessage({ doerName, assignedByName, dueDate, priority, description, clientName, remarks }) {
+  const pr = String(priority || 'low').toLowerCase();
+  const lines = [];
+  lines.push(`🔔 *New Task Delegated*`);
+  lines.push('');
+  lines.push(`Hello ${doerName || ''} 👋`);
+  lines.push('');
+  lines.push(`📋 *Task:* ${description || ''}`);
+  if (clientName) lines.push(`🏢 *Client:* ${clientName}`);
+  lines.push(`${PRIORITY_EMOJI[pr] || '🟢'} *Priority:* ${pr.toUpperCase()}`);
+  lines.push(`📅 *Due:* ${formatHumanDate(dueDate)}`);
+  if (assignedByName) lines.push(`👤 *Assign by:* ${assignedByName}`);
+  if (remarks) lines.push(`📝 *Remarks:* ${remarks}`);
+  lines.push('');
+  lines.push(`✅ Mark it as *Done* in the app as soon as the work is finished.`);
+  lines.push(`— Bunai Task Manager`);
+  return lines.join('\n');
+}
+
+function sendDelegationMessage(phone, opts) {
+  return queueMessage(phone, buildDelegationMessage(opts),
+    { delayMs: cfg.delegationDelayMs, label: 'delegation' });
 }
 
 // Summary sent to the doer as soon as a checklist series is created.
@@ -158,6 +171,7 @@ function buildChecklistDailyMessage(doerName, dateStr, tasks) {
 
 module.exports = {
   normalizePhone, sendRaw, queueMessage, avgGapMs,
-  sendDelegationMessage, buildChecklistCreatedMessage, buildChecklistDailyMessage,
+  sendDelegationMessage, buildDelegationMessage,
+  buildChecklistCreatedMessage, buildChecklistDailyMessage,
   checklistCreatedDelayMs: cfg.delegationDelayMs,
 };
