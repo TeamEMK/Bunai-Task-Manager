@@ -2538,8 +2538,12 @@ async function loadSales() {
 
   topEl.innerHTML = salesTopSkus(d.topSkus);
 
-  if (d.span) {
-    const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+  // Echo the chosen filter range so the side text matches what was picked; fall
+  // back to the data's actual span only when no explicit range is set.
+  const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) {
+    spanEl.textContent = `${fmtD(fromI.value)} → ${fmtD(toI.value)}`;
+  } else if (d.span) {
     spanEl.textContent = `${fmtD(d.span.first_order)} → ${fmtD(d.span.last_order)}`;
   }
   if (d.lastSync && d.lastSync.started_at) {
@@ -2551,7 +2555,43 @@ async function loadSales() {
   }
 
   window._salesRecent = d.recent || [];
-  salesRenderOrders(window._salesRecent, 'salesRecentBody');
+  loadSalesOrders(1);   // paginated full list for the chosen range
+}
+
+let _salesOrderSearchTimer = null;
+function salesOrderSearchDebounced() {
+  clearTimeout(_salesOrderSearchTimer);
+  _salesOrderSearchTimer = setTimeout(() => loadSalesOrders(1), 300);
+}
+
+// The full, paginated + searchable orders list for the selected range.
+async function loadSalesOrders(page) {
+  const rangeSel = document.getElementById('salesRange');
+  const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
+  const q = (document.getElementById('salesOrderSearch') || {}).value || '';
+  const params = new URLSearchParams({ page: String(page || 1) });
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  if (q.trim()) params.set('q', q.trim());
+
+  const body = document.getElementById('salesRecentBody');
+  body.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  const d = await api('/api/sales/orders?' + params.toString());
+  if (d.error) { body.innerHTML = `<tr><td colspan="9" class="empty">Could not load orders — ${dtEscape(d.error)}</td></tr>`; return; }
+
+  const lbl = document.getElementById('salesOrdersLabel');
+  if (lbl) lbl.textContent = `Orders (${Number(d.total || 0).toLocaleString('en-IN')})`;
+  salesRenderOrders(d.orders || [], 'salesRecentBody');
+
+  const pager = document.getElementById('salesOrdersPager');
+  if (pager) {
+    const p = d.page || 1, pages = d.pages || 1;
+    pager.innerHTML = `
+      <span>Page ${p} of ${pages} · ${Number(d.total || 0).toLocaleString('en-IN')} orders</span>
+      <span style="display:flex;gap:6px">
+        <button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="loadSalesOrders(${p - 1})">‹ Prev</button>
+        <button class="btn btn-sm" ${p >= pages ? 'disabled' : ''} onclick="loadSalesOrders(${p + 1})">Next ›</button>
+      </span>`;
+  }
 }
 
 // Renders an orders list into the given table body.

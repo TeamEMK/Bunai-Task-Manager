@@ -382,13 +382,17 @@
 
     <div id="salesTopSkus" style="margin-bottom:16px"></div>
 
-    <div id="salesOrdersLabel" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:0 2px 8px">Recent orders</div>
+    <div style="display:flex;align-items:center;gap:10px;margin:0 2px 8px;flex-wrap:wrap">
+      <div id="salesOrdersLabel" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Orders</div>
+      <input id="salesOrderSearch" type="text" placeholder="Search order, customer, phone, city, status…" oninput="salesOrderSearchDebounced()" style="margin-left:auto;min-width:240px;max-width:340px"/>
+    </div>
     <div class="table-container">
       <table>
         <thead><tr><th>Order</th><th>Customer</th><th>Phone</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
         <tbody id="salesRecentBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div id="salesOrdersPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
   </div>
 
   <div id="page-profile" class="page">

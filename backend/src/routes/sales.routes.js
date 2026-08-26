@@ -122,6 +122,43 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// All orders in the range, paginated + searchable — the full list, not just
+// the recent 100 the dashboard shows.
+router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const from = String(req.query.from || '').trim();
+    const to = String(req.query.to || '').trim();
+    const ranged = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to);
+    const q = String(req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const PER = 100;
+
+    const where = [];
+    const args = [];
+    if (ranged) { where.push('order_date >= ? AND order_date < DATE_ADD(?, INTERVAL 1 DAY)'); args.push(from, to); }
+    if (q) {
+      where.push('(order_id LIKE ? OR ext_order_no LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ? OR ship_city LIKE ? OR ship_state LIKE ? OR status LIKE ?)');
+      const like = `%${q}%`;
+      args.push(like, like, like, like, like, like, like);
+    }
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+    const cnt = await db.one(`SELECT COUNT(*) n FROM vin_orders ${whereSql}`, args);
+    const total = cnt ? cnt.n : 0;
+    const orders = await db.rows(
+      `SELECT order_id, ext_order_no, order_date, payment_method, status, order_amount,
+              channel_name, ship_city, ship_state, customer_name, customer_phone
+         FROM vin_orders ${whereSql}
+        ORDER BY order_date DESC, order_id DESC
+        LIMIT ${PER} OFFSET ${(page - 1) * PER}`, args);
+
+    res.json({ orders, total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)) });
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // A single order's full detail — every stored field, the raw payload, and its
 // line items.
 router.get('/sales/order', requireAuth, requireAdmin, async (req, res) => {
