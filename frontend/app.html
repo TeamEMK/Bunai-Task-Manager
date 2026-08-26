@@ -316,18 +316,29 @@
 
   <!-- ── STOCK (live warehouse stock from Vinculum) ── -->
   <div id="page-stock" class="page">
+    <div class="cp-filter-row" style="margin-bottom:14px;align-items:center">
+      <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">Live warehouse stock from Vinculum</span>
+    </div>
+
     <div id="stockNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
 
-    <div id="stockTiles" style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:16px"></div>
+    <div id="stockTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
 
-    <div class="cp-filter-row" style="margin-bottom:14px">
-      <input id="stockSearch" type="text" placeholder="Search SKU or product name…" oninput="stockDebounced()" style="min-width:260px;flex:1;max-width:360px"/>
+    <div class="cp-filter-row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;align-items:center">
+      <input id="stockSearch" type="text" placeholder="Search SKU or product name…" oninput="stockDebounced()" style="min-width:240px;flex:1;max-width:360px"/>
       <select id="stockLow" onchange="loadStock()">
         <option value="">All stock</option>
+        <option value="reorder">⚠ Needs reorder</option>
         <option value="0">Out of stock only</option>
         <option value="5">5 or fewer</option>
         <option value="10">10 or fewer</option>
         <option value="20">20 or fewer</option>
+      </select>
+      <select id="stockSoldDays" onchange="loadStock()" title="Sales window for the Sold / reorder column">
+        <option value="7">Sold: 7 days</option>
+        <option value="30">Sold: 30 days</option>
+        <option value="45" selected>Sold: 45 days</option>
+        <option value="90">Sold: 90 days</option>
       </select>
       <button class="btn btn-sm" onclick="loadStock()">Refresh</button>
       <button class="btn btn-sm" id="stockLiveBtn" onclick="liveCheckStock()" title="Ask Vinculum for the current stock of the SKUs shown (up to 20)">⚡ Live check</button>
@@ -337,16 +348,26 @@
 
     <div class="table-container">
       <table>
-        <thead><tr><th>SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th></tr></thead>
-        <tbody id="stockBody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        <thead><tr><th style="width:44px">#</th><th>SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (45d)</th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <!-- ── SALES (live order analytics from Vin eRetail) ── -->
   <div id="page-sales" class="page">
-    <div class="cp-filter-row" style="margin-bottom:14px;align-items:center">
-      <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">Live orders from Vin eRetail</span>
+    <div class="cp-filter-row" style="margin-bottom:14px;align-items:center;flex-wrap:wrap;gap:8px">
+      <select id="salesRange" onchange="salesPreset(this.value)" style="min-width:132px">
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="45" selected>Last 45 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="all">All time</option>
+        <option value="custom">Custom range</option>
+      </select>
+      <input type="date" id="salesFrom" onchange="salesCustom()" style="max-width:158px"/>
+      <span style="color:var(--faint)">→</span>
+      <input type="date" id="salesTo" onchange="salesCustom()" style="max-width:158px"/>
       <button class="btn btn-sm" onclick="loadSales()" style="margin-left:auto">↻ Refresh</button>
       <span id="salesSpan" style="font-size:12px;color:var(--faint)"></span>
     </div>
@@ -361,11 +382,11 @@
 
     <div id="salesTopSkus" style="margin-bottom:16px"></div>
 
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:0 2px 8px">Recent orders</div>
+    <div id="salesOrdersLabel" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:0 2px 8px">Recent orders</div>
     <div class="table-container">
       <table>
-        <thead><tr><th>Order</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
-        <tbody id="salesRecentBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        <thead><tr><th>Order</th><th>Customer</th><th>Phone</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
+        <tbody id="salesRecentBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -867,6 +888,32 @@
      DELEGATE TASK MODAL (Admin only)
 ══════════════════════════════════════ -->
 <!-- Tasks behind one week of the Employee 360 table -->
+<div class="modal-overlay" id="orderDetailModal">
+  <div class="modal" style="width:720px;max-width:94vw">
+    <h3 id="orderDetailTitle">Order</h3>
+    <div id="orderDetailBody" style="max-height:70vh;overflow:auto">Loading…</div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('orderDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="salesDetailModal">
+  <div class="modal" style="width:860px;max-width:94vw">
+    <h3 id="salesDetailTitle">Orders</h3>
+    <div id="salesDetailSummary" style="margin:-4px 0 12px;font-size:13px;color:var(--muted-foreground)"></div>
+    <div class="table-container" style="max-height:60vh;overflow:auto">
+      <table>
+        <thead><tr><th>Order</th><th>Customer</th><th>Phone</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
+        <tbody id="salesDetailBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('salesDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="weekTasksModal">
   <div class="modal" style="width:680px">
     <h3 id="weekTasksTitle">📋 Week tasks</h3>

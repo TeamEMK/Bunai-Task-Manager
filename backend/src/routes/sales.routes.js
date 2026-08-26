@@ -1,8 +1,8 @@
 // ══════════════════════════════════════════════════════
 // SALES — live order analytics from Vin eRetail (admin only).
 // Reads vin_orders / vin_order_items, filled by orders-sync.js (v2/order/
-// orderPullV2, read-only). The API is live now — the response still reports
-// when it last synced so the page can show how fresh the numbers are.
+// orderPullV2, read-only). Accepts an optional ?from=YYYY-MM-DD&to=YYYY-MM-DD
+// window; without it, every order is counted.
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
@@ -15,7 +15,15 @@ const LIVE = "LOWER(status) <> 'cancelled'";
 
 router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const [totals, byChannel, byStatus, byPayment, daily, topSkus, topStates, recent, span] =
+    const from = String(req.query.from || '').trim();
+    const to = String(req.query.to || '').trim();
+    const ranged = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to);
+    // Half-open [from, to+1day) so the whole "to" day is included.
+    const dc  = ranged ? '(order_date >= ? AND order_date < DATE_ADD(?, INTERVAL 1 DAY))' : '1=1';
+    const dcO = ranged ? '(o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY))' : '1=1';
+    const A = ranged ? [from, to] : [];   // date args, prepended to each query
+
+    const [totals, byChannel, byStatus, byPayment, daily, topSkus, topStates, recent, span, units] =
       await Promise.all([
         db.one(
           `SELECT COUNT(*) orders,
@@ -23,58 +31,115 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
                   SUM(CASE WHEN LOWER(status)='cancelled' THEN 1 ELSE 0 END) cancelled,
                   ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue,
                   ROUND(AVG(CASE WHEN ${LIVE} THEN order_amount END)) aov
-             FROM vin_orders`),
+             FROM vin_orders WHERE ${dc}`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(channel_name,''),'Other') channel, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders GROUP BY channel ORDER BY n DESC`),
+             FROM vin_orders WHERE ${dc} GROUP BY channel ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(status,''),'(blank)') status, COUNT(*) n
-             FROM vin_orders GROUP BY status ORDER BY n DESC`),
+             FROM vin_orders WHERE ${dc} GROUP BY status ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(payment_method,''),'(blank)') payment, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders GROUP BY payment ORDER BY n DESC`),
+             FROM vin_orders WHERE ${dc} GROUP BY payment ORDER BY n DESC`, A),
         db.rows(
           `SELECT DATE(order_date) d, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders WHERE order_date IS NOT NULL
-            GROUP BY DATE(order_date) ORDER BY d`),
-        // Units sold + value per SKU, cancelled lines excluded.
+             FROM vin_orders WHERE order_date IS NOT NULL AND ${dc}
+            GROUP BY DATE(order_date) ORDER BY d`, A),
         db.rows(
           `SELECT i.sku, COALESCE(NULLIF(MAX(i.sku_name),''), i.sku) sku_name,
-                  ROUND(SUM(i.order_qty)) qty,
-                  ROUND(SUM(i.order_qty * i.unit_price)) value
-             FROM vin_order_items i
-            WHERE LOWER(i.status) <> 'cancelled'
-            GROUP BY i.sku ORDER BY qty DESC LIMIT 15`),
+                  ROUND(SUM(i.order_qty)) qty, ROUND(SUM(i.order_qty * i.unit_price)) value
+             FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+            WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'
+            GROUP BY i.sku ORDER BY qty DESC LIMIT 15`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(ship_state,''),'(unknown)') state, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders GROUP BY state ORDER BY n DESC LIMIT 12`),
+             FROM vin_orders WHERE ${dc} GROUP BY state ORDER BY n DESC LIMIT 12`, A),
         db.rows(
-          `SELECT order_id, ext_order_no, order_date, payment_method, status,
-                  order_amount, channel_name, ship_city, ship_state
-             FROM vin_orders ORDER BY order_date DESC, order_id DESC LIMIT 100`),
+          `SELECT order_id, ext_order_no, order_date, payment_method, status, order_amount,
+                  channel_name, ship_city, ship_state, customer_name, customer_phone
+             FROM vin_orders WHERE ${dc} ORDER BY order_date DESC, order_id DESC LIMIT 100`, A),
         db.one(
-          `SELECT MIN(order_date) first_order, MAX(order_date) last_order,
-                  MAX(synced_at) synced_at FROM vin_orders`),
+          `SELECT MIN(order_date) first_order, MAX(order_date) last_order, MAX(synced_at) synced_at
+             FROM vin_orders WHERE ${dc}`, A),
+        db.one(
+          `SELECT ROUND(SUM(i.order_qty)) units
+             FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+            WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'`, A),
       ]);
 
+    // Freshness is about the sync, not the chosen window — always global.
     const lastSync = await db.one(
       `SELECT started_at, ended_at, orders_seen, ok FROM vin_order_sync_log
         WHERE ok=1 ORDER BY id DESC LIMIT 1`).catch(() => null);
 
-    const units = await db.one(
-      `SELECT ROUND(SUM(order_qty)) units FROM vin_order_items WHERE LOWER(status) <> 'cancelled'`);
-
     res.json({
+      range: ranged ? { from, to } : null,
       totals: { ...totals, units: units?.units || 0 },
       byChannel, byStatus, byPayment, daily, topSkus, topStates, recent, span, lastSync,
     });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
     console.error('  ❌ /api/sales:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// One product's detail — the orders that contain it, plus units, value and the
+// current stock. Same optional ?from&to window as /sales.
+router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const sku = String(req.query.sku || '').trim();
+    if (!sku) return res.status(400).json({ error: 'No SKU given' });
+    const from = String(req.query.from || '').trim();
+    const to = String(req.query.to || '').trim();
+    const ranged = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to);
+    const dc = ranged ? 'AND o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)' : '';
+    const A = ranged ? [from, to] : [];
+
+    const [summary, orders] = await Promise.all([
+      db.one(
+        `SELECT MAX(i.sku_name) name, ROUND(SUM(i.order_qty)) qty,
+                ROUND(SUM(i.order_qty * i.unit_price)) value, COUNT(DISTINCT o.order_id) orders
+           FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+          WHERE i.sku = ? AND LOWER(i.status) <> 'cancelled' ${dc}`, [sku, ...A]),
+      db.rows(
+        `SELECT DISTINCT o.order_id, o.ext_order_no, o.order_date, o.payment_method, o.status,
+                o.order_amount, o.channel_name, o.ship_city, o.ship_state, o.customer_name, o.customer_phone
+           FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+          WHERE i.sku = ? ${dc}
+          ORDER BY o.order_date DESC LIMIT 200`, [sku, ...A]),
+    ]);
+    let stock = null;
+    try { const s = await db.one('SELECT ROUND(SUM(qty)) qty FROM vin_inventory WHERE sku = ?', [sku]); stock = s ? s.qty : null; } catch (_) {}
+    res.json({ sku, summary, stock, orders });
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// A single order's full detail — every stored field, the raw payload, and its
+// line items.
+router.get('/sales/order', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.query.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'No order id' });
+    const order = await db.one('SELECT * FROM vin_orders WHERE order_id = ?', [id]);
+    if (!order) return res.json({ notFound: true });
+    let raw = null;
+    try { raw = JSON.parse(order.raw_json || 'null'); } catch (_) {}
+    delete order.raw_json;
+    const items = await db.rows(
+      `SELECT sku, sku_name, brand, status, order_qty, shipped_qty, cancelled_qty,
+              return_qty, unit_price, discount_amt, tax_amount
+         FROM vin_order_items WHERE order_id = ?`, [id]);
+    res.json({ order, raw, items });
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
     res.status(500).json({ error: e.message });
   }
 });

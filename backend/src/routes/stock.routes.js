@@ -21,11 +21,19 @@ router.get('/stock', requireAuth, async (req, res) => {
     // "low" is a threshold, not a flag — different categories reorder at
     // different levels, so the caller decides what counts as low.
     const low = req.query.low ? Number(req.query.low) : null;
+    // Window for the "sold" / reorder column (days). Validated to a bare int so
+    // it is safe to interpolate into the INTERVAL below.
+    const soldDays = Math.min(365, Math.max(1, parseInt(req.query.soldDays, 10) || 45));
+    // Reorder view: only SKUs selling faster than they are stocked. Computed
+    // after the sold column is joined in, so it can't be a plain WHERE.
+    const reorder = req.query.reorder === '1';
 
     const where = [];
     const args = [];
     if (q) { where.push('(i.sku LIKE ? OR s.description LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
-    if (Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
+    // The low threshold is skipped in reorder mode — reorder is its own filter,
+    // applied after the sold figures are known.
+    if (!reorder && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
 
     // Five independent reads, issued together.
     const [rows, totals, lastSync, lastOk, counts] = await Promise.all([
@@ -35,7 +43,7 @@ router.get('/stock', requireAuth, async (req, res) => {
            LEFT JOIN vin_skus s ON s.sku = i.sku
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY i.qty ASC, i.sku ASC
-          LIMIT ${ROW_LIMIT}`, args),
+          LIMIT ${reorder ? 2000 : ROW_LIMIT}`, args),
       db.rows(
         `SELECT warehouse, COUNT(*) AS skus, COALESCE(SUM(qty),0) AS units
            FROM vin_inventory WHERE qty > 0 GROUP BY warehouse ORDER BY warehouse`),
@@ -54,7 +62,69 @@ router.get('/stock', requireAuth, async (req, res) => {
            FROM vin_inventory`),
     ]);
 
-    res.json({ rows, totals, lastSync, lastOk, counts, truncated: rows.length === ROW_LIMIT });
+    // Enrich each row with units sold in the last 45 days (from live orders),
+    // turning the stock list into a reorder view. Separate, guarded query — if
+    // orders were never synced the column is simply blank, not an error.
+    try {
+      const skus = [...new Set(rows.map(r => r.sku))];
+      if (skus.length) {
+        const sold = await db.rows(
+          `SELECT it.sku, SUM(it.order_qty) sold
+             FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+            WHERE LOWER(it.status) <> 'cancelled'
+              AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+              AND it.sku IN (${skus.map(() => '?').join(',')})
+            GROUP BY it.sku`, skus);
+        const m = {};
+        for (const s of sold) m[s.sku] = Number(s.sold) || 0;
+        rows.forEach(r => { r.sold = m[r.sku] || 0; });
+      }
+    } catch (_) { rows.forEach(r => { r.sold = 0; }); }
+
+    // In reorder mode, keep only SKUs whose sales outrun their stock, most
+    // under-stocked first, then trim to the display limit.
+    let outRows = rows;
+    if (reorder) {
+      outRows = rows
+        .filter(r => Number(r.sold) > 0 && Number(r.sold) > Number(r.qty))
+        .sort((a, b) => (Number(b.sold) - Number(b.qty)) - (Number(a.sold) - Number(a.qty)))
+        .slice(0, ROW_LIMIT);
+    }
+
+    // Period cards — units sold and how many SKUs need reorder in the chosen
+    // window. Guarded: without synced orders these simply don't render.
+    let period = { soldDays, hasOrders: false };
+    try {
+      const u = await db.one(
+        `SELECT ROUND(SUM(it.order_qty)) units, COUNT(DISTINCT it.sku) skus
+           FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+          WHERE LOWER(it.status) <> 'cancelled'
+            AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)`);
+      const rc = await db.one(
+        `SELECT COUNT(*) n FROM (
+           SELECT i.qty, COALESCE(sold.s, 0) sold
+             FROM vin_inventory i
+             LEFT JOIN (
+               SELECT it.sku, SUM(it.order_qty) s
+                 FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+                WHERE LOWER(it.status) <> 'cancelled'
+                  AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+                GROUP BY it.sku
+             ) sold ON sold.sku = i.sku
+            WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0
+         ) t`);
+      period = {
+        soldDays, hasOrders: true,
+        soldUnits: Number(u?.units) || 0,
+        skusSold: Number(u?.skus) || 0,
+        reorderCount: Number(rc?.n) || 0,
+      };
+    } catch (_) { /* orders not synced yet */ }
+
+    res.json({
+      rows: outRows, totals, lastSync, lastOk, counts, soldDays, period,
+      truncated: reorder ? outRows.length === ROW_LIMIT : rows.length === ROW_LIMIT,
+    });
   } catch (e) {
     // A missing table means the sync has never been set up on this deployment.
     if (e.code === 'ER_NO_SUCH_TABLE') {

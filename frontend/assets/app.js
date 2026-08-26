@@ -363,10 +363,10 @@ function stockDebounced() {
 
 function stockTile(label, value, note, tone) {
   const colors = { good: '#16a34a', warn: '#d97706', bad: '#dc2626' };
-  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
-    <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">${label}</div>
-    <div style="font-size:22px;font-weight:700;line-height:1.2;margin-top:4px;color:${colors[tone] || 'var(--foreground)'};font-variant-numeric:tabular-nums">${value}</div>
-    ${note ? `<div style="font-size:11.5px;color:var(--faint);margin-top:2px">${note}</div>` : ''}
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:9px">${label}</div>
+    <div style="font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${colors[tone] || 'var(--foreground)'};font-variant-numeric:tabular-nums">${value}</div>
+    ${note ? `<div style="font-size:12px;color:var(--faint);margin-top:6px">${note}</div>` : ''}
   </div>`;
 }
 
@@ -443,25 +443,38 @@ async function loadStock() {
   try {
     const q = document.getElementById('stockSearch').value.trim();
     const low = document.getElementById('stockLow').value;
+    const soldSel = document.getElementById('stockSoldDays');
+    const soldDays = soldSel ? soldSel.value : '';
     const params = new URLSearchParams();
     if (q) params.set('q', q);
-    if (low !== '') params.set('low', low);
+    if (low === 'reorder') params.set('reorder', '1');
+    else if (low !== '') params.set('low', low);
+    if (soldDays) params.set('soldDays', soldDays);
 
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
 
     if (d.notConfigured) {
       document.getElementById('stockTiles').innerHTML = '';
-      body.innerHTML = `<tr><td colspan="4" class="empty">Stock sync isn't set up on this server yet — run <code>node vinculum-sync.js sync</code>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="empty">Stock sync isn't set up on this server yet — run <code>node vinculum-sync.js sync</code>.</td></tr>`;
       tiles.textContent = '';
       return;
     }
 
     const totalUnits = d.totals.reduce((s, t) => s + Number(t.units || 0), 0);
     document.getElementById('stockTiles').innerHTML =
-      stockTile('Total units', totalUnits.toLocaleString('en-IN'), `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`) +
-      d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'), `${t.skus} SKUs in stock`)).join('') +
+      stockTile('Total units', totalUnits.toLocaleString('en-IN'),
+        d.totals.length === 1 ? `${d.totals[0].skus} SKUs in ${d.totals[0].warehouse}` : `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`) +
+      // Per-warehouse cards only when there is more than one — with a single
+      // warehouse the card would just repeat Total units.
+      (d.totals.length > 1
+        ? d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'), `${t.skus} SKUs in stock`)).join('') : '') +
       (d.counts && d.counts.out_of_stock > 0
-        ? stockTile('Out of stock', d.counts.out_of_stock, 'quantity is zero', 'bad') : '');
+        ? stockTile('Out of stock', d.counts.out_of_stock, 'quantity is zero', 'bad') : '') +
+      // Period cards — recompute whenever the "Sold: N days" window changes.
+      (d.period && d.period.hasOrders
+        ? stockTile(`Sold (${d.period.soldDays}d)`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`) +
+          stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'), `stock below ${d.period.soldDays}d sales`, 'warn')
+        : '');
 
     // The sync timestamp is the honest part of this page: stale data that looks
     // current is worse than no data, so say plainly when it last ran.
@@ -501,23 +514,32 @@ async function loadStock() {
       tiles.style.color = '#dc2626';
     }
 
+    const soldHdr = document.getElementById('stockSoldHeader');
+    if (soldHdr && d.soldDays) soldHdr.textContent = 'Sold (' + d.soldDays + 'd)';
     window._stockSkus = [...new Set(d.rows.map(r => r.sku))];   // for Live check
-    body.innerHTML = d.rows.length ? d.rows.map(r => {
+    body.innerHTML = d.rows.length ? d.rows.map((r, i) => {
       const qty = Number(r.qty);
+      const sold = Number(r.sold) || 0;
+      // Fewer units in stock than sold in the window ⇒ under one window's cover
+      // at the current pace: flag it for reorder.
+      const reorder = sold > 0 && qty < sold;
       const colour = qty <= 0 ? '#dc2626' : qty <= 5 ? '#d97706' : 'var(--foreground)';
+      const soldCol = reorder ? '#dc2626' : 'var(--muted-foreground)';
       return `<tr>
+        <td style="color:var(--faint);font-variant-numeric:tabular-nums">${i + 1}</td>
         <td style="white-space:nowrap;font-family:var(--font-mono);font-size:12px">${dtEscape(r.sku)}</td>
         <td>${dtEscape(r.description || '—')}</td>
         <td style="white-space:nowrap">${dtEscape(r.warehouse)}</td>
         <td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:${colour}">${qty.toLocaleString('en-IN')}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${soldCol}">${sold ? sold.toLocaleString('en-IN') : '—'}${reorder ? ' <span style="font-size:10.5px;font-weight:700" title="Stock is below window sales — reorder">⚠</span>' : ''}</td>
       </tr>`;
     }).join('') + (d.truncated
-      ? `<tr><td colspan="4" style="text-align:center;font-size:12px;color:var(--faint);padding:10px">Showing the first 500 — narrow the search to see the rest</td></tr>`
+      ? `<tr><td colspan="6" style="text-align:center;font-size:12px;color:var(--faint);padding:10px">Showing the first 500 — narrow the search to see the rest</td></tr>`
       : '')
-      : `<tr><td colspan="4" class="empty">No stock matches this filter</td></tr>`;
+      : `<tr><td colspan="6" class="empty">No stock matches this filter</td></tr>`;
 
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="4" class="empty">Could not load stock — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="empty">Could not load stock — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
   }
 }
 
@@ -2334,27 +2356,66 @@ function salesNotice(kind, text) {
   el.textContent = text;
 }
 
-// A labelled bar row list — used for status / channel / type / state panels.
-function salesPanel(title, rows) {
+// A labelled bar row list — used for status / channel / payment / state panels.
+// Pass `dim` to make each row clickable → opens the matching orders in a popup.
+function salesPanel(title, rows, dim) {
   const max = Math.max(1, ...rows.map(r => r.n));
-  const body = rows.map(r => `
-    <div style="display:flex;align-items:center;gap:8px;margin:6px 0">
-      <div style="flex:0 0 44%;font-size:12.5px;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.label}</div>
+  const body = rows.map(r => {
+    const click = dim ? ` class="sales-row" data-dim="${dim}" data-val="${dtEscape(r.label)}" onclick="salesFilterBy(this.dataset.dim, this.dataset.val)"` : '';
+    return `<div${click} style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:3px 5px;border-radius:7px;${dim ? 'cursor:pointer' : ''}">
+      <div style="flex:0 0 44%;font-size:12.5px;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${dtEscape(r.label)}</div>
       <div style="flex:1;background:var(--border);border-radius:6px;height:8px;overflow:hidden">
         <div style="width:${Math.round(r.n / max * 100)}%;height:100%;background:#6366f1"></div>
       </div>
       <div style="flex:0 0 auto;font-size:12px;color:var(--muted-foreground);font-variant-numeric:tabular-nums">${r.n}${r.sub ? ' · ' + r.sub : ''}</div>
-    </div>`).join('');
-  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+    </div>`;
+  }).join('');
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
     <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin-bottom:8px">${title}</div>
     ${body || '<div class="empty">—</div>'}
   </div>`;
 }
 
-// A professional KPI card.
-function salesKpi(label, value, sub, tone) {
+// Clicking a top product → popup of that SKU's orders, units, value and stock.
+async function salesSkuDetail(sku) {
+  const rangeSel = document.getElementById('salesRange');
+  const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
+  const params = new URLSearchParams({ sku });
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  document.getElementById('salesDetailTitle').textContent = sku;
+  document.getElementById('salesDetailSummary').textContent = 'Loading…';
+  document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  document.getElementById('salesDetailModal').classList.add('open');
+  const d = await api('/api/sales/sku?' + params.toString());
+  if (d.error) { document.getElementById('salesDetailSummary').textContent = 'Error: ' + dtEscape(d.error); return; }
+  const s = d.summary || {};
+  document.getElementById('salesDetailTitle').textContent = `${sku}${s.name ? ' — ' + s.name : ''}`;
+  document.getElementById('salesDetailSummary').textContent =
+    `${Number(s.qty || 0).toLocaleString('en-IN')} units sold · ${inr(s.value)} · current stock ${d.stock != null ? Number(d.stock).toLocaleString('en-IN') : '—'} · ${Number(s.orders || 0)} orders`;
+  salesRenderOrders(d.orders || [], 'salesDetailBody');
+}
+
+// Row click in a breakdown panel → popup of orders matching that dimension.
+function salesFilterBy(dim, val) {
+  const field = { channel: 'channel_name', status: 'status', payment: 'payment_method', state: 'ship_state' }[dim];
+  if (!field) return;
+  const blankish = val === '(blank)' || val === '(unknown)' || val === 'Other';
+  const list = (window._salesRecent || []).filter(o =>
+    String(o[field] || '') === val || (blankish && !String(o[field] || '')));
+  const total = list.reduce((s, o) => s + Number(o.order_amount || 0), 0);
+  document.getElementById('salesDetailTitle').textContent = `${val} — orders`;
+  document.getElementById('salesDetailSummary').textContent =
+    `${list.length.toLocaleString('en-IN')} orders · ${inr(Math.round(total))} · latest ${Math.min(list.length, 100)} shown`;
+  salesRenderOrders(list, 'salesDetailBody');
+  document.getElementById('salesDetailModal').classList.add('open');
+}
+
+// A professional KPI card. With `filter`, it becomes clickable and filters the
+// recent-orders table to that subset.
+function salesKpi(label, value, sub, tone, filter) {
   const col = tone === 'good' ? '#16a34a' : tone === 'warn' ? '#dc2626' : 'var(--foreground)';
-  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+  const attr = filter ? ` class="sales-kpi" data-filter="${filter}" onclick="salesFilter('${filter}',this)"` : '';
+  return `<div${attr} style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:9px">${label}</div>
     <div style="font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${col}">${value}</div>
     ${sub ? `<div style="font-size:12px;color:var(--faint);margin-top:6px">${sub}</div>` : ''}
@@ -2365,20 +2426,38 @@ function salesKpi(label, value, sub, tone) {
 // both themes. Last 45 days; each bar carries a hover tooltip.
 function salesTrendChart(daily) {
   if (!daily || !daily.length) return '';
-  const data = daily.slice(-45);
+  // Totals/avg/peak cover the WHOLE selected range so they agree with the
+  // Revenue card; only the bars are capped, purely for readability.
+  const total = daily.reduce((s, d) => s + (Number(d.revenue) || 0), 0);
+  const avg = Math.round(total / daily.length);
+  const peak = daily.reduce((a, b) => (Number(b.revenue) || 0) > (Number(a.revenue) || 0) ? b : a, daily[0]);
+  const data = daily.length > 92 ? daily.slice(-92) : daily;
   const max = Math.max(1, ...data.map(d => Number(d.revenue) || 0));
-  const gap = 1.4, bw = (100 - gap * (data.length - 1)) / data.length;
-  const bars = data.map((d, i) => {
-    const h = (Number(d.revenue) || 0) / max * 100;
-    return `<rect x="${(i * (bw + gap)).toFixed(2)}" y="${(100 - h).toFixed(2)}" width="${bw.toFixed(2)}" height="${h.toFixed(2)}" fill="#6366f1"><title>${d.d}: ${inr(d.revenue)} · ${d.n} orders</title></rect>`;
-  }).join('');
   const fmtD = s => new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  // Bars as flex divs — each carries a hover tooltip with the exact figures.
+  const bars = data.map(d => {
+    const rev = Number(d.revenue) || 0;
+    const h = rev > 0 ? Math.max(2, rev / max * 100) : 0;
+    return `<div title="${fmtD(d.d)} — ${inr(rev)} · ${d.n} orders" style="flex:1;min-width:0;display:flex;align-items:flex-end;height:100%">
+      <div style="width:100%;height:${h}%;background:#6366f1;border-radius:2px 2px 0 0"></div>
+    </div>`;
+  }).join('');
+  // ~6 evenly spaced date labels along the bottom.
+  const step = Math.max(1, Math.round(data.length / 6));
+  const labels = data.map((d, i) =>
+    (i % step === 0 || i === data.length - 1)
+      ? `<span style="flex:1;text-align:center;font-size:9.5px;color:var(--faint);white-space:nowrap">${fmtD(d.d)}</span>`
+      : '<span style="flex:1"></span>').join('');
   return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;flex-wrap:wrap;gap:6px">
       <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Daily revenue</div>
-      <div style="font-size:11px;color:var(--faint)">${fmtD(data[0].d)} → ${fmtD(data[data.length - 1].d)}</div>
+      <div style="font-size:11.5px;color:var(--muted-foreground)">Total <b>${inr(total)}</b> · avg <b>${inr(avg)}</b>/day · peak <b>${inr(peak.revenue)}</b> (${fmtD(peak.d)})</div>
     </div>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:110px;display:block">${bars}</svg>
+    <div style="position:relative;height:130px;border-bottom:1px solid var(--border)">
+      <div style="position:absolute;top:-2px;right:0;font-size:9.5px;color:var(--faint)">${inr(max)}</div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:100%;padding-top:16px">${bars}</div>
+    </div>
+    <div style="display:flex;gap:2px;margin-top:5px">${labels}</div>
   </div>`;
 }
 
@@ -2386,7 +2465,7 @@ function salesTrendChart(daily) {
 function salesTopSkus(rows) {
   if (!rows || !rows.length) return '';
   const max = Math.max(1, ...rows.map(r => Number(r.qty) || 0));
-  const body = rows.map((r, i) => `<tr>
+  const body = rows.map((r, i) => `<tr class="sales-row" style="cursor:pointer" data-sku="${dtEscape(r.sku)}" onclick="salesSkuDetail(this.dataset.sku)">
     <td style="color:var(--faint)">${i + 1}</td>
     <td style="font-family:var(--font-mono);font-size:11.5px;white-space:nowrap">${dtEscape(r.sku)}</td>
     <td>${dtEscape(r.sku_name || '')}</td>
@@ -2400,7 +2479,27 @@ function salesTopSkus(rows) {
       <tbody>${body}</tbody></table></div>`;
 }
 
+// Date-range controls for the Sales page.
+function salesYmd(dt) { const p = n => String(n).padStart(2, '0'); return dt.getFullYear() + '-' + p(dt.getMonth() + 1) + '-' + p(dt.getDate()); }
+function salesSetRange(days) {
+  const to = new Date(), from = new Date(to.getTime() - days * 86400000);
+  document.getElementById('salesFrom').value = salesYmd(from);
+  document.getElementById('salesTo').value = salesYmd(to);
+}
+function salesPreset(v) {
+  const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
+  if (v === 'all') { fromI.value = ''; toI.value = ''; }
+  else if (v !== 'custom') salesSetRange(Number(v));
+  loadSales();
+}
+function salesCustom() { document.getElementById('salesRange').value = 'custom'; loadSales(); }
+
 async function loadSales() {
+  const rangeSel = document.getElementById('salesRange');
+  const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
+  // First open: default to the 45-day preset.
+  if (rangeSel && rangeSel.value === '45' && !fromI.value && !toI.value) salesSetRange(45);
+
   const tilesEl = document.getElementById('salesTiles');
   const trendEl = document.getElementById('salesTrend');
   const breakdownEl = document.getElementById('salesBreakdown');
@@ -2410,7 +2509,9 @@ async function loadSales() {
   tilesEl.innerHTML = ''; trendEl.innerHTML = ''; breakdownEl.innerHTML = ''; topEl.innerHTML = '';
   body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
 
-  const d = await api('/api/sales');
+  const params = new URLSearchParams();
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  const d = await api('/api/sales' + (params.toString() ? '?' + params : ''));
   if (d.notConfigured) {
     salesNotice('busy', 'No orders synced on this server yet — run the Vin order sync to populate this page.');
     body.innerHTML = `<tr><td colspan="7" class="empty">No orders synced yet.</td></tr>`;
@@ -2421,19 +2522,19 @@ async function loadSales() {
   const t = d.totals || {};
   const cancelPct = t.orders ? Math.round(t.cancelled / t.orders * 100) : 0;
   tilesEl.innerHTML =
-    salesKpi('Revenue', inr(t.revenue), 'delivered + shipped, excl. cancelled', 'good') +
-    salesKpi('Orders', Number(t.orders || 0).toLocaleString('en-IN'), `${Number(t.live_orders || 0).toLocaleString('en-IN')} live`) +
-    salesKpi('Units sold', Number(t.units || 0).toLocaleString('en-IN')) +
-    salesKpi('Avg order', inr(t.aov)) +
-    salesKpi('Cancelled', Number(t.cancelled || 0).toLocaleString('en-IN'), cancelPct + '% of orders', 'warn');
+    salesKpi('Revenue', inr(t.revenue), 'delivered + shipped, excl. cancelled', 'good', 'live') +
+    salesKpi('Orders', Number(t.orders || 0).toLocaleString('en-IN'), `${Number(t.live_orders || 0).toLocaleString('en-IN')} live`, null, 'all') +
+    salesKpi('Units sold', Number(t.units || 0).toLocaleString('en-IN'), null, null, 'live') +
+    salesKpi('Avg order', inr(t.aov), null, null, 'live') +
+    salesKpi('Cancelled', Number(t.cancelled || 0).toLocaleString('en-IN'), cancelPct + '% of orders', 'warn', 'cancelled');
 
   trendEl.innerHTML = salesTrendChart(d.daily);
 
   breakdownEl.innerHTML =
-    salesPanel('By channel', (d.byChannel || []).map(c => ({ label: c.channel, n: c.n, sub: inr(c.revenue) }))) +
-    salesPanel('By status', (d.byStatus || []).map(s => ({ label: s.status, n: s.n }))) +
-    salesPanel('Payment', (d.byPayment || []).map(p => ({ label: p.payment, n: p.n, sub: inr(p.revenue) }))) +
-    salesPanel('Top ship-to states', (d.topStates || []).map(s => ({ label: s.state, n: s.n, sub: inr(s.revenue) })));
+    salesPanel('By channel', (d.byChannel || []).map(c => ({ label: c.channel, n: c.n, sub: inr(c.revenue) })), 'channel') +
+    salesPanel('By status', (d.byStatus || []).map(s => ({ label: s.status, n: s.n })), 'status') +
+    salesPanel('Payment', (d.byPayment || []).map(p => ({ label: p.payment, n: p.n, sub: inr(p.revenue) })), 'payment') +
+    salesPanel('Top ship-to states', (d.topStates || []).map(s => ({ label: s.state, n: s.n, sub: inr(s.revenue) })), 'state');
 
   topEl.innerHTML = salesTopSkus(d.topSkus);
 
@@ -2449,20 +2550,99 @@ async function loadSales() {
     salesNotice('busy', 'Orders loaded. Set up the daily order sync to keep this live.');
   }
 
+  window._salesRecent = d.recent || [];
+  salesRenderOrders(window._salesRecent, 'salesRecentBody');
+}
+
+// Renders an orders list into the given table body.
+function salesRenderOrders(list, bodyId) {
+  const body = document.getElementById(bodyId || 'salesRecentBody');
+  if (!body) return;
   const statusPill = s => {
     const tone = /cancel/i.test(s) ? '#dc2626' : /deliver|shipped|complete/i.test(s) ? '#16a34a' : '#d97706';
     return `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;color:${tone};background:${tone}1a">${dtEscape(s || '—')}</span>`;
   };
   const fmtDT = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
-  body.innerHTML = (d.recent || []).map(o => `<tr>
+  body.innerHTML = (list || []).map(o => `<tr class="sales-row" style="cursor:pointer" data-id="${dtEscape(o.order_id)}" onclick="openOrderDetail(this.dataset.id)">
     <td style="font-family:var(--font-mono);font-size:11.5px;white-space:nowrap">${dtEscape(o.order_id)}</td>
+    <td style="white-space:nowrap">${dtEscape(o.customer_name || '—')}</td>
+    <td style="white-space:nowrap">${dtEscape(o.customer_phone || '')}</td>
     <td style="white-space:nowrap">${fmtDT(o.order_date)}</td>
     <td>${dtEscape(o.channel_name || '—')}</td>
     <td>${dtEscape(o.payment_method || '')}</td>
     <td>${statusPill(o.status)}</td>
     <td style="text-align:right;font-variant-numeric:tabular-nums">${inr(o.order_amount)}</td>
     <td>${dtEscape([o.ship_city, o.ship_state].filter(Boolean).join(', '))}</td>
-  </tr>`).join('') || '<tr><td colspan="7" class="empty">No orders.</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="9" class="empty">No orders in this view.</td></tr>';
+}
+
+// Full detail for one order — every stored field plus its line items.
+async function openOrderDetail(id) {
+  const bodyEl = document.getElementById('orderDetailBody');
+  document.getElementById('orderDetailTitle').textContent = id;
+  bodyEl.innerHTML = '<div class="empty" style="padding:20px">Loading…</div>';
+  document.getElementById('orderDetailModal').classList.add('open');
+  const d = await api('/api/sales/order?id=' + encodeURIComponent(id));
+  if (d.error || d.notFound) { bodyEl.innerHTML = '<div class="empty" style="padding:20px">Could not load this order.</div>'; return; }
+  const o = d.order || {};
+  document.getElementById('orderDetailTitle').textContent = `Order ${dtEscape(o.order_id)}`;
+  const dt = v => v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const money = v => Number(v) ? inr(v) : '';
+  const row = (label, val) => (val === null || val === undefined || val === '') ? '' :
+    `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+       <div style="flex:0 0 40%;font-size:12px;color:var(--muted-foreground)">${label}</div>
+       <div style="flex:1;font-size:12.5px;word-break:break-word">${dtEscape(String(val))}</div></div>`;
+  const fields = [
+    ['Order date', dt(o.order_date)], ['Status', o.status], ['Channel', o.channel_name],
+    ['Order type', o.order_type], ['Payment', o.payment_method],
+    ['Order amount', money(o.order_amount)], ['Discount', money(o.discount_amount)],
+    ['Tax', money(o.tax_amount)], ['Shipping', money(o.shipping_charges)], ['COD charge', money(o.cod_charge)],
+    ['Collectible', money(o.collectible_amount)], ['Store credit', money(o.store_credit)],
+    ['Voucher', o.voucher_code], ['Promo', o.promo_name],
+    ['Customer', o.customer_name], ['Phone', o.customer_phone], ['Email', o.customer_email], ['GSTIN', o.customer_gstin],
+    ['Ship address', o.ship_address], ['Ship city', o.ship_city], ['Ship state', o.ship_state],
+    ['Pincode', o.ship_pincode], ['Country', o.ship_country],
+    ['Bill name', o.bill_name], ['Bill city', o.bill_city], ['Bill state', o.bill_state],
+    ['Ext order no', o.ext_order_no], ['Fulfillment', o.fulfillment_loc],
+    ['Ship by', dt(o.ship_by_date)], ['Shipped', dt(o.ship_date)], ['Delivered', dt(o.delivery_date)], ['Updated', dt(o.updated_date)],
+    ['On hold', Number(o.is_on_hold) ? 'Yes' : ''], ['Replacement', Number(o.is_replacement) ? 'Yes' : ''], ['Verified', Number(o.is_verified) ? 'Yes' : ''],
+    ['Remarks', o.order_remarks], ['Cancel remark', o.cancel_remark],
+  ];
+  const items = d.items || [];
+  const itemsHtml = items.length ? `
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:16px 0 6px">Items (${items.length})</div>
+    <div class="table-container"><table>
+      <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th>Status</th></tr></thead>
+      <tbody>${items.map(it => `<tr>
+        <td style="font-family:var(--font-mono);font-size:11px;white-space:nowrap">${dtEscape(it.sku || '')}</td>
+        <td>${dtEscape(it.sku_name || '')}</td>
+        <td style="text-align:right">${Number(it.order_qty)}</td>
+        <td style="text-align:right">${inr(it.unit_price)}</td>
+        <td>${dtEscape(it.status || '')}</td></tr>`).join('')}</tbody>
+    </table></div>` : '';
+  // Every scalar field the API returned — covers all the Vin export columns and
+  // then some. Collapsed by default so the curated view stays clean.
+  const rawHtml = d.raw ? `<details style="margin-top:16px">
+    <summary style="cursor:pointer;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">All fields (${Object.keys(d.raw).length})</summary>
+    <div style="margin-top:8px">${Object.entries(d.raw).filter(([, v]) => v != null && v !== '' && typeof v !== 'object').map(([k, v]) => row(k, String(v))).join('')}</div>
+  </details>` : '';
+  bodyEl.innerHTML = `<div>${fields.map(f => row(f[0], f[1])).join('')}</div>${itemsHtml}${rawHtml}`;
+}
+
+// Clicking a KPI card opens a popup listing the matching orders.
+function salesFilter(kind) {
+  const all = window._salesRecent || [];
+  const isCancel = o => /cancel/i.test(o.status || '');
+  const list = kind === 'cancelled' ? all.filter(isCancel)
+    : kind === 'live' ? all.filter(o => !isCancel(o))
+    : all;
+  const titles = { all: 'All orders', live: 'Live orders (delivered + shipped)', cancelled: 'Cancelled orders' };
+  const total = list.reduce((s, o) => s + Number(o.order_amount || 0), 0);
+  document.getElementById('salesDetailTitle').textContent = titles[kind] || 'Orders';
+  document.getElementById('salesDetailSummary').textContent =
+    `${list.length.toLocaleString('en-IN')} orders · ${inr(Math.round(total))} · latest ${Math.min(list.length, 100)} shown`;
+  salesRenderOrders(list, 'salesDetailBody');
+  document.getElementById('salesDetailModal').classList.add('open');
 }
 
 async function api(url,method='GET',body=null) {

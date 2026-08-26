@@ -820,3 +820,12 @@ tbody tr:last-child td{border-bottom:none;}
   .overview-cards{grid-template-columns:1fr;}
   .topbar-title{font-size:14px;}
 }
+
+/* Clickable Sales KPI cards — hover lift + active (selected) state. */
+.sales-kpi[data-filter]{cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .1s;}
+.sales-kpi[data-filter]:hover{border-color:#6366f1;box-shadow:0 3px 12px rgba(99,102,241,.14);transform:translateY(-1px);}
+.sales-kpi.active{border-color:#6366f1 !important;box-shadow:0 0 0 3px rgba(99,102,241,.18);}
+
+/* Clickable breakdown-panel rows on the Sales page. */
+.sales-row{transition:background .12s;}
+.sales-row:hover{background:rgba(99,102,241,.09);}

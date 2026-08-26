@@ -38,22 +38,53 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS vin_orders (
-      order_id        VARCHAR(60)  NOT NULL PRIMARY KEY,
-      ext_order_no    VARCHAR(120) NULL,
-      order_date      DATETIME     NULL,
-      status          VARCHAR(60)  NULL,
-      payment_method  VARCHAR(30)  NULL,
-      order_amount    DECIMAL(12,2) NOT NULL DEFAULT 0,
-      ship_city       VARCHAR(120) NULL,
-      ship_state      VARCHAR(120) NULL,
-      channel_name    VARCHAR(80)  NULL,
-      channel_code    VARCHAR(40)  NULL,
-      order_source    VARCHAR(80)  NULL,
-      order_type      VARCHAR(20)  NULL,
-      ship_by_date    DATETIME     NULL,
-      fulfillment_loc VARCHAR(80)  NULL,
-      total_lines     INT          NOT NULL DEFAULT 0,
-      synced_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      order_id           VARCHAR(60)  NOT NULL PRIMARY KEY,
+      ext_order_no       VARCHAR(120) NULL,
+      order_date         DATETIME     NULL,
+      status             VARCHAR(60)  NULL,
+      payment_method     VARCHAR(30)  NULL,
+      order_amount       DECIMAL(12,2) NOT NULL DEFAULT 0,
+      order_currency     VARCHAR(10)  NULL,
+      channel_name       VARCHAR(80)  NULL,
+      channel_code       VARCHAR(40)  NULL,
+      order_source       VARCHAR(80)  NULL,
+      order_type         VARCHAR(20)  NULL,
+      ship_by_date       DATETIME     NULL,
+      ship_date          DATETIME     NULL,
+      delivery_date      DATETIME     NULL,
+      updated_date       DATETIME     NULL,
+      fulfillment_loc    VARCHAR(80)  NULL,
+      total_lines        INT          NOT NULL DEFAULT 0,
+      customer_name      VARCHAR(200) NULL,
+      customer_phone     VARCHAR(40)  NULL,
+      customer_email     VARCHAR(160) NULL,
+      customer_gstin     VARCHAR(40)  NULL,
+      ship_address       VARCHAR(500) NULL,
+      ship_city          VARCHAR(120) NULL,
+      ship_state         VARCHAR(120) NULL,
+      ship_pincode       VARCHAR(20)  NULL,
+      ship_country       VARCHAR(80)  NULL,
+      bill_name          VARCHAR(200) NULL,
+      bill_city          VARCHAR(120) NULL,
+      bill_state         VARCHAR(120) NULL,
+      bill_pincode       VARCHAR(20)  NULL,
+      discount_amount    DECIMAL(12,2) NOT NULL DEFAULT 0,
+      tax_amount         DECIMAL(12,2) NOT NULL DEFAULT 0,
+      shipping_charges   DECIMAL(12,2) NOT NULL DEFAULT 0,
+      cod_charge         DECIMAL(12,2) NOT NULL DEFAULT 0,
+      collectible_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+      store_credit       DECIMAL(12,2) NOT NULL DEFAULT 0,
+      voucher_code       VARCHAR(80)  NULL,
+      promo_name         VARCHAR(160) NULL,
+      is_verified        TINYINT(1)   NOT NULL DEFAULT 0,
+      is_on_hold         TINYINT(1)   NOT NULL DEFAULT 0,
+      is_replacement     TINYINT(1)   NOT NULL DEFAULT 0,
+      order_remarks      VARCHAR(500) NULL,
+      cancel_remark      VARCHAR(500) NULL,
+      pickup_location    VARCHAR(120) NULL,
+      distribution_type  VARCHAR(60)  NULL,
+      raw_json           LONGTEXT     NULL,
+      synced_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY idx_ord_date (order_date),
       KEY idx_ord_status (status),
       KEY idx_ord_channel (channel_name)
@@ -139,28 +170,75 @@ async function pullRange(fromDate, toDate, location, onProgress) {
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
+function truthy(v) {
+  const s = String(v == null ? '' : v).toLowerCase();
+  return (s === 'yes' || s === 'true' || s === '1' || v === true || v === 1) ? 1 : 0;
+}
+
+// Column → extractor. Every meaningful order field is kept, and raw_json holds
+// the full order object (minus items, which live in vin_order_items) so nothing
+// the API returns is ever lost.
+const ORDER_COLS = [
+  ['order_id', o => o.orderId],
+  ['ext_order_no', o => o.extenalOrderNo || o.orderNo || null],
+  ['order_date', o => vinDate(o.orderDate)],
+  ['status', o => o.status || null],
+  ['payment_method', o => o.paymentMethod || null],
+  ['order_amount', o => num(o.orderAmount)],
+  ['order_currency', o => o.orderCurrency || null],
+  ['channel_name', o => o.channelName || null],
+  ['channel_code', o => o.channelCode || null],
+  ['order_source', o => o.orderSource || null],
+  ['order_type', o => o.orderType || null],
+  ['ship_by_date', o => vinDate(o.shipByDate)],
+  ['ship_date', o => vinDate(o.mpActualShipDate)],
+  ['delivery_date', o => vinDate(o.deliveryDate)],
+  ['updated_date', o => vinDate(o.updatedDate)],
+  ['fulfillment_loc', o => o.fulfillmentLocName || null],
+  ['total_lines', o => Number(o.totalOrderLine) || 0],
+  ['customer_name', o => o.customerName || null],
+  ['customer_phone', o => o.shipPhone1 || o.billPhone1 || null],
+  ['customer_email', o => o.shipEmail1 || o.billEmail1 || null],
+  ['customer_gstin', o => o.customerGSTIN || null],
+  ['ship_address', o => ([o.shipAddress1, o.shipAddress2, o.shipAddress3, o.landmark].filter(Boolean).join(', ') || '').slice(0, 500) || null],
+  ['ship_city', o => o.shipCity || null],
+  ['ship_state', o => o.shipState || null],
+  ['ship_pincode', o => o.shipPincode || null],
+  ['ship_country', o => o.shipCountry || null],
+  ['bill_name', o => o.billName || null],
+  ['bill_city', o => o.billCity || null],
+  ['bill_state', o => o.billState || null],
+  ['bill_pincode', o => o.billPincode || null],
+  ['discount_amount', o => num(o.discountAmount)],
+  ['tax_amount', o => num(o.taxAmount)],
+  ['shipping_charges', o => num(o.shippingCharges)],
+  ['cod_charge', o => num(o.codcharge)],
+  ['collectible_amount', o => num(o.collectibleAmount)],
+  ['store_credit', o => num(o.storeCredit)],
+  ['voucher_code', o => o.discountCode || o.promoCode || null],
+  ['promo_name', o => o.promoName || null],
+  ['is_verified', o => truthy(o.isVerifiedOrder)],
+  ['is_on_hold', o => truthy(o.isOnHold)],
+  ['is_replacement', o => truthy(o.IsReplacementOrder)],
+  ['order_remarks', o => (o.orderRemarks || '').slice(0, 500) || null],
+  ['cancel_remark', o => (o.cancelRemark || '').slice(0, 500) || null],
+  ['pickup_location', o => o.pickupLocation || null],
+  ['distribution_type', o => o.distributionType || null],
+  ['raw_json', o => { const { items, ...rest } = o; return JSON.stringify(rest); }],
+];
+
 async function storeOrders(orders) {
   if (!orders.length) return 0;
-  const orderRows = orders.map(o => [
-    o.orderId, o.extenalOrderNo || o.orderNo || null, vinDate(o.orderDate), o.status || null,
-    o.paymentMethod || null, num(o.orderAmount), o.shipCity || null, o.shipState || null,
-    o.channelName || null, o.channelCode || null, o.orderSource || null, o.orderType || null,
-    vinDate(o.shipByDate), o.fulfillmentLocName || null, Number(o.totalOrderLine) || 0,
-  ]);
-  await pool.query(
-    `INSERT INTO vin_orders
-      (order_id, ext_order_no, order_date, status, payment_method, order_amount,
-       ship_city, ship_state, channel_name, channel_code, order_source, order_type,
-       ship_by_date, fulfillment_loc, total_lines)
-     VALUES ?
-     ON DUPLICATE KEY UPDATE
-       ext_order_no=VALUES(ext_order_no), order_date=VALUES(order_date), status=VALUES(status),
-       payment_method=VALUES(payment_method), order_amount=VALUES(order_amount),
-       ship_city=VALUES(ship_city), ship_state=VALUES(ship_state), channel_name=VALUES(channel_name),
-       channel_code=VALUES(channel_code), order_source=VALUES(order_source), order_type=VALUES(order_type),
-       ship_by_date=VALUES(ship_by_date), fulfillment_loc=VALUES(fulfillment_loc), total_lines=VALUES(total_lines),
-       synced_at=CURRENT_TIMESTAMP`,
-    [orderRows]);
+  const cols = ORDER_COLS.map(c => c[0]);
+  const orderRows = orders.map(o => ORDER_COLS.map(c => c[1](o)));
+  const updates = cols.slice(1).map(c => `${c}=VALUES(${c})`).join(', ') + ', synced_at=CURRENT_TIMESTAMP';
+  // raw_json makes each row large, so upsert in modest chunks.
+  const CH = 200;
+  for (let i = 0; i < orderRows.length; i += CH) {
+    await pool.query(
+      `INSERT INTO vin_orders (${cols.join(', ')}) VALUES ? ON DUPLICATE KEY UPDATE ${updates}`,
+      [orderRows.slice(i, i + CH)]);
+  }
 
   // Re-pull replaces an order's lines wholesale so quantities/status stay right.
   for (const o of orders) {
