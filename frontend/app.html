@@ -343,22 +343,28 @@
     </div>
   </div>
 
-  <!-- ── SALES (order analytics from Vin eRetail order exports) ── -->
+  <!-- ── SALES (live order analytics from Vin eRetail) ── -->
   <div id="page-sales" class="page">
+    <div class="cp-filter-row" style="margin-bottom:14px;align-items:center">
+      <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">Live orders from Vin eRetail</span>
+      <button class="btn btn-sm" onclick="loadSales()" style="margin-left:auto">↻ Refresh</button>
+      <span id="salesSpan" style="font-size:12px;color:var(--faint)"></span>
+    </div>
+
     <div id="salesNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
 
-    <div id="salesTiles" style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:16px"></div>
+    <div id="salesTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
 
-    <div class="cp-filter-row" style="margin-bottom:14px">
-      <button class="btn btn-sm" onclick="loadSales()">Refresh</button>
-      <span id="salesSpan" style="font-size:12px;color:var(--faint);margin-left:auto"></span>
-    </div>
+    <div id="salesTrend" style="margin-bottom:16px"></div>
 
     <div id="salesBreakdown" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
 
+    <div id="salesTopSkus" style="margin-bottom:16px"></div>
+
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:0 2px 8px">Recent orders</div>
     <div class="table-container">
       <table>
-        <thead><tr><th>Order No</th><th>Date</th><th>Channel</th><th>Type</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
+        <thead><tr><th>Order</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
         <tbody id="salesRecentBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>

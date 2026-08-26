@@ -11,11 +11,12 @@
 # secret, and add each of these (values are the same ones the app uses):
 #     DB_HOST  DB_PORT  DB_USER  DB_PASSWORD  DB_NAME
 #     VIN_BASE_URL  VIN_API_KEY  VIN_API_OWNER  VIN_ORG_ID
+#     VIN_ORDER_API_KEY  VIN_ORDER_API_OWNER   (for the order sync)
 # Use the Railway PUBLIC host for DB_HOST (*.proxy.rlwy.net), not the internal one.
 #
 # Run it by hand any time from the Actions tab → this workflow → "Run workflow".
 # ─────────────────────────────────────────────────────────────────────────
-name: Vinculum stock sync
+name: Vinculum sync (stock + orders)
 
 on:
   schedule:
@@ -43,3 +44,20 @@ jobs:
           VIN_API_KEY: ${{ secrets.VIN_API_KEY }}
           VIN_API_OWNER: ${{ secrets.VIN_API_OWNER }}
           VIN_ORG_ID: ${{ secrets.VIN_ORG_ID }}
+
+      # Refresh the last 10 days of orders (new orders + status changes). The
+      # order API caps each request at 7 days, so orders-sync walks it in
+      # windows. Read-only: it never sends the acknowledge that would mark
+      # orders processed.
+      - name: Sync recent orders from Vin eRetail
+        if: ${{ always() }}
+        run: node backend/orders-sync.js sync 10
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
+          VIN_ORDER_API_KEY: ${{ secrets.VIN_ORDER_API_KEY }}
+          VIN_ORDER_API_OWNER: ${{ secrets.VIN_ORDER_API_OWNER }}
