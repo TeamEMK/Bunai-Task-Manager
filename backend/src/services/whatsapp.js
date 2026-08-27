@@ -125,6 +125,35 @@ function sendDelegationMessage(phone, opts) {
     { delayMs: cfg.delegationDelayMs, label: 'delegation' });
 }
 
+// Sent when a delegated task is past due and still open: once at 12 hours
+// overdue, then every 8 hours. Led by how late the task is, because on a repeat
+// reminder that is the only fact that has changed since the last one.
+function buildReminderMessage({ doerName, assignedByName, dueDate, priority, description, clientName, remarks, hoursOverdue }) {
+  const pr = String(priority || 'low').toLowerCase();
+  const late = Number(hoursOverdue) || 0;
+  // Past two days "76 hours overdue" stops meaning anything — switch units.
+  const lateText = late >= 48
+    ? `${Math.floor(late / 24)} days overdue`
+    : `${late} hour${late === 1 ? '' : 's'} overdue`;
+
+  const lines = [];
+  lines.push(`⏰ *Task Still Pending*`);
+  lines.push('');
+  lines.push(`Hello ${doerName || ''} 👋`);
+  lines.push(`This task is *${lateText}*.`);
+  lines.push('');
+  lines.push(`📋 *Task:* ${description || ''}`);
+  if (clientName) lines.push(`🏢 *Client:* ${clientName}`);
+  lines.push(`${PRIORITY_EMOJI[pr] || '🟢'} *Priority:* ${pr.toUpperCase()}`);
+  lines.push(`📅 *Due was:* ${formatHumanDate(dueDate)}`);
+  if (assignedByName) lines.push(`👤 *Assign by:* ${assignedByName}`);
+  if (remarks) lines.push(`📝 *Remarks:* ${remarks}`);
+  lines.push('');
+  lines.push(`✅ Mark it as *Done* in the app to stop these reminders.`);
+  lines.push(`— Bunai Task Manager`);
+  return lines.join('\n');
+}
+
 // Summary sent to the doer as soon as a checklist series is created.
 function buildChecklistCreatedMessage({ doerName, assignedByName, description, frequency, startDate, endDate, totalTasks, clientName, remarks }) {
   const lines = [];
@@ -171,7 +200,7 @@ function buildChecklistDailyMessage(doerName, dateStr, tasks) {
 
 module.exports = {
   normalizePhone, sendRaw, queueMessage, avgGapMs,
-  sendDelegationMessage, buildDelegationMessage,
+  sendDelegationMessage, buildDelegationMessage, buildReminderMessage,
   buildChecklistCreatedMessage, buildChecklistDailyMessage,
   checklistCreatedDelayMs: cfg.delegationDelayMs,
 };

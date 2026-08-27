@@ -20,7 +20,8 @@
     "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "mysql2": "^3.20.0"
+    "mysql2": "^3.20.0",
+    "nodemailer": "^9.0.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

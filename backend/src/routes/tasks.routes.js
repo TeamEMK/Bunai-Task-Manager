@@ -10,6 +10,7 @@ const { normDate, normFreq, serverToday } = require('../utils/dates');
 const { placeholders, indexBy } = require('../utils/collections');
 const { loadHolidaysSet, isUserOffOn, nextWorkingDay } = require('../services/holidays');
 const wa = require('../services/whatsapp');
+const mail = require('../services/email');
 
 const router = express.Router();
 
@@ -98,21 +99,38 @@ router.get('/tasks', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 // Looks up the doer, the assigner and (optionally) the client in ONE users
-// query instead of three sequential ones, then sends the WhatsApp notice.
+// query instead of three sequential ones, then fans the notice out to every
+// channel that has somewhere to send it.
+//
+// The channels are gated separately on purpose: before this, one early return
+// on a missing phone silenced everything, so a doer with an email but no phone
+// number got nothing at all. They also settle independently — a failed WhatsApp
+// send no longer costs the doer their email.
 // Fire-and-forget: a failure here never affects the task-creation response.
-function notifyTaskCreated({ doerId, byId, clientId, build }) {
+function notifyTaskCreated({ doerId, byId, clientId, build, buildEmail }) {
   (async () => {
     try {
       const ids = [...new Set([doerId, byId].filter(Boolean))];
       const [users, client] = await Promise.all([
-        db.rows(`SELECT id, name, phone FROM users WHERE id IN (${placeholders(ids)})`, ids),
+        db.rows(`SELECT id, name, phone, email, notification_email FROM users
+                  WHERE id IN (${placeholders(ids)})`, ids),
         clientId ? db.one('SELECT name FROM clients WHERE id=? LIMIT 1', [clientId]) : null,
       ]);
       const usersById = indexBy(users, 'id');
       const doer = usersById.get(doerId);
-      if (!doer || !doer.phone) return;
-      await build({ doer, byUser: usersById.get(byId) || null, clientName: client ? client.name : null });
-    } catch (e) { console.error('WhatsApp notify error:', e.message); }
+      if (!doer) return;
+      const ctx = { doer, byUser: usersById.get(byId) || null, clientName: client ? client.name : null };
+
+      const jobs = [];
+      if (build && doer.phone) jobs.push(['WhatsApp', build(ctx)]);
+      const to = buildEmail ? mail.recipientFor(doer) : null;
+      if (to) jobs.push(['Email', buildEmail({ ...ctx, to })]);
+
+      const settled = await Promise.allSettled(jobs.map(([, p]) => p));
+      settled.forEach((r, i) => {
+        if (r.status === 'rejected') console.error(`${jobs[i][0]} notify failed:`, r.reason && r.reason.message);
+      });
+    } catch (e) { console.error('Task notify error:', e.message); }
   })();
 }
 
@@ -182,17 +200,24 @@ router.post('/tasks', requireAuth, asyncRoute(async (req, res) => {
       [desc, targetUser, assignedBy, effectiveDate, 'pending', priority || 'low',
        approval || 'no', 0, approverId, remarks || '', clientIdInt, url || null]);
 
+    // The same facts go to both channels, so they are built once here rather
+    // than written out twice and left to drift apart.
+    const facts = {
+      dueDate: effectiveDate,
+      priority: priority || 'low',
+      description: desc,
+      remarks: remarks || '',
+    };
+    const who = ({ doer, byUser, clientName }) => ({
+      ...facts,
+      doerName: doer.name,
+      assignedByName: byUser ? byUser.name : '',
+      clientName,
+    });
     notifyTaskCreated({
       doerId: targetUser, byId: assignedBy, clientId: clientIdInt,
-      build: ({ doer, byUser, clientName }) => wa.sendDelegationMessage(doer.phone, {
-        doerName: doer.name,
-        assignedByName: byUser ? byUser.name : '',
-        dueDate: effectiveDate,
-        priority: priority || 'low',
-        description: desc,
-        clientName,
-        remarks: remarks || '',
-      }),
+      build: (ctx) => wa.sendDelegationMessage(ctx.doer.phone, who(ctx)),
+      buildEmail: (ctx) => mail.sendDelegationEmail(ctx.to, who(ctx)),
     });
   } else {
     await db.query(

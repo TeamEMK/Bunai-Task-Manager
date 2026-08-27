@@ -229,6 +229,12 @@ const COLUMNS = [
   ['delegation_tasks', 'revise_reason', `TEXT AFTER remarks`],
   ['delegation_tasks', 'client_id', `INT DEFAULT NULL AFTER remarks`],
   ['delegation_tasks', 'url', `VARCHAR(2048) DEFAULT NULL AFTER client_id`],
+  // Overdue reminders. NULL means none sent yet, so the first reminder fires on
+  // the 12-hours-overdue rule and every one after it on the 8-hour rule. Stored
+  // in UTC and always compared against a UTC string built in JS, so the DB
+  // server's own timezone never enters into it.
+  ['delegation_tasks', 'last_reminder_at', `DATETIME DEFAULT NULL AFTER url`],
+  ['delegation_tasks', 'reminder_count', `INT NOT NULL DEFAULT 0 AFTER last_reminder_at`],
 
   // Checklist series metadata — end_date = the series' last date,
   // frequency = daily/weekly/monthly… Both are stored on every row of a series
@@ -370,6 +376,17 @@ const BACKFILLS = [
   [`UPDATE users SET user_role=role WHERE user_role IS NULL`, 'backfill user_role from role'],
   // Older rows stored the approver inside assigned_by — recover it where approval was required.
   [`UPDATE delegation_tasks SET approver_id=assigned_by WHERE approval='yes' AND approver_id IS NULL`, 'backfill approver_id'],
+  // Overdue reminders started on 2026-08-27. Every task that already existed
+  // then is marked as "just reminded" so the feature begins from that day
+  // instead of chasing years of backlog the moment it goes live.
+  //
+  // The created_at cutoff is load-bearing, not decoration. These backfills run
+  // on EVERY boot, and a new task also has last_reminder_at IS NULL — without
+  // the date this would mute every fresh task on every restart and no reminder
+  // would ever fire. With it, the statement matches nothing after the first run.
+  [`UPDATE delegation_tasks SET last_reminder_at = UTC_TIMESTAMP()
+     WHERE last_reminder_at IS NULL AND created_at < '2026-08-27 00:00:00'`,
+   'mute pre-launch tasks for overdue reminders'],
 ];
 
 module.exports = { TABLES, COLUMNS, INDEXES, BACKFILLS };

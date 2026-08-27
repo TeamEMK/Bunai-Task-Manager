@@ -105,6 +105,29 @@ module.exports = {
     delegationDelayMs: int(process.env.WHATSAPP_DELAY_MS, 60 * 1000),
   },
 
+  // Gmail SMTP. Port 465 is implicit TLS, 587 is STARTTLS — nodemailer picks
+  // from the port alone. A blank SMTP_PASS turns every email off silently.
+  email: {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: int(process.env.SMTP_PORT, 465),
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    // Where the "View task" button in a notification email points. Blank and the
+    // button is left out rather than shipping a dead link.
+    appUrl: (process.env.APP_URL || '').trim().replace(/\/+$/, ''),
+    // Gmail overwrites the From address with the authenticated account, so only
+    // the display name here actually survives.
+    from: process.env.SMTP_FROM
+      || (process.env.SMTP_USER ? `Bunai Task Manager <${process.env.SMTP_USER}>` : ''),
+  },
+
+  // Overdue delegation-task chasing: 12 hours after the due day ends, then
+  // every 8 hours. The cadence itself lives in taskReminder.js; this is only
+  // the on/off switch.
+  taskReminder: {
+    enabled: flag(process.env.TASK_REMINDER_ENABLED, true),
+  },
+
   reminder: {
     enabled: flag(process.env.CHECKLIST_REMINDER_ENABLED, true),
     hour: int(process.env.CHECKLIST_REMINDER_HOUR, 10),

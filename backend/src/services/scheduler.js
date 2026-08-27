@@ -8,6 +8,7 @@
 const config = require('../config');
 const { istParts } = require('../utils/dates');
 const { runChecklistDailyReminder } = require('./checklistReminder');
+const { runTaskReminders } = require('./taskReminder');
 
 // Runs `job` the first minute of each day that matches hour:minute in IST.
 // `lastRun` guards against the interval firing twice inside the same minute.
@@ -20,6 +21,22 @@ function dailyAt(hour, minute, job, label) {
       if (lastRun === date) return;
       lastRun = date;
       await job(date);
+    } catch (e) { console.error(`${label} scheduler:`, e.message); }
+  }, 60 * 1000);
+}
+
+// Runs `job` once at the top of every hour IST. Unlike dailyAt this needs no
+// date guard — the hour itself changing is what stops a second run.
+function everyHour(job, label) {
+  let lastRun = '';
+  setInterval(async () => {
+    try {
+      const { date, hour: h, minute: m } = istParts();
+      if (m !== 0) return;
+      const slot = `${date} ${h}`;
+      if (lastRun === slot) return;
+      lastRun = slot;
+      await job();
     } catch (e) { console.error(`${label} scheduler:`, e.message); }
   }, 60 * 1000);
 }
@@ -61,6 +78,16 @@ function startSchedulers() {
     console.log(`⏰ Checklist WhatsApp reminder scheduled daily at ${hhmm(config.reminder.hour, config.reminder.minute)} IST`);
   } else {
     console.log('⏸ Checklist WhatsApp reminder disabled (CHECKLIST_REMINDER_ENABLED=0)');
+  }
+
+  // Hourly, not 8-hourly: the service decides what is actually due, so checking
+  // often just means a task is chased close to its 8-hour mark instead of up to
+  // 8 hours late. A pass with nothing due is one indexed query.
+  if (config.taskReminder.enabled) {
+    everyHour(() => runTaskReminders(), 'task-reminder');
+    console.log('⏰ Overdue task reminders checked hourly (12h after due, then every 8h)');
+  } else {
+    console.log('⏸ Overdue task reminders disabled (TASK_REMINDER_ENABLED=0)');
   }
 
   if (config.vinculum.syncEnabled) {
