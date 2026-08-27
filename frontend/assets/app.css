@@ -829,3 +829,7 @@ tbody tr:last-child td{border-bottom:none;}
 /* Clickable breakdown-panel rows on the Sales page. */
 .sales-row{transition:background .12s;}
 .sales-row:hover{background:rgba(99,102,241,.09);}
+
+/* Clickable daily-revenue chart bars — brighten + lift on hover. */
+.sales-bar > div{transition:background .12s,filter .12s;}
+.sales-bar:hover > div{background:#4f46e5 !important;filter:brightness(1.08);}

@@ -2422,8 +2422,9 @@ function salesKpi(label, value, sub, tone, filter) {
   </div>`;
 }
 
-// Daily-revenue bar chart — inline SVG so it needs no chart library and reads in
-// both themes. Last 45 days; each bar carries a hover tooltip.
+// Daily-revenue bar chart — inline HTML bars, no chart library, theme-aware.
+// Every bar is clickable (opens that day's orders) and shows a hover tooltip
+// with the exact date, revenue and order count. Left axis carries value marks.
 function salesTrendChart(daily) {
   if (!daily || !daily.length) return '';
   // Totals/avg/peak cover the WHOLE selected range so they agree with the
@@ -2434,31 +2435,92 @@ function salesTrendChart(daily) {
   const data = daily.length > 92 ? daily.slice(-92) : daily;
   const max = Math.max(1, ...data.map(d => Number(d.revenue) || 0));
   const fmtD = s => new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-  // Bars as flex divs — each carries a hover tooltip with the exact figures.
+  const ymd = s => salesYmd(new Date(s));   // local YYYY-MM-DD for the day drilldown
+  // Compact rupee for the axis marks: ₹1.9L / ₹95k / ₹40.
+  const short = v => { v = Number(v) || 0; return v >= 1e5 ? '₹' + (v / 1e5).toFixed(v >= 1e6 ? 0 : 1).replace(/\.0$/, '') + 'L' : v >= 1e3 ? '₹' + Math.round(v / 1e3) + 'k' : '₹' + Math.round(v); };
+  const peakYmd = ymd(peak.d);
+
+  // Bars — each clickable (opens that day) and hover-tooltipped; peak highlighted.
   const bars = data.map(d => {
     const rev = Number(d.revenue) || 0;
     const h = rev > 0 ? Math.max(2, rev / max * 100) : 0;
-    return `<div title="${fmtD(d.d)} — ${inr(rev)} · ${d.n} orders" style="flex:1;min-width:0;display:flex;align-items:flex-end;height:100%">
-      <div style="width:100%;height:${h}%;background:#6366f1;border-radius:2px 2px 0 0"></div>
+    const isPeak = ymd(d.d) === peakYmd && rev > 0;
+    return `<div class="sales-bar" data-d="${ymd(d.d)}" data-lbl="${fmtD(d.d)}" data-rev="${rev}" data-n="${d.n}"
+        onmouseenter="salesBarTip(event,this)" onmousemove="salesBarTip(event,this)" onmouseleave="salesBarTipHide()"
+        onclick="salesDayDetail(this.dataset.d)"
+        style="flex:1;min-width:0;display:flex;align-items:flex-end;height:100%;cursor:pointer">
+      <div style="width:100%;height:${h}%;background:${isPeak ? '#4338ca' : '#6366f1'};border-radius:2px 2px 0 0"></div>
     </div>`;
   }).join('');
+
+  // Horizontal gridlines + left-axis value marks at 100/75/50/25 %.
+  const marks = [1, .75, .5, .25].map(f => `
+    <div style="position:absolute;left:0;right:0;bottom:${(f * 100).toFixed(2)}%;border-top:1px dashed var(--border);opacity:.7"></div>
+    <div style="position:absolute;left:-46px;bottom:calc(${(f * 100).toFixed(2)}% - 6px);width:42px;text-align:right;font-size:9px;color:var(--faint)">${short(max * f)}</div>`).join('');
+
   // ~6 evenly spaced date labels along the bottom.
   const step = Math.max(1, Math.round(data.length / 6));
   const labels = data.map((d, i) =>
     (i % step === 0 || i === data.length - 1)
       ? `<span style="flex:1;text-align:center;font-size:9.5px;color:var(--faint);white-space:nowrap">${fmtD(d.d)}</span>`
       : '<span style="flex:1"></span>').join('');
+
   return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;flex-wrap:wrap;gap:6px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:6px">
       <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Daily revenue</div>
       <div style="font-size:11.5px;color:var(--muted-foreground)">Total <b>${inr(total)}</b> · avg <b>${inr(avg)}</b>/day · peak <b>${inr(peak.revenue)}</b> (${fmtD(peak.d)})</div>
     </div>
-    <div style="position:relative;height:130px;border-bottom:1px solid var(--border)">
-      <div style="position:absolute;top:-2px;right:0;font-size:9.5px;color:var(--faint)">${inr(max)}</div>
-      <div style="display:flex;align-items:flex-end;gap:2px;height:100%;padding-top:16px">${bars}</div>
+    <div style="padding-left:46px">
+      <div style="position:relative;height:150px;border-bottom:1px solid var(--border)">
+        ${marks}
+        <div style="display:flex;align-items:flex-end;gap:2px;height:100%;position:relative;z-index:1">${bars}</div>
+        <div id="salesChartTip" style="position:absolute;top:2px;display:none;pointer-events:none;z-index:5;background:#1e1b4b;color:#fff;padding:6px 9px;border-radius:8px;font-size:11px;line-height:1.35;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.28)"></div>
+      </div>
+      <div style="display:flex;gap:2px;margin-top:5px">${labels}</div>
     </div>
-    <div style="display:flex;gap:2px;margin-top:5px">${labels}</div>
+    <div style="font-size:10.5px;color:var(--faint);margin-top:9px;padding-left:46px">💡 Hover a bar for the day's figures · click a bar to see that day's orders</div>
   </div>`;
+}
+
+// Hover tooltip for a chart bar — filled from the bar's data-* and positioned
+// over its centre (clamped inside the plot).
+function salesBarTip(e, el) {
+  const tip = document.getElementById('salesChartTip');
+  if (!tip) return;
+  const d = el.dataset;
+  tip.innerHTML = `<div style="font-weight:700;margin-bottom:1px">${dtEscape(d.lbl)}</div>
+    <div style="font-size:12.5px;font-weight:600">₹${Number(d.rev).toLocaleString('en-IN')}</div>
+    <div style="color:#c7d2fe">${d.n} order${d.n === '1' ? '' : 's'}</div>
+    <div style="color:#a5b4fc;font-size:9.5px;margin-top:2px">click for orders →</div>`;
+  tip.style.display = 'block';
+  const plot = tip.parentElement.getBoundingClientRect();
+  const bar = el.getBoundingClientRect();
+  let left = bar.left - plot.left + bar.width / 2;
+  const tw = tip.offsetWidth;
+  left = Math.max(tw / 2, Math.min(plot.width - tw / 2, left));
+  tip.style.left = left + 'px';
+  tip.style.transform = 'translateX(-50%)';
+}
+function salesBarTipHide() { const t = document.getElementById('salesChartTip'); if (t) t.style.display = 'none'; }
+
+// Clicking a bar → popup listing that single day's orders (uses the paginated
+// /sales/orders endpoint scoped to that one date).
+async function salesDayDetail(ymd) {
+  if (!ymd) return;
+  const [Y, M, D] = ymd.split('-').map(Number);
+  const title = new Date(Y, M - 1, D).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  document.getElementById('salesDetailTitle').textContent = title + ' — orders';
+  document.getElementById('salesDetailSummary').textContent = 'Loading…';
+  document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  document.getElementById('salesDetailModal').classList.add('open');
+  const d = await api('/api/sales/orders?from=' + ymd + '&to=' + ymd + '&page=1');
+  if (d.error) { document.getElementById('salesDetailSummary').textContent = 'Error: ' + dtEscape(d.error); return; }
+  const list = d.orders || [];
+  const total = list.reduce((s, o) => s + Number(o.order_amount || 0), 0);
+  const note = (d.pages > 1) ? ` · first ${list.length} shown` : '';
+  document.getElementById('salesDetailSummary').textContent =
+    `${Number(d.total || list.length).toLocaleString('en-IN')} orders · ${inr(Math.round(total))}${note}`;
+  salesRenderOrders(list, 'salesDetailBody');
 }
 
 // Top products sold, by units, with a value column and a mini bar.
