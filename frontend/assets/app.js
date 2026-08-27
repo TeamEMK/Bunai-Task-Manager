@@ -2395,19 +2395,11 @@ async function salesSkuDetail(sku) {
   salesRenderOrders(d.orders || [], 'salesDetailBody');
 }
 
-// Row click in a breakdown panel → popup of orders matching that dimension.
+// Row click in a breakdown panel → full, paginated popup of orders matching
+// that dimension value (channel / status / payment / state).
 function salesFilterBy(dim, val) {
-  const field = { channel: 'channel_name', status: 'status', payment: 'payment_method', state: 'ship_state' }[dim];
-  if (!field) return;
-  const blankish = val === '(blank)' || val === '(unknown)' || val === 'Other';
-  const list = (window._salesRecent || []).filter(o =>
-    String(o[field] || '') === val || (blankish && !String(o[field] || '')));
-  const total = list.reduce((s, o) => s + Number(o.order_amount || 0), 0);
-  document.getElementById('salesDetailTitle').textContent = `${val} — orders`;
-  document.getElementById('salesDetailSummary').textContent =
-    `${list.length.toLocaleString('en-IN')} orders · ${inr(Math.round(total))} · latest ${Math.min(list.length, 100)} shown`;
-  salesRenderOrders(list, 'salesDetailBody');
-  document.getElementById('salesDetailModal').classList.add('open');
+  if (!['channel', 'status', 'payment', 'state'].includes(dim)) return;
+  salesModalOpen({ [dim]: val }, `${val} — orders`);
 }
 
 // A professional KPI card. With `filter`, it becomes clickable and filters the
@@ -2731,20 +2723,46 @@ async function openOrderDetail(id) {
   bodyEl.innerHTML = `<div>${fields.map(f => row(f[0], f[1])).join('')}</div>${itemsHtml}${rawHtml}`;
 }
 
-// Clicking a KPI card opens a popup listing the matching orders.
-function salesFilter(kind) {
-  const all = window._salesRecent || [];
-  const isCancel = o => /cancel/i.test(o.status || '');
-  const list = kind === 'cancelled' ? all.filter(isCancel)
-    : kind === 'live' ? all.filter(o => !isCancel(o))
-    : all;
-  const titles = { all: 'All orders', live: 'Live orders (delivered + shipped)', cancelled: 'Cancelled orders' };
-  const total = list.reduce((s, o) => s + Number(o.order_amount || 0), 0);
-  document.getElementById('salesDetailTitle').textContent = titles[kind] || 'Orders';
-  document.getElementById('salesDetailSummary').textContent =
-    `${list.length.toLocaleString('en-IN')} orders · ${inr(Math.round(total))} · latest ${Math.min(list.length, 100)} shown`;
-  salesRenderOrders(list, 'salesDetailBody');
+// Shared loader for the orders popup (KPI cards + breakdown rows). Pulls the
+// FULL filtered set from the server, paginated — so the count/revenue are exact
+// and match the cards, instead of the old "latest 100" cached subset.
+function salesModalOpen(base, title) {
+  window._salesModal = { base: base || {}, title };
+  document.getElementById('salesDetailTitle').textContent = title;
   document.getElementById('salesDetailModal').classList.add('open');
+  salesModalLoad(1);
+}
+async function salesModalLoad(page) {
+  const st = window._salesModal; if (!st) return;
+  const params = new URLSearchParams(st.base);
+  // Apply the page's chosen date range, same as the rest of the Sales view.
+  const rangeSel = document.getElementById('salesRange');
+  const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  params.set('page', String(page || 1));
+  document.getElementById('salesDetailSummary').textContent = 'Loading…';
+  document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  const pagerEl = document.getElementById('salesDetailPager'); if (pagerEl) pagerEl.innerHTML = '';
+  const d = await api('/api/sales/orders?' + params.toString());
+  if (d.error) { document.getElementById('salesDetailSummary').textContent = 'Error: ' + dtEscape(d.error); return; }
+  const total = Number(d.total || 0), pages = d.pages || 1, p = d.page || 1;
+  const lo = total ? (p - 1) * (d.per || 100) + 1 : 0, hi = Math.min(total, (p - 1) * (d.per || 100) + (d.orders || []).length);
+  document.getElementById('salesDetailSummary').textContent =
+    `${total.toLocaleString('en-IN')} orders · ${inr(d.revenue || 0)}` + (pages > 1 ? ` · showing ${lo}–${hi}` : '');
+  salesRenderOrders(d.orders || [], 'salesDetailBody');
+  if (pagerEl && pages > 1) {
+    pagerEl.innerHTML =
+      `<button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="salesModalLoad(${p - 1})">‹ Prev</button>
+       <span>Page ${p} / ${pages}</span>
+       <button class="btn btn-sm" ${p >= pages ? 'disabled' : ''} onclick="salesModalLoad(${p + 1})">Next ›</button>`;
+  }
+}
+
+// Clicking a KPI card opens the full, paginated list of matching orders.
+function salesFilter(kind) {
+  const titles = { all: 'All orders', live: 'Live orders (delivered + shipped)', cancelled: 'Cancelled orders' };
+  const base = kind === 'live' ? { flag: 'live' } : kind === 'cancelled' ? { flag: 'cancelled' } : {};
+  salesModalOpen(base, titles[kind] || 'Orders');
 }
 
 async function api(url,method='GET',body=null) {

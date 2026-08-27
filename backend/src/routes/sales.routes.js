@@ -123,7 +123,12 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // All orders in the range, paginated + searchable — the full list, not just
-// the recent 100 the dashboard shows.
+// the recent 100 the dashboard shows. Also powers the KPI-card and breakdown
+// drill-downs, so it accepts the same filters those cards represent:
+//   flag=live|cancelled           — the Revenue/Live vs Cancelled split
+//   channel / status / payment / state — one exact breakdown value
+// and returns the exact total count + revenue for the filtered set, so the
+// popup always agrees with the card (no more "latest 95 shown" wobble).
 router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
   try {
     const from = String(req.query.from || '').trim();
@@ -136,6 +141,25 @@ router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
     const where = [];
     const args = [];
     if (ranged) { where.push('order_date >= ? AND order_date < DATE_ADD(?, INTERVAL 1 DAY)'); args.push(from, to); }
+
+    // Live/cancelled split (matches the Revenue & Cancelled cards).
+    const flag = String(req.query.flag || '').trim();
+    if (flag === 'live') where.push("LOWER(status) <> 'cancelled'");
+    else if (flag === 'cancelled') where.push("LOWER(status) = 'cancelled'");
+
+    // One exact breakdown value per dimension; the panels label empties with a
+    // placeholder ('Other'/'(blank)'/'(unknown)'), so match NULL/'' for those.
+    const BLANKS = ['Other', '(blank)', '(unknown)'];
+    const dim = (col, val) => {
+      if (typeof val !== 'string' || val === '') return;
+      if (BLANKS.includes(val)) where.push(`(${col} IS NULL OR ${col} = '')`);
+      else { where.push(`${col} = ?`); args.push(val); }
+    };
+    dim('channel_name', req.query.channel);
+    dim('status', req.query.status);
+    dim('payment_method', req.query.payment);
+    dim('ship_state', req.query.state);
+
     if (q) {
       where.push('(order_id LIKE ? OR ext_order_no LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ? OR ship_city LIKE ? OR ship_state LIKE ? OR status LIKE ?)');
       const like = `%${q}%`;
@@ -143,7 +167,8 @@ router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
     }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
-    const cnt = await db.one(`SELECT COUNT(*) n FROM vin_orders ${whereSql}`, args);
+    const cnt = await db.one(
+      `SELECT COUNT(*) n, ROUND(SUM(order_amount)) revenue FROM vin_orders ${whereSql}`, args);
     const total = cnt ? cnt.n : 0;
     const orders = await db.rows(
       `SELECT order_id, ext_order_no, order_date, payment_method, status, order_amount,
@@ -152,7 +177,7 @@ router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
         ORDER BY order_date DESC, order_id DESC
         LIMIT ${PER} OFFSET ${(page - 1) * PER}`, args);
 
-    res.json({ orders, total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)) });
+    res.json({ orders, total, revenue: (cnt && cnt.revenue) || 0, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)) });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
     res.status(500).json({ error: e.message });
