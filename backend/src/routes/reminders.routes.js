@@ -26,8 +26,18 @@ router.get('/whatsapp/checklist-daily-preview', requireAuth, requireAdmin, async
 }));
 
 router.get('/cron/checklist-reminder', requireCronSecret, asyncRoute(async (req, res) => {
+  // Overdue task reminders ride along on this one daily call. Vercel Hobby gives
+  // two cron slots at once a day and both are already used, so this is the only
+  // clock the app has there.
+  //
+  // They run FIRST and are awaited. These sends bypass the WhatsApp queue and
+  // finish in seconds, whereas the checklist reminder below can sit for minutes
+  // behind that queue's 4-5 minute gaps and be frozen mid-drain by a serverless
+  // host. Going first means a stalled checklist run cannot swallow them.
+  const taskReminders = await runTaskReminders();
+
   // The DB lock (UNIQUE log_date) still guards against a double fire.
-  res.json({ ok: true, ...(await runChecklistDailyReminder({ dateStr: istToday() })) });
+  res.json({ ok: true, taskReminders, ...(await runChecklistDailyReminder({ dateStr: istToday() })) });
 }));
 
 // ── Overdue delegation-task reminders ─────────────────

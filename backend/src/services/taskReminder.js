@@ -22,7 +22,20 @@ const wa = require('./whatsapp');
 const mail = require('./email');
 
 const HOUR_MS = 60 * 60 * 1000;
-const FIRST_REMINDER_AFTER_H = 36;   // end of due day (24h) + 12h
+
+// End of the due day (24h) + 9h, i.e. 9 AM IST the morning after.
+//
+// The rule as asked for was 12 hours overdue. On Vercel Hobby the only thing
+// that calls this is the 10 AM checklist cron — both cron slots are taken and
+// each may fire once a day — and at 10 AM a task is just 10 hours overdue. A
+// strict 12 would miss that run and wait a full day for the next one, turning
+// "12 hours overdue" into 34. Becoming eligible at 9 AM gives the 10 AM run an
+// hour of margin, so the first reminder actually goes out that morning and
+// reads "10 hours overdue".
+//
+// Point an external scheduler at /api/cron/task-reminders every 8 hours and
+// nothing here needs changing: reminders simply land nearer the intended mark.
+const FIRST_REMINDER_AFTER_H = 33;
 const REPEAT_EVERY_H = 8;
 
 // MySQL DATETIME literal in UTC. Paired with writes that use the same helper,
