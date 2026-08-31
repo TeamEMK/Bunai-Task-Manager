@@ -26,6 +26,61 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // HR employee master (Phase 1). One record per employee. user_id links it to
+  // the login account when there is one, but is nullable so non-login staff
+  // (interns, field, ex-employees) can still be recorded. Admin-only data —
+  // holds PII (Aadhaar/PAN/bank) and salary.
+  ['hr_employees', `CREATE TABLE hr_employees (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT DEFAULT NULL,
+    employee_code VARCHAR(60) DEFAULT NULL,
+    full_name VARCHAR(200) NOT NULL,
+    gender ENUM('male','female','other') DEFAULT NULL,
+    dob DATE DEFAULT NULL,
+    blood_group VARCHAR(10) DEFAULT NULL,
+    marital_status VARCHAR(20) DEFAULT NULL,
+    personal_email VARCHAR(160) DEFAULT NULL,
+    personal_phone VARCHAR(40) DEFAULT NULL,
+    current_address VARCHAR(500) DEFAULT NULL,
+    permanent_address VARCHAR(500) DEFAULT NULL,
+    emergency_contact_name VARCHAR(160) DEFAULT NULL,
+    emergency_contact_phone VARCHAR(40) DEFAULT NULL,
+    emergency_contact_relation VARCHAR(60) DEFAULT NULL,
+    designation VARCHAR(160) DEFAULT NULL,
+    department VARCHAR(160) DEFAULT NULL,
+    joining_date DATE DEFAULT NULL,
+    employment_type VARCHAR(40) DEFAULT NULL,
+    employment_status VARCHAR(40) NOT NULL DEFAULT 'Active',
+    reporting_manager VARCHAR(160) DEFAULT NULL,
+    work_location VARCHAR(160) DEFAULT NULL,
+    exit_date DATE DEFAULT NULL,
+    pan VARCHAR(20) DEFAULT NULL,
+    aadhaar VARCHAR(20) DEFAULT NULL,
+    uan VARCHAR(30) DEFAULT NULL,
+    pf_number VARCHAR(40) DEFAULT NULL,
+    esic_number VARCHAR(40) DEFAULT NULL,
+    bank_name VARCHAR(120) DEFAULT NULL,
+    bank_account VARCHAR(40) DEFAULT NULL,
+    bank_ifsc VARCHAR(20) DEFAULT NULL,
+    bank_holder_name VARCHAR(160) DEFAULT NULL,
+    ctc DECIMAL(12,2) DEFAULT NULL,
+    monthly_salary DECIMAL(12,2) DEFAULT NULL,
+    official_email VARCHAR(160) DEFAULT NULL,
+    kra TEXT DEFAULT NULL,
+    offer_letter_date VARCHAR(120) DEFAULT NULL,
+    probation_end_date DATE DEFAULT NULL,
+    confirmation_date DATE DEFAULT NULL,
+    appointment_nda_status VARCHAR(120) DEFAULT NULL,
+    code_of_conduct_status VARCHAR(120) DEFAULT NULL,
+    policy_handbook_status VARCHAR(120) DEFAULT NULL,
+    bg_verification_status VARCHAR(120) DEFAULT NULL,
+    record_log TEXT DEFAULT NULL,
+    performance_remarks TEXT DEFAULT NULL,
+    notes TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // Created before the task tables because both carry a client_id.
   ['clients', `CREATE TABLE clients (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -263,6 +318,20 @@ const COLUMNS = [
   ['week_plans', 'user_committed_at', `TIMESTAMP NULL DEFAULT NULL AFTER user_committed_score`],
 
   ['leave_requests', 'dates_json', `TEXT DEFAULT NULL AFTER to_date`],
+
+  // hr_employees — onboarding / lifecycle fields added after the table shipped,
+  // to match the client's existing HR tracker sheet.
+  ['hr_employees', 'official_email', `VARCHAR(160) DEFAULT NULL`],
+  ['hr_employees', 'kra', `TEXT DEFAULT NULL`],
+  ['hr_employees', 'offer_letter_date', `VARCHAR(120) DEFAULT NULL`],
+  ['hr_employees', 'probation_end_date', `DATE DEFAULT NULL`],
+  ['hr_employees', 'confirmation_date', `DATE DEFAULT NULL`],
+  ['hr_employees', 'appointment_nda_status', `VARCHAR(120) DEFAULT NULL`],
+  ['hr_employees', 'code_of_conduct_status', `VARCHAR(120) DEFAULT NULL`],
+  ['hr_employees', 'policy_handbook_status', `VARCHAR(120) DEFAULT NULL`],
+  ['hr_employees', 'bg_verification_status', `VARCHAR(120) DEFAULT NULL`],
+  ['hr_employees', 'record_log', `TEXT DEFAULT NULL`],
+  ['hr_employees', 'performance_remarks', `TEXT DEFAULT NULL`],
 ];
 
 // ══════════════════════════════════════════════════════
@@ -272,6 +341,13 @@ const COLUMNS = [
 //   [table, index name, column list, { unique }]
 // ══════════════════════════════════════════════════════
 const INDEXES = [
+  // ── hr_employees ──
+  // Employee code is the human key — unique, but nullable (many NULLs allowed).
+  ['hr_employees', 'uq_employee_code', 'employee_code', { unique: true }],
+  // Link back to the login account, and the default list ordering.
+  ['hr_employees', 'idx_user', 'user_id'],
+  ['hr_employees', 'idx_status_name', 'employment_status, full_name'],
+
   // ── users ──
   // HOD scoping: "SELECT id FROM users WHERE department=? AND role NOT IN (…)"
   ['users', 'idx_department', 'department'],

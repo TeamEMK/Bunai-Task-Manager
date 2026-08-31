@@ -159,6 +159,11 @@ body{
   width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--brand);
 }
 .nav-divider{border-top:1px solid var(--sidebar-border);margin:8px 0;}
+/* Grouping headers in the sidebar — hidden text in the collapsed rail (like
+   the item labels), revealed on hover; the spacing still groups the icons. */
+.nav-section{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--muted-foreground);padding:13px 14px 4px;white-space:nowrap;overflow:hidden;opacity:0;transition:opacity .2s .1s;user-select:none;}
+.nav-section:first-child{padding-top:6px;}
+.sidebar:hover .nav-section{opacity:1;}
 
 .sidebar-user{
   padding:12px;border-top:1px solid var(--sidebar-border);
@@ -698,7 +703,7 @@ tbody tr:last-child td{border-bottom:none;}
   .sidebar{width:240px;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 24px rgba(0,0,0,.18);}
   .sidebar:hover{width:240px;}
   .sidebar.open{transform:translateX(0);}
-  .sidebar .logo-text, .sidebar .logo-wordmark, .sidebar .nav-label-text, .sidebar .su-info, .sidebar .logout-label{opacity:1;}
+  .sidebar .logo-text, .sidebar .logo-wordmark, .sidebar .nav-label-text, .sidebar .nav-section, .sidebar .su-info, .sidebar .logout-label{opacity:1;}
 
   /* ── Main content ── */
   /* On phones the sidebar is an off-canvas drawer over a backdrop, so content
@@ -833,3 +838,10 @@ tbody tr:last-child td{border-bottom:none;}
 /* Clickable daily-revenue chart bars — brighten + lift on hover. */
 .sales-bar > div{transition:background .12s,filter .12s;}
 .sales-bar:hover > div{background:#4f46e5 !important;filter:brightness(1.08);}
+
+/* HR form section headings + read-only detail rows. */
+.hr-sec{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin:18px 0 8px;padding-bottom:5px;border-bottom:1.5px solid var(--border);}
+.hr-sec:first-of-type{margin-top:4px;}
+.hr-drow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);}
+.hr-drow .k{flex:0 0 40%;font-size:12px;color:var(--muted-foreground);}
+.hr-drow .v{flex:1;font-size:12.5px;word-break:break-word;}

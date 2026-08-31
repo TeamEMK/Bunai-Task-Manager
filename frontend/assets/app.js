@@ -154,6 +154,7 @@ async function init() {
 
     if (ME.role === 'admin') {
       document.getElementById('nav-users').style.display = 'flex';
+      document.getElementById('nav-hr').style.display = 'flex';
       document.getElementById('nav-mis').style.display = 'flex';
       document.getElementById('nav-fms').style.display = 'flex';
       document.getElementById('nav-ims').style.display = 'flex';
@@ -195,6 +196,7 @@ async function init() {
       } catch { fmsNav.style.display = 'none'; }
     })();
     setMinDates();
+    hideEmptyNavSections();   // drop group headers whose items are all role-hidden
     // Restore whatever page the URL points at instead of always opening the
     // dashboard. Runs after the role checks above, so nav visibility is settled.
     openFromHash();
@@ -271,7 +273,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Unit Master',compliance:'Employee 360',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Unit Master',compliance:'Employee 360',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -297,6 +299,25 @@ function navElFor(page) {
   return document.querySelector(`.nav-item[onclick*="navigate('${page}'"]`);
 }
 
+// A sidebar group header (.nav-section) is only useful when at least one of the
+// items under it (up to the next header/divider) is visible for this role. Run
+// after the role-based reveal so empty groups' headers don't linger.
+function hideEmptyNavSections() {
+  const nav = document.querySelector('nav.nav');
+  if (!nav) return;
+  const kids = [...nav.children];
+  kids.forEach((el, i) => {
+    if (!el.classList.contains('nav-section')) return;
+    let anyVisible = false;
+    for (let j = i + 1; j < kids.length; j++) {
+      const n = kids[j];
+      if (n.classList.contains('nav-section') || n.classList.contains('nav-divider')) break;
+      if (n.classList.contains('nav-item') && n.style.display !== 'none') { anyVisible = true; break; }
+    }
+    el.style.display = anyVisible ? '' : 'none';
+  });
+}
+
 // A hash can be typed or bookmarked, so never trust it — the page must exist
 // and the signed-in role must be allowed to open it.
 function canOpenPage(page) {
@@ -304,6 +325,7 @@ function canOpenPage(page) {
   if (page === 'mis') return ME && (ME.role === 'admin' || ME.role === 'hod');
   if (page === 'ims') return ME && ME.role === 'admin';
   if (page === 'sales') return ME && ME.role === 'admin';
+  if (page === 'hr') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
 }
@@ -323,6 +345,8 @@ function navigate(page, el, fromHash) {
   if (page === 'ims' && (!ME || ME.role !== 'admin')) return;
   // Sales page — admin only
   if (page === 'sales' && (!ME || ME.role !== 'admin')) return;
+  // HR page — admin only
+  if (page === 'hr' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
@@ -336,6 +360,7 @@ function navigate(page, el, fromHash) {
   if (page==='dashboard') loadDashboard();
   if (page==='alltasks') loadAllTasks();
   if (page==='users') loadUsers();
+  if (page==='hr') loadHr();
   if (page==='approvals') loadApprovals();
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
@@ -2295,6 +2320,217 @@ async function deleteUser(id) {
   const r=await api(`/api/users/${id}`,'DELETE');
   if (r.error) return alert(r.error);
   loadUsers();
+}
+
+// ══════════════════════════════════════════════════════
+// HR — employee master (admin only). CRUD over /api/hr/*.
+// ══════════════════════════════════════════════════════
+// Every editable column, matched to a #hf_<field> input in the modal.
+const HR_FIELDS = ['full_name','employee_code','designation','department','joining_date',
+  'employment_type','employment_status','exit_date','reporting_manager','work_location','user_id',
+  'official_email','kra',
+  'gender','dob','blood_group','marital_status','personal_phone','personal_email',
+  'current_address','permanent_address','emergency_contact_name','emergency_contact_phone',
+  'emergency_contact_relation','pan','aadhaar','uan','pf_number','esic_number',
+  'bank_name','bank_holder_name','bank_account','bank_ifsc','ctc','monthly_salary',
+  'offer_letter_date','probation_end_date','confirmation_date','appointment_nda_status',
+  'code_of_conduct_status','policy_handbook_status','bg_verification_status',
+  'performance_remarks','record_log','notes'];
+
+// Fields that map to an <input type=date> and need YYYY-MM-DD on load.
+const HR_DATE_FIELDS = ['joining_date', 'exit_date', 'dob', 'probation_end_date', 'confirmation_date'];
+
+const _hrMap = {};
+let _hrTimer = null;
+function hrDebounced() { clearTimeout(_hrTimer); _hrTimer = setTimeout(loadHr, 300); }
+
+// A stored date/datetime → the YYYY-MM-DD an <input type=date> needs. A plain
+// date string is used as-is; a Date/ISO (MySQL DATE comes back UTC-shifted, e.g.
+// "…T18:30:00Z" for an IST-midnight date) is read with LOCAL getters so the day
+// doesn't slip back by one.
+function hrYmd(v) {
+  if (!v) return '';
+  const s = String(v);
+  const plain = s.match(/^(\d{4}-\d{2}-\d{2})$/);
+  if (plain) return plain[1];
+  const d = new Date(v); if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+function hrDateLabel(v) { const y = hrYmd(v); return y ? new Date(y).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''; }
+
+function hrStatusPill(s) {
+  const t = /resign|terminat/i.test(s) ? '#dc2626' : /leave|notice/i.test(s) ? '#d97706' : '#16a34a';
+  return `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;color:${t};background:${t}1a">${dtEscape(s || '—')}</span>`;
+}
+
+function hrTile(label, value, tone) {
+  const col = tone === 'good' ? '#16a34a' : tone === 'warn' ? '#dc2626' : 'var(--foreground)';
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:7px">${label}</div>
+    <div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${col}">${value}</div>
+  </div>`;
+}
+
+async function loadHr() {
+  const q = (document.getElementById('hrSearch') || {}).value || '';
+  const status = (document.getElementById('hrStatusFilter') || {}).value || '';
+  const params = new URLSearchParams();
+  if (q.trim()) params.set('q', q.trim());
+  if (status) params.set('status', status);
+  const tiles = document.getElementById('hrTiles');
+  const tbody = document.getElementById('hrTbody');
+  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--faint)">Loading…</td></tr>';
+  const d = await api('/api/hr/employees' + (params.toString() ? '?' + params : ''));
+  if (d.error) { tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#dc2626">${dtEscape(d.error)}</td></tr>`; return; }
+  const c = d.counts || {};
+  tiles.innerHTML =
+    hrTile('Total employees', Number(c.total || 0).toLocaleString('en-IN')) +
+    hrTile('Active', Number(c.active || 0).toLocaleString('en-IN'), 'good') +
+    hrTile('Inactive', Number(c.inactive || 0).toLocaleString('en-IN'), Number(c.inactive) ? 'warn' : null);
+  renderHrTable(d.employees || []);
+}
+
+function renderHrTable(list) {
+  const tbody = document.getElementById('hrTbody');
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--faint)">No employees yet — click “+ Add Employee”.</td></tr>`;
+    return;
+  }
+  list.forEach(e => { _hrMap[e.id] = e; });
+  tbody.innerHTML = list.map((e, i) => `
+    <tr class="sales-row" style="cursor:pointer" onclick="openHrDetail(${e.id})">
+      <td style="color:var(--faint);font-variant-numeric:tabular-nums">${i + 1}</td>
+      <td style="font-family:var(--font-mono);font-size:11.5px;white-space:nowrap">${dtEscape(e.employee_code || '—')}</td>
+      <td style="font-weight:600">${dtEscape(e.full_name)}</td>
+      <td style="color:var(--muted-foreground)">${dtEscape(e.designation || '—')}</td>
+      <td style="color:var(--muted-foreground)">${dtEscape(e.department || '—')}</td>
+      <td style="color:var(--muted-foreground)">${dtEscape(e.employment_type || '—')}</td>
+      <td>${hrStatusPill(e.employment_status)}</td>
+      <td style="color:var(--muted-foreground);white-space:nowrap">${dtEscape(e.personal_phone || '—')}</td>
+      <td style="color:var(--muted-foreground)">${e.login_name ? '🔗 ' + dtEscape(e.login_name) : '—'}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="action-btn edit" onclick="openEditHr(${e.id})">Edit</button>
+        <button class="action-btn delete" style="margin-left:6px" onclick="deleteHr(${e.id})">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+// Populate the "Linked login account" dropdown; keeps `selectedId` selected.
+async function loadHrLinkableUsers(selectedId) {
+  const sel = document.getElementById('hf_user_id');
+  if (!sel) return;
+  const users = await api('/api/hr/linkable-users');
+  if (!Array.isArray(users)) return;
+  const sid = selectedId != null ? String(selectedId) : '';
+  sel.innerHTML = '<option value="">— none —</option>' + users.map(u => {
+    const linkedElsewhere = Number(u.already_linked) && String(u.id) !== sid;
+    return `<option value="${u.id}" ${String(u.id) === sid ? 'selected' : ''} ${linkedElsewhere ? 'disabled' : ''}>${dtEscape(u.name)} — ${dtEscape(u.email)}${linkedElsewhere ? ' (already linked)' : ''}</option>`;
+  }).join('');
+}
+
+function _hrClearForm() {
+  HR_FIELDS.forEach(f => { const el = document.getElementById('hf_' + f); if (el) el.value = ''; });
+  document.getElementById('hf_employment_status').value = 'Active';
+  document.getElementById('hrErr').style.display = 'none';
+}
+
+function _hrFillForm(e) {
+  HR_FIELDS.forEach(f => {
+    const el = document.getElementById('hf_' + f); if (!el) return;
+    let v = e[f];
+    if (HR_DATE_FIELDS.includes(f)) v = hrYmd(v);
+    el.value = (v === null || v === undefined) ? '' : v;
+  });
+  document.getElementById('hrErr').style.display = 'none';
+}
+
+async function openAddHr() {
+  document.getElementById('hrModalTitle').textContent = 'Add Employee';
+  document.getElementById('hrId').value = '';
+  _hrClearForm();
+  document.getElementById('hrModal').classList.add('open');
+  loadHrLinkableUsers(null);
+}
+
+async function openEditHr(id) {
+  const d = await api('/api/hr/employee?id=' + encodeURIComponent(id));
+  if (d.error || d.notFound || !d.employee) { alert('Could not load this employee.'); return; }
+  document.getElementById('hrModalTitle').textContent = 'Edit Employee';
+  document.getElementById('hrId').value = id;
+  _hrFillForm(d.employee);
+  document.getElementById('hrModal').classList.add('open');
+  loadHrLinkableUsers(d.employee.user_id);
+}
+
+async function saveHr() {
+  const err = document.getElementById('hrErr'); err.style.display = 'none';
+  const body = {};
+  HR_FIELDS.forEach(f => { const el = document.getElementById('hf_' + f); if (el) body[f] = el.value; });
+  if (!body.full_name || !body.full_name.trim()) { err.textContent = 'Full name is required'; err.style.display = 'block'; return; }
+  const id = document.getElementById('hrId').value;
+  const r = id ? await api('/api/hr/employees/' + id, 'PUT', body) : await api('/api/hr/employees', 'POST', body);
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('hrModal');
+  loadHr();
+}
+
+async function deleteHr(id) {
+  const e = _hrMap[id];
+  if (!confirm(`Delete employee record${e ? ' for ' + e.full_name : ''}? This cannot be undone.`)) return;
+  const r = await api('/api/hr/employees/' + id, 'DELETE');
+  if (r.error) return alert(r.error);
+  closeModal('hrDetailModal');
+  loadHr();
+}
+
+async function openHrDetail(id) {
+  const body = document.getElementById('hrDetailBody');
+  document.getElementById('hrDetailTitle').textContent = 'Employee';
+  body.innerHTML = '<div class="empty" style="padding:20px">Loading…</div>';
+  document.getElementById('hrDetailModal').classList.add('open');
+  document.getElementById('hrDetailEditBtn').onclick = () => { closeModal('hrDetailModal'); openEditHr(id); };
+  document.getElementById('hrDetailDelBtn').onclick = () => deleteHr(id);
+  const d = await api('/api/hr/employee?id=' + encodeURIComponent(id));
+  if (d.error || d.notFound || !d.employee) { body.innerHTML = '<div class="empty" style="padding:20px">Could not load this employee.</div>'; return; }
+  const e = d.employee;
+  document.getElementById('hrDetailTitle').textContent = `${dtEscape(e.full_name)}${e.employee_code ? ' · ' + dtEscape(e.employee_code) : ''}`;
+  const row = (k, v) => (v === null || v === undefined || v === '') ? '' :
+    `<div class="hr-drow"><div class="k">${k}</div><div class="v">${dtEscape(String(v))}</div></div>`;
+  const money = v => (v === null || v === undefined || v === '' || Number(v) === 0) ? '' : inr(v);
+  const sec = t => `<div class="hr-sec">${t}</div>`;
+  const linked = e.login_name ? `${e.login_name} (${e.login_email || ''})` : '';
+  const noteBlock = v => `<div class="hr-drow"><div class="v" style="white-space:pre-wrap">${dtEscape(v)}</div></div>`;
+  const anyNotes = e.performance_remarks || e.record_log || e.notes;
+  body.innerHTML =
+    sec('Job') +
+    row('Designation', e.designation) + row('Department', e.department) +
+    row('Joining date', hrDateLabel(e.joining_date)) + row('Employment type', e.employment_type) +
+    row('Status', e.employment_status) + row('Exit date', hrDateLabel(e.exit_date)) +
+    row('Reporting manager', e.reporting_manager) + row('Work location', e.work_location) +
+    row('Official email', e.official_email) + row('Linked login', linked) +
+    (e.kra ? `<div class="hr-drow"><div class="k">KRA</div><div class="v" style="white-space:pre-wrap">${dtEscape(e.kra)}</div></div>` : '') +
+    sec('Personal') +
+    row('Gender', e.gender) + row('Date of birth', hrDateLabel(e.dob)) +
+    row('Blood group', e.blood_group) + row('Marital status', e.marital_status) +
+    row('Personal phone', e.personal_phone) + row('Personal email', e.personal_email) +
+    row('Current address', e.current_address) + row('Permanent address', e.permanent_address) +
+    row('Emergency contact', [e.emergency_contact_name, e.emergency_contact_relation && '(' + e.emergency_contact_relation + ')', e.emergency_contact_phone].filter(Boolean).join(' ')) +
+    sec('Onboarding & Compliance') +
+    row('Offer / expected DOJ', e.offer_letter_date) +
+    row('Probation end', hrDateLabel(e.probation_end_date)) + row('Confirmation date', hrDateLabel(e.confirmation_date)) +
+    row('Appointment / NDA', e.appointment_nda_status) + row('Code of conduct', e.code_of_conduct_status) +
+    row('Policy handbook', e.policy_handbook_status) + row('BG verification', e.bg_verification_status) +
+    sec('Statutory') +
+    row('PAN', e.pan) + row('Aadhaar', e.aadhaar) + row('UAN', e.uan) + row('PF number', e.pf_number) + row('ESIC number', e.esic_number) +
+    sec('Bank') +
+    row('Bank name', e.bank_name) + row('Account holder', e.bank_holder_name) + row('Account number', e.bank_account) + row('IFSC', e.bank_ifsc) +
+    sec('Salary') +
+    row('CTC (annual)', money(e.ctc)) + row('Monthly salary', money(e.monthly_salary)) +
+    (anyNotes ? sec('Notes & Log')
+      + (e.performance_remarks ? `<div class="hr-drow"><div class="k">Performance</div><div class="v" style="white-space:pre-wrap">${dtEscape(e.performance_remarks)}</div></div>` : '')
+      + (e.record_log ? `<div class="hr-drow"><div class="k">Record log</div><div class="v" style="white-space:pre-wrap">${dtEscape(e.record_log)}</div></div>` : '')
+      + (e.notes ? noteBlock(e.notes) : '') : '');
 }
 
 // ══════════════════════════════════════════════════════

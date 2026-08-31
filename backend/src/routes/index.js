@@ -18,6 +18,7 @@ api.use(require('./mis.routes'));
 api.use(require('./fms.routes'));
 api.use(require('./sheetForms.routes'));
 api.use(require('./users.routes'));
+api.use(require('./hr.routes'));
 api.use(require('./comments.routes'));
 api.use(require('./compliance.routes'));
 api.use(require('./clients.routes'));

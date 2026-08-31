@@ -47,6 +47,7 @@
       <div class="logo-text" style="display:none">Bunai</div>
   </div>
   <nav class="nav">
+    <div class="nav-section">Workspace</div>
     <div class="nav-item active" onclick="navigate('dashboard',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
       <span class="nav-label-text">Dashboard</span>
@@ -61,18 +62,38 @@
       <span id="approvalBadge" style="display:none;position:absolute;top:6px;right:8px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;align-items:center;justify-content:center">0</span>
       <span id="transferBadge" style="display:none;position:absolute;top:6px;right:26px;background:#7c3aed;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;align-items:center;justify-content:center">0</span>
     </div>
+    <div class="nav-item" id="nav-fms-tasks" onclick="navigate('fms-tasks',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18"/></svg>
+      <span class="nav-label-text">FMS Tasks</span>
+    </div>
+    <div class="nav-item" id="nav-merchfms" onclick="navigate('merchfms',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+      <span class="nav-label-text">Form</span>
+    </div>
+    <div class="nav-item" id="nav-pms" onclick="navigate('pms',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+      <span class="nav-label-text">PMS</span>
+    </div>
+
+    <div class="nav-section" id="navsec-people">People</div>
     <div class="nav-item" id="nav-users" style="display:none" onclick="navigate('users',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
       <span class="nav-label-text">Users</span>
     </div>
-    <div class="nav-item" id="nav-mis" style="display:none" onclick="navigate('mis',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-      <span class="nav-label-text">MIS Report</span>
+    <div class="nav-item" id="nav-hr" style="display:none" onclick="navigate('hr',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z"/></svg>
+      <span class="nav-label-text">HR</span>
     </div>
-    <div class="nav-item" id="nav-fms" style="display:none" onclick="navigate('fms',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
-      <span class="nav-label-text">FMS Admin</span>
+    <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      <span class="nav-label-text">Leave Tracker</span>
     </div>
+    <div class="nav-item" id="nav-compliance" style="display:none" onclick="navigate('compliance',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+      <span class="nav-label-text">Employee 360</span>
+    </div>
+
+    <div class="nav-section">Inventory &amp; Sales</div>
     <div class="nav-item" id="nav-ims" style="display:none" onclick="navigate('ims',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
       <span class="nav-label-text">IMS</span>
@@ -85,31 +106,21 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
       <span class="nav-label-text">Sales</span>
     </div>
-    <div class="nav-item" id="nav-fms-tasks" onclick="navigate('fms-tasks',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18"/></svg>
-      <span class="nav-label-text">FMS Tasks</span>
+
+    <div class="nav-section" id="navsec-admin">Admin &amp; Reports</div>
+    <div class="nav-item" id="nav-mis" style="display:none" onclick="navigate('mis',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      <span class="nav-label-text">MIS Report</span>
     </div>
-    <div class="nav-item" id="nav-merchfms" onclick="navigate('merchfms',this)">
+    <div class="nav-item" id="nav-fms" style="display:none" onclick="navigate('fms',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
-      <span class="nav-label-text">Form</span>
-    </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item" id="nav-pms" onclick="navigate('pms',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-      <span class="nav-label-text">PMS</span>
-    </div>
-    <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      <span class="nav-label-text">Leave Tracker</span>
+      <span class="nav-label-text">FMS Admin</span>
     </div>
     <div class="nav-item" id="nav-clients" style="display:none" onclick="navigate('clients',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
       <span class="nav-label-text">Unit Master</span>
     </div>
-    <div class="nav-item" id="nav-compliance" style="display:none" onclick="navigate('compliance',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
-      <span class="nav-label-text">Employee 360</span>
-    </div>
+
     <div class="nav-divider"></div>
     <div class="nav-item" onclick="navigate('profile',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
@@ -293,6 +304,35 @@
       <table>
         <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Department</th><th>Role</th><th>Action</th></tr></thead>
         <tbody id="usersTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── HR — employee master (admin only) ── -->
+  <div id="page-hr" class="page">
+    <div class="page-header">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="position:relative">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint)">🔍</span>
+          <input type="text" id="hrSearch" placeholder="Search name, code, designation, dept, phone…" oninput="hrDebounced()"
+            style="padding:8px 12px 8px 32px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;width:300px"/>
+        </div>
+        <select id="hrStatusFilter" onchange="loadHr()" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none">
+          <option value="">All status</option>
+          <option value="Active">Active</option>
+          <option value="On Leave">On Leave</option>
+          <option value="Notice Period">Notice Period</option>
+          <option value="Resigned">Resigned</option>
+          <option value="Terminated">Terminated</option>
+        </select>
+        <button class="btn btn-primary" onclick="openAddHr()">+ Add Employee</button>
+      </div>
+    </div>
+    <div id="hrTiles" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px"></div>
+    <div class="users-grid">
+      <table>
+        <thead><tr><th style="width:36px">#</th><th>Code</th><th>Name</th><th>Designation</th><th>Department</th><th>Type</th><th>Status</th><th>Phone</th><th>Login</th><th>Action</th></tr></thead>
+        <tbody id="hrTbody"></tbody>
       </table>
     </div>
   </div>
@@ -915,6 +955,137 @@
     <div class="modal-footer" style="justify-content:space-between;align-items:center">
       <div id="salesDetailPager" style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted-foreground)"></div>
       <button class="btn btn-outline" onclick="closeModal('salesDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── HR: add / edit employee ── -->
+<div class="modal-overlay" id="hrModal">
+  <div class="modal" style="width:940px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="hrModalTitle">Add Employee</h3>
+    <div class="alert error" id="hrErr"></div>
+    <input type="hidden" id="hrId"/>
+
+    <div class="hr-sec">Job</div>
+    <div class="form-row">
+      <div class="form-group"><label>Full Name *</label><input id="hf_full_name" placeholder="Employee full name"/></div>
+      <div class="form-group"><label>Employee Code</label><input id="hf_employee_code" placeholder="e.g. EMP001"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Designation</label><input id="hf_designation" placeholder="e.g. Graphic Designer"/></div>
+      <div class="form-group"><label>Department</label><input id="hf_department" placeholder="e.g. Creative"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Joining Date</label><input type="date" id="hf_joining_date"/></div>
+      <div class="form-group"><label>Employment Type</label>
+        <select id="hf_employment_type">
+          <option value="">—</option><option>Full-time</option><option>Part-time</option><option>Intern</option><option>Contract</option><option>Consultant</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Status</label>
+        <select id="hf_employment_status">
+          <option>Active</option><option>On Leave</option><option>Notice Period</option><option>Resigned</option><option>Terminated</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Exit Date</label><input type="date" id="hf_exit_date"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Reporting Manager</label><input id="hf_reporting_manager"/></div>
+      <div class="form-group"><label>Work Location</label><input id="hf_work_location"/></div>
+    </div>
+    <div class="form-group"><label>Official Email</label><input type="email" id="hf_official_email" placeholder="name@company.com"/></div>
+    <div class="form-group"><label>KRA — Key Responsibility Areas</label><textarea id="hf_kra" rows="2" placeholder="Main responsibilities / role scope"></textarea></div>
+    <div class="form-group"><label>Linked Login Account <span style="color:var(--faint);font-weight:400;font-size:11px">(optional — connects to a users login)</span></label>
+      <select id="hf_user_id"><option value="">— none —</option></select>
+    </div>
+
+    <div class="hr-sec">Personal</div>
+    <div class="form-row">
+      <div class="form-group"><label>Gender</label><select id="hf_gender"><option value="">—</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select></div>
+      <div class="form-group"><label>Date of Birth</label><input type="date" id="hf_dob"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Blood Group</label><input id="hf_blood_group" placeholder="e.g. O+"/></div>
+      <div class="form-group"><label>Marital Status</label><select id="hf_marital_status"><option value="">—</option><option>Single</option><option>Married</option><option>Other</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Personal Phone</label><input id="hf_personal_phone"/></div>
+      <div class="form-group"><label>Personal Email</label><input type="email" id="hf_personal_email"/></div>
+    </div>
+    <div class="form-group"><label>Current Address</label><textarea id="hf_current_address" rows="2"></textarea></div>
+    <div class="form-group"><label>Permanent Address</label><textarea id="hf_permanent_address" rows="2"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Emergency Contact Name</label><input id="hf_emergency_contact_name"/></div>
+      <div class="form-group"><label>Emergency Phone</label><input id="hf_emergency_contact_phone"/></div>
+    </div>
+    <div class="form-group"><label>Emergency Relation</label><input id="hf_emergency_contact_relation" placeholder="e.g. Father, Spouse"/></div>
+
+    <div class="hr-sec">Statutory</div>
+    <div class="form-row">
+      <div class="form-group"><label>PAN</label><input id="hf_pan" placeholder="ABCDE1234F"/></div>
+      <div class="form-group"><label>Aadhaar</label><input id="hf_aadhaar"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>UAN (PF)</label><input id="hf_uan"/></div>
+      <div class="form-group"><label>PF Number</label><input id="hf_pf_number"/></div>
+    </div>
+    <div class="form-group"><label>ESIC Number</label><input id="hf_esic_number"/></div>
+
+    <div class="hr-sec">Bank</div>
+    <div class="form-row">
+      <div class="form-group"><label>Bank Name</label><input id="hf_bank_name"/></div>
+      <div class="form-group"><label>Account Holder</label><input id="hf_bank_holder_name"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Account Number</label><input id="hf_bank_account"/></div>
+      <div class="form-group"><label>IFSC</label><input id="hf_bank_ifsc" placeholder="e.g. HDFC0001234"/></div>
+    </div>
+
+    <div class="hr-sec">Salary</div>
+    <div class="form-row">
+      <div class="form-group"><label>CTC (annual ₹)</label><input type="number" id="hf_ctc" min="0" step="1"/></div>
+      <div class="form-group"><label>Monthly Salary (₹)</label><input type="number" id="hf_monthly_salary" min="0" step="1"/></div>
+    </div>
+    <div class="hr-sec">Onboarding &amp; Compliance</div>
+    <div class="form-row">
+      <div class="form-group"><label>Offer / Expected DOJ</label><input id="hf_offer_letter_date" placeholder="e.g. Offer 10 Jul · DOJ 1 Aug"/></div>
+      <div class="form-group"><label>Probation End Date</label><input type="date" id="hf_probation_end_date"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Confirmation Date</label><input type="date" id="hf_confirmation_date"/></div>
+      <div class="form-group"><label>Appointment / NDA Status</label><input id="hf_appointment_nda_status" placeholder="e.g. Issued / Not Issued"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Code of Conduct</label><input id="hf_code_of_conduct_status" placeholder="e.g. Signed / Not Issued"/></div>
+      <div class="form-group"><label>Policy Handbook</label><input id="hf_policy_handbook_status" placeholder="e.g. Acknowledged / Not Sent"/></div>
+    </div>
+    <div class="form-group"><label>Background Verification Status</label><input id="hf_bg_verification_status" placeholder="e.g. Clear / Verified / Pending"/></div>
+
+    <div class="hr-sec">Notes &amp; Log</div>
+    <div class="form-group"><label>Performance Monitoring Remarks</label><textarea id="hf_performance_remarks" rows="2"></textarea></div>
+    <div class="form-group"><label>Complete Record Log</label><textarea id="hf_record_log" rows="2"></textarea></div>
+    <div class="form-group"><label>Notes</label><textarea id="hf_notes" rows="2"></textarea></div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('hrModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHr()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── HR: employee detail (read-only) ── -->
+<div class="modal-overlay" id="hrDetailModal">
+  <div class="modal" style="max-width:680px;max-height:92vh;overflow:auto">
+    <h3 id="hrDetailTitle">Employee</h3>
+    <div id="hrDetailBody"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="hrDetailEditBtn">Edit</button>
+        <button class="btn btn-outline" id="hrDetailDelBtn" style="color:#dc2626;border-color:#f3c0c0">Delete</button>
+      </div>
+      <button class="btn btn-outline" onclick="closeModal('hrDetailModal')">Close</button>
     </div>
   </div>
 </div>
