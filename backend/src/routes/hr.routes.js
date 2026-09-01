@@ -105,7 +105,8 @@ router.get('/hr/employees', requireAuth, requireAdmin, asyncRoute(async (req, re
   const employees = await db.rows(
     `SELECT e.id, e.employee_code, e.full_name, e.designation, e.department,
             e.employment_type, e.employment_status, e.joining_date,
-            e.personal_phone, e.personal_email, e.work_location, e.user_id,
+            e.personal_phone, e.personal_email, e.official_email,
+            e.work_location, e.user_id,
             u.name AS login_name, u.email AS login_email
        FROM hr_employees e
        LEFT JOIN users u ON u.id = e.user_id
