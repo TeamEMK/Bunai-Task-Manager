@@ -845,3 +845,46 @@ tbody tr:last-child td{border-bottom:none;}
 .hr-drow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);}
 .hr-drow .k{flex:0 0 40%;font-size:12px;color:var(--muted-foreground);}
 .hr-drow .v{flex:1;font-size:12.5px;word-break:break-word;}
+
+/* ── Multi-select employee picker ─────────────────────
+   A checkbox list in a dropdown, used where one task can go to several people.
+   Styled to sit flush with .form-group select so the two read as one family. */
+.mpick{position:relative;}
+.mpick-trigger{
+  width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  font-size:13px;font-family:var(--font-sans);color:var(--foreground);background:var(--card);
+  text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  transition:border-color .15s,box-shadow .15s;
+}
+.mpick-trigger:hover{border-color:var(--brand-mid);}
+.mpick.open .mpick-trigger{border-color:var(--brand-mid);box-shadow:0 0 0 3px rgba(217,99,106,.18);}
+.mpick-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mpick-text.mpick-empty{color:var(--faint);}
+.mpick-caret{color:var(--faint);font-size:11px;flex-shrink:0;}
+.mpick-panel{
+  position:absolute;z-index:60;top:calc(100% + 4px);left:0;right:0;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:0 8px 24px rgba(0,0,0,.12);padding:8px;
+}
+.mpick-search{
+  width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  font-size:13px;font-family:var(--font-sans);outline:none;margin-bottom:6px;
+}
+.mpick-search:focus{border-color:var(--brand-mid);}
+.mpick-bar{display:flex;gap:6px;margin-bottom:6px;}
+.mpick-bar button{
+  flex:1;padding:5px 8px;font-size:11px;font-family:var(--font-sans);cursor:pointer;
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--muted);color:var(--muted-foreground);
+}
+.mpick-bar button:hover{border-color:var(--brand-mid);color:var(--brand-deep);}
+/* Capped so a long staff list scrolls inside the panel instead of running off
+   the modal. */
+.mpick-list{max-height:210px;overflow-y:auto;}
+.mpick-row{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius-sm);
+  font-size:13px;color:var(--foreground);cursor:pointer;
+}
+.mpick-row:hover{background:var(--muted);}
+.mpick-row input{width:auto;margin:0;cursor:pointer;accent-color:var(--brand-mid);}
+.mpick-empty-list{padding:10px 8px;font-size:12px;color:var(--faint);text-align:center;}

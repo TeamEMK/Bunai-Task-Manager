@@ -1566,7 +1566,9 @@ async function openDelegate() {
   // Cache for email lookup in onDelegateApproverChange()
   window._delegateUsers = users || [];
   const opts = (users || []).map(u=>`<option value="${u.id}" data-email="${dtEscape(u.email||'')}">${u.name}</option>`).join('');
-  document.getElementById('dDoer').innerHTML='<option value="">Select Doer</option>'+opts;
+  _dDoerPick = _dDoerPick || createUserPicker('dDoer', { placeholder: 'Select doer(s)' });
+  _dDoerPick.setUsers(users || []);
+  _dDoerPick.clear();
   document.getElementById('dApprover').innerHTML='<option value="">Select Approver</option>'+opts;
   // Client dropdown — pulls from Client Master
   const clientOpts = (clients || []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
@@ -1606,7 +1608,7 @@ function onDelegateApproverChange() {
 async function saveDelegate() {
   const err = document.getElementById('delegateErr');
   err.style.display='none';
-  const doer = document.getElementById('dDoer').value;
+  const doers = _dDoerPick ? _dDoerPick.getSelected() : [];
   const date = document.getElementById('dDate').value;
   const desc = document.getElementById('dDesc').value.trim();
   const priority = document.getElementById('dPriority').value;
@@ -1615,15 +1617,17 @@ async function saveDelegate() {
   const url = document.getElementById('dUrl').value.trim() || null;
   const approver = approval === 'yes' ? document.getElementById('dApprover').value : '';
   const client_id = document.getElementById('dClient').value || null;
-  if (!doer) { err.textContent='Please select a doer'; err.style.display='block'; return; }
+  if (!doers.length) { err.textContent='Please select at least one doer'; err.style.display='block'; return; }
   if (!date) { err.textContent='Please select a date'; err.style.display='block'; return; }
   if (!desc) { err.textContent='Description is required'; err.style.display='block'; return; }
   if (approval === 'yes' && !approver) { err.textContent='Please select an approver'; err.style.display='block'; return; }
-  if (approval === 'yes' && String(approver) === String(doer)) { err.textContent='The approver cannot be the same person as the doer.'; err.style.display='block'; return; }
-  const r = await api('/api/tasks','POST',{type:'delegation',desc,assignedTo:doer,date,priority,approval,approver,remarks,client_id,url});
+  if (approval === 'yes' && doers.includes(String(approver))) { err.textContent='The approver cannot also be one of the doers — please deselect them.'; err.style.display='block'; return; }
+  const r = await api('/api/tasks','POST',{type:'delegation',desc,assignedTo:doers,date,priority,approval,approver,remarks,client_id,url});
   if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
   closeModal('delegateModal');
-  if (r.adjusted) {
+  if (doers.length > 1) {
+    showToast(`Task delegated to ${r.created ?? doers.length} employees!`);
+  } else if (r.adjusted) {
     showToast(`Task delegated! 📅 Moved to ${r.effectiveDate} (holiday/week-off)`);
   } else {
     showToast('Task delegated successfully!');
@@ -1647,17 +1651,182 @@ async function openChecklist() {
   document.getElementById('cEndDate').value='';
   document.getElementById('cEndDate').min=today;
   const [users, clients] = await Promise.all([api('/api/users'), api('/api/clients')]);
-  document.getElementById('cDoer').innerHTML='<option value="">Select Employee</option>'+
-    users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  _cDoerPick = _cDoerPick || createUserPicker('cDoer', { placeholder: 'Select employee(s)' });
+  _cDoerPick.setUsers(users || []);
+  _cDoerPick.clear();
   document.getElementById('cClient').innerHTML='<option value="">— No Unit —</option>'+
     (clients || []).map(c=>`<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
 
+  populateFrequencyOptions();
   ['cFrequency','cDate','cEndDate','cDesc'].forEach(id=>{
     document.getElementById(id).onchange = updateChecklistPreview;
     document.getElementById(id).oninput = updateChecklistPreview;
   });
 
   document.getElementById('checklistModal').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════
+// MULTI-SELECT EMPLOYEE PICKER
+//
+// One task can now go to several people at once. A native <select multiple>
+// would have been less code, but it needs Ctrl-click — which people do not
+// discover and which barely works on a touchscreen — so this is a checkbox list
+// in a dropdown, with a search box and Select all / Clear.
+//
+// Selection is held here rather than in the DOM, so the caller asks for
+// getSelected() instead of scraping checkboxes.
+// ══════════════════════════════════════════════════════
+// Built once each, the first time their modal opens.
+let _dDoerPick = null, _cDoerPick = null;
+let _mpickCloserBound = false;
+const _mpickOpen = [];
+
+function createUserPicker(hostId, { placeholder = 'Select employees' } = {}) {
+  const host = document.getElementById(hostId);
+  if (!host) return null;
+  let users = [], selected = new Set(), filter = '';
+
+  host.classList.add('mpick');
+  host.innerHTML =
+    '<button type="button" class="mpick-trigger">' +
+      '<span class="mpick-text"></span><span class="mpick-caret">▼</span></button>' +
+    '<div class="mpick-panel" hidden>' +
+      '<input type="text" class="mpick-search" placeholder="Search employee…">' +
+      '<div class="mpick-bar">' +
+        '<button type="button" class="mpick-all">Select all</button>' +
+        '<button type="button" class="mpick-none">Clear</button></div>' +
+      '<div class="mpick-list"></div></div>';
+
+  const trigger = host.querySelector('.mpick-trigger');
+  const text    = host.querySelector('.mpick-text');
+  const panel   = host.querySelector('.mpick-panel');
+  const search  = host.querySelector('.mpick-search');
+  const list    = host.querySelector('.mpick-list');
+
+  const visible = () => {
+    const q = filter.trim().toLowerCase();
+    return q ? users.filter(u => (u.name || '').toLowerCase().includes(q)) : users;
+  };
+
+  function label() {
+    if (!selected.size) return placeholder;
+    if (selected.size === 1) {
+      const u = users.find(x => String(x.id) === [...selected][0]);
+      return u ? u.name : '1 selected';
+    }
+    return selected.size + ' employees selected';
+  }
+
+  function paintLabel() {
+    text.textContent = label();
+    text.classList.toggle('mpick-empty', !selected.size);
+  }
+
+  function draw() {
+    paintLabel();
+    const shown = visible();
+    list.innerHTML = shown.length
+      ? shown.map(u =>
+          '<label class="mpick-row"><input type="checkbox" value="' + u.id + '"' +
+          (selected.has(String(u.id)) ? ' checked' : '') + '>' +
+          '<span>' + dtEscape(u.name || '') + '</span></label>').join('')
+      : '<div class="mpick-empty-list">No employee matches that search</div>';
+  }
+
+  const close = () => { panel.hidden = true; host.classList.remove('open'); };
+  const open  = () => {
+    _mpickOpen.forEach(fn => fn());          // only one picker open at a time
+    panel.hidden = false; host.classList.add('open'); search.focus();
+  };
+  _mpickOpen.push(close);
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    panel.hidden ? open() : close();
+  });
+  // Clicks inside the panel must not reach the document closer below.
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  search.addEventListener('input', () => { filter = search.value; draw(); });
+  // Only the label is repainted on a tick: redrawing the list would rebuild the
+  // checkbox the user just clicked and lose their scroll position.
+  list.addEventListener('change', (e) => {
+    const cb = e.target;
+    if (!cb || cb.type !== 'checkbox') return;
+    if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+    paintLabel();
+  });
+  // Select all applies to what the search is currently showing, which is what
+  // "all" means when a filter is on.
+  host.querySelector('.mpick-all').addEventListener('click', () => {
+    visible().forEach(u => selected.add(String(u.id)));
+    draw();
+  });
+  host.querySelector('.mpick-none').addEventListener('click', () => { selected.clear(); draw(); });
+
+  if (!_mpickCloserBound) {
+    document.addEventListener('click', () => _mpickOpen.forEach(fn => fn()));
+    _mpickCloserBound = true;
+  }
+
+  draw();
+  return {
+    setUsers(next) { users = next || []; draw(); },
+    getSelected() { return [...selected]; },
+    count() { return selected.size; },
+    clear() { selected.clear(); filter = ''; search.value = ''; close(); draw(); },
+  };
+}
+
+// ── Checklist frequencies — the single source of truth ──
+// This used to be six separate literals (dropdown options, labels, intervals,
+// yearly counts, CSV validation, breakdown labels) that all had to be edited
+// together. They now derive from this one list, so a new frequency is one row.
+//
+// step: how the next date is found. `days` walks forward N days; `months` and
+// `years` step the calendar so month-ends stay put. `weekday` (0=Sun..6=Sat)
+// pins the series to one day of the week — the start date is snapped forward to
+// the first matching day, then it repeats weekly, which is what "Every Tuesday"
+// has to mean regardless of which day the user picked as the start.
+//
+// `value` is stored in delegation/checklist rows and validated by the backend
+// (VALID_FREQS in utils/dates.js) — keep the two lists in step, and keep every
+// value within the column's VARCHAR(20).
+const CHECKLIST_FREQS = [
+  { value: 'daily',            label: 'Daily',            perYear: 365, step: { days: 1 } },
+  { value: 'alternate_days',   label: 'Alternate Days',   perYear: 182, step: { days: 2 } },
+  { value: 'weekly',           label: 'Weekly',           perYear: 52,  step: { days: 7 } },
+  { value: 'every_tuesday',    label: 'Every Tuesday',    perYear: 52,  step: { days: 7 }, weekday: 2 },
+  { value: 'every_thursday',   label: 'Every Thursday',   perYear: 52,  step: { days: 7 }, weekday: 4 },
+  { value: 'every_10_days',    label: 'Every 10 Days',    perYear: 36,  step: { days: 10 } },
+  { value: 'alternative_week', label: 'Alternative Week', perYear: 26,  step: { days: 14 } },
+  { value: 'monthly',          label: 'Monthly',          perYear: 12,  step: { months: 1 } },
+  { value: 'quarterly',        label: 'Quarterly',        perYear: 4,   step: { months: 3 } },
+  { value: 'yearly',           label: 'Yearly',           perYear: 1,   step: { years: 1 } },
+];
+
+const FREQ_BY_VALUE = Object.fromEntries(CHECKLIST_FREQS.map(f => [f.value, f]));
+const freqLabel = (v) => (FREQ_BY_VALUE[v] || {}).label || v || '';
+
+// Fills the dropdown from the list above so the markup cannot drift out of step
+// with it. Called when the checklist modal opens.
+function populateFrequencyOptions() {
+  const sel = document.getElementById('cFrequency');
+  if (!sel || sel.dataset.filled === '1') return;
+  const keep = sel.value;
+  sel.innerHTML = CHECKLIST_FREQS.map(f =>
+    `<option value="${f.value}">${f.label} (${f.perYear} task${f.perYear === 1 ? '' : 's'}/year)</option>`
+  ).join('');
+  if (keep && FREQ_BY_VALUE[keep]) sel.value = keep;
+  sel.dataset.filled = '1';
+}
+
+// Moves `d` forward to the next date falling on `weekday` (0=Sun..6=Sat),
+// leaving it alone when it already does.
+function snapToWeekday(d, weekday) {
+  const diff = (weekday - d.getDay() + 7) % 7;
+  if (diff) d.setDate(d.getDate() + diff);
+  return d;
 }
 
 function updateChecklistPreview() {
@@ -1669,7 +1838,6 @@ function updateChecklistPreview() {
   const txt     = document.getElementById('cPreviewText');
   if (!date || !desc) { box.style.display='none'; return; }
 
-  const labels = {daily:'Daily', weekly:'Weekly', alternative_week:'Alternative Week', monthly:'Monthly', quarterly:'Quarterly', yearly:'Yearly'};
   box.style.display='block';
 
   if (endDate && endDate < date) {
@@ -1688,13 +1856,16 @@ function updateChecklistPreview() {
   const tail = endDate
     ? ` · End date: ${endDate}`
     : ' · (End date blank — defaults to 1 year)';
-  txt.textContent = `"${desc}" — ${dates.length} task ${date} se ${last} tak banenge (${labels[freq]})${tail}`;
+  txt.textContent = `"${desc}" — ${dates.length} task ${date} se ${last} tak banenge (${freqLabel(freq)})${tail}`;
 }
 
 function getEndDate(startDate, freq, count) {
   const d = new Date(startDate);
-  const intervals = {daily:1, weekly:7, alternative_week:14, monthly:30, quarterly:90, yearly:365};
-  d.setDate(d.getDate() + (intervals[freq] * (count-1)));
+  // Approximate on purpose: this only sizes the default window, and the real
+  // dates come from generateDates().
+  const st = (FREQ_BY_VALUE[freq] || {}).step || { days: 1 };
+  const perStep = (st.days || 0) + (st.months || 0) * 30 + (st.years || 0) * 365;
+  d.setDate(d.getDate() + (perStep * (count-1)));
   return d.toISOString().split('T')[0];
 }
 
@@ -1703,11 +1874,14 @@ function getEndDate(startDate, freq, count) {
 function generateDates(startDate, freq, weekOffStr, extraOffStr, endDate) {
   const dates = [];
   const d = new Date(startDate+'T00:00:00');
-  const counts = {daily:365, weekly:52, alternative_week:26, monthly:12, quarterly:4, yearly:1};
+  const spec = FREQ_BY_VALUE[freq] || FREQ_BY_VALUE.daily;
+  // 'Every Tuesday' must land on Tuesdays whatever start date was picked, so the
+  // cursor moves forward to the first matching day before anything is emitted.
+  if (spec.weekday != null) snapToWeekday(d, spec.weekday);
   const endDt = (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) ? new Date(endDate+'T00:00:00') : null;
   if (endDt && endDt < d) return [];
   // When an end date is set, the count is only a safety cap
-  const count = endDt ? 3000 : counts[freq];
+  const count = endDt ? 3000 : spec.perYear;
   const weekOff = (weekOffStr||'').split(',').map(s=>parseInt(s.trim())).filter(n=>!isNaN(n));
   let extraOff = [];
   try { extraOff = extraOffStr ? JSON.parse(extraOffStr) : []; } catch(e) {}
@@ -1740,12 +1914,9 @@ function generateDates(startDate, freq, weekOffStr, extraOffStr, endDate) {
     const dd = String(d.getDate()).padStart(2,'0');
     dates.push(`${yyyy}-${mm}-${dd}`);
     added++;
-    if (freq==='daily')            d.setDate(d.getDate()+1);
-    else if (freq==='weekly')      d.setDate(d.getDate()+7);
-    else if (freq==='alternative_week') d.setDate(d.getDate()+14);
-    else if (freq==='monthly')     d.setMonth(d.getMonth()+1);
-    else if (freq==='quarterly')   d.setMonth(d.getMonth()+3);
-    else if (freq==='yearly')      d.setFullYear(d.getFullYear()+1);
+    if (spec.step.days)        d.setDate(d.getDate() + spec.step.days);
+    else if (spec.step.months) d.setMonth(d.getMonth() + spec.step.months);
+    else if (spec.step.years)  d.setFullYear(d.getFullYear() + spec.step.years);
   }
   return dates;
 }
@@ -1755,14 +1926,14 @@ async function saveChecklist() {
   const suc = document.getElementById('checklistSuccess');
   err.style.display='none'; suc.style.display='none';
 
-  const doer    = document.getElementById('cDoer').value;
+  const doers   = _cDoerPick ? _cDoerPick.getSelected() : [];
   const date    = document.getElementById('cDate').value;
   const endDate = document.getElementById('cEndDate').value;
   const desc    = document.getElementById('cDesc').value.trim();
   const remarks = document.getElementById('cRemarks').value.trim();
   const freq    = document.getElementById('cFrequency').value;
 
-  if (!doer) { err.textContent='Please select an employee'; err.style.display='block'; return; }
+  if (!doers.length) { err.textContent='Please select at least one employee'; err.style.display='block'; return; }
   if (!date) { err.textContent='Please select a start date'; err.style.display='block'; return; }
   if (!desc) { err.textContent='Task name is required'; err.style.display='block'; return; }
   if (endDate && endDate < date) { err.textContent='End date cannot be earlier than the start date'; err.style.display='block'; return; }
@@ -1780,7 +1951,7 @@ async function saveChecklist() {
   const client_id = document.getElementById('cClient').value || null;
 
   const result = await api('/api/tasks/bulk-checklist','POST',{
-    desc, assignedTo: doer, priority: 'low', remarks, dates, client_id,
+    desc, assignedTo: doers, priority: 'low', remarks, dates, client_id,
     endDate: endDate || dates[dates.length - 1], frequency: freq
   });
 
@@ -1789,7 +1960,8 @@ async function saveChecklist() {
   if (result.error) { err.textContent=result.error; err.style.display='block'; return; }
 
   const skippedNote = result.skipped ? ` (${result.skipped} holiday date${result.skipped===1?'':'s'} skipped)` : '';
-  suc.textContent = `✅ ${result.count || dates.length} tasks generated — ${date} se ${endDate || dates[dates.length-1]} tak!${skippedNote}`;
+  const forNote = doers.length > 1 ? ` for ${doers.length} employees` : '';
+  suc.textContent = `✅ ${result.count || dates.length} tasks generated${forNote} — ${date} se ${endDate || dates[dates.length-1]} tak!${skippedNote}`;
   suc.style.display='block';
 
   setTimeout(()=>{ closeModal('checklistModal'); loadDashboard(); }, 2000);
@@ -1979,7 +2151,7 @@ async function uploadCSVC() {
   const allUsers = await api('/api/users');
 
   let totalTasks = 0, skipped = 0;
-  const validFreqs = ['daily','weekly','alternative_week','monthly','quarterly','yearly'];
+  const validFreqs = CHECKLIST_FREQS.map(f => f.value);
 
   showToast('⏳ Generating tasks, please wait…');
 
@@ -2394,14 +2566,13 @@ async function loadHr() {
 function renderHrTable(list) {
   const tbody = document.getElementById('hrTbody');
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--faint)">No employees yet — click “+ Add Employee”.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--faint)">No employees yet — click “+ Add Employee”.</td></tr>`;
     return;
   }
   list.forEach(e => { _hrMap[e.id] = e; });
   tbody.innerHTML = list.map((e, i) => `
     <tr class="sales-row" style="cursor:pointer" onclick="openHrDetail(${e.id})">
       <td style="color:var(--faint);font-variant-numeric:tabular-nums">${i + 1}</td>
-      <td style="font-family:var(--font-mono);font-size:11.5px;white-space:nowrap">${dtEscape(e.employee_code || '—')}</td>
       <td style="font-weight:600">${dtEscape(e.full_name)}</td>
       <td style="color:var(--muted-foreground)">${dtEscape(e.designation || '—')}</td>
       <td style="color:var(--muted-foreground)">${dtEscape(e.department || '—')}</td>
@@ -5606,7 +5777,7 @@ const _bdChkSel = new Set();
 
 function bdChkKey(g) { return (g.description || '') + '||' + (g.frequency || ''); }
 
-const _bdFreqLabel = {daily:'Daily', weekly:'Weekly', alternative_week:'Alt. Week', monthly:'Monthly', quarterly:'Quarterly', yearly:'Yearly'};
+const _bdFreqLabel = Object.fromEntries(CHECKLIST_FREQS.map(f => [f.value, f.value === 'alternative_week' ? 'Alt. Week' : f.label]));
 
 async function onBdYearUserChange() {
   const sel = document.getElementById('bdYearUser');

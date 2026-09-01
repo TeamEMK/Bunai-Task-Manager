@@ -93,7 +93,9 @@ function queueMessage(phone, message, { delayMs = 0, label = 'msg' } = {}) {
 
 // ── Message templates ─────────────────────────────────
 const FREQ_LABEL = {
-  daily: 'Daily', weekly: 'Weekly', alternative_week: 'Alternative Week',
+  daily: 'Daily', alternate_days: 'Alternate Days', weekly: 'Weekly',
+  every_tuesday: 'Every Tuesday', every_thursday: 'Every Thursday',
+  every_10_days: 'Every 10 Days', alternative_week: 'Alternative Week',
   monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly',
 };
 const PRIORITY_EMOJI = { high: '🔴', medium: '🟠', low: '🟢' };

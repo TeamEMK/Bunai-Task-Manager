@@ -331,7 +331,7 @@
     <div id="hrTiles" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px"></div>
     <div class="users-grid">
       <table>
-        <thead><tr><th style="width:36px">#</th><th>Code</th><th>Name</th><th>Designation</th><th>Department</th><th>Type</th><th>Status</th><th>Phone</th><th>Login</th><th>Action</th></tr></thead>
+        <thead><tr><th style="width:36px">#</th><th>Name</th><th>Designation</th><th>Department</th><th>Type</th><th>Status</th><th>Phone</th><th>Login</th><th>Action</th></tr></thead>
         <tbody id="hrTbody"></tbody>
       </table>
     </div>
@@ -1107,7 +1107,7 @@
     <div class="form-row">
       <div class="form-group">
         <label>Doer (Assign To)</label>
-        <select id="dDoer"><option value="">Select Doer</option></select>
+        <div id="dDoer"></div>
       </div>
       <div class="form-group">
         <label>Due Date</label>
@@ -1186,19 +1186,17 @@
     <div class="alert success" id="checklistSuccess"></div>
 
     <div class="form-group">
-      <label>Select Employee</label>
-      <select id="cDoer"><option value="">Select Employee</option></select>
+      <label>Select Employee(s)</label>
+      <div id="cDoer"></div>
     </div>
 
     <div class="form-group">
       <label>Frequency</label>
+      <!-- Filled by populateFrequencyOptions() from CHECKLIST_FREQS in app.js,
+           which is the one place frequencies are defined. The option below is
+           only what shows before that runs. -->
       <select id="cFrequency">
         <option value="daily">Daily (365 tasks/year)</option>
-        <option value="weekly">Weekly (52 tasks/year)</option>
-        <option value="alternative_week">Alternative Week (26 tasks/year)</option>
-        <option value="monthly">Monthly (12 tasks/year)</option>
-        <option value="quarterly">Quarterly (4 tasks/year)</option>
-        <option value="yearly">Yearly (1 task/year)</option>
       </select>
     </div>
 
@@ -1250,7 +1248,7 @@
         <button class="btn btn-green btn-sm" onclick="uploadCSVC()">⬆ Upload CSV</button>
         <button class="btn btn-outline btn-sm" onclick="downloadSampleC()">⬇ Sample</button>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Format: user_email, frequency (daily/weekly/monthly/yearly/quarterly/alternative_week), start_date, <b>end_date (optional)</b>, description, remarks — tasks auto-generate!</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Format: user_email, frequency (daily/alternate_days/weekly/every_tuesday/every_thursday/every_10_days/alternative_week/monthly/quarterly/yearly), start_date, <b>end_date (optional)</b>, description, remarks — tasks auto-generate!</div>
     </div>
   </div>
 </div>

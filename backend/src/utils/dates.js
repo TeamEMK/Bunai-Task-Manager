@@ -16,7 +16,13 @@ function normDate(v) {
   return YMD_RE.test(s) ? s : null;
 }
 
-const VALID_FREQS = ['daily', 'weekly', 'alternative_week', 'monthly', 'quarterly', 'yearly'];
+// Must stay in step with CHECKLIST_FREQS in frontend/assets/app.js — that list
+// drives the dropdown, this one is the gate that decides what is allowed to be
+// stored. Every value has to fit the frequency column's VARCHAR(20).
+const VALID_FREQS = [
+  'daily', 'alternate_days', 'weekly', 'every_tuesday', 'every_thursday',
+  'every_10_days', 'alternative_week', 'monthly', 'quarterly', 'yearly',
+];
 function normFreq(v) {
   const s = String(v || '').trim().toLowerCase();
   return VALID_FREQS.includes(s) ? s : null;

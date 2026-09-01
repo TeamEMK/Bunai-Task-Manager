@@ -134,7 +134,19 @@ function notifyTaskCreated({ doerId, byId, clientId, build, buildEmail }) {
   })();
 }
 
-// ── POST /api/tasks — create one task ─────────────────
+// Accepts a single id, an array of ids, or a comma-separated string, because the
+// picker sends a list while CSV import and older callers still send one value.
+// Someone who may not assign to others always gets themselves, whatever arrived.
+function parseAssignees(raw, canAssignOthers, selfId) {
+  if (!canAssignOthers) return [selfId];
+  const list = Array.isArray(raw) ? raw : String(raw == null ? '' : raw).split(',');
+  const ids = [...new Set(list.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n) && n > 0))];
+  return ids.length ? ids : [selfId];
+}
+
+// ── POST /api/tasks — create the task for one or more doers ──
+// Every selected person gets their OWN row. A shared row would mean the first
+// person to press Done closes it for everybody.
 router.post('/tasks', requireAuth, asyncRoute(async (req, res) => {
   const { type, desc, assignedTo, approverEmail, approver, date, priority, approval, remarks,
           client_id, clientId, url } = req.body;
@@ -148,109 +160,149 @@ router.post('/tasks', requireAuth, asyncRoute(async (req, res) => {
   const role = req.session.role;
   // Admin, HOD and regular users can all assign to others; fall back to self.
   const canAssignOthers = role === 'admin' || role === 'hod' || role === 'user';
-  const targetUser = (canAssignOthers && assignedTo) ? parseInt(assignedTo, 10) : req.session.userId;
+  const targets = parseAssignees(assignedTo, canAssignOthers, req.session.userId);
   if (!desc || !date) return res.status(400).json({ error: 'Description and date required' });
+  if (!targets.length) return res.status(400).json({ error: 'Please select at least one employee.' });
 
   const isDelegation = (type || 'checklist') === 'delegation';
+  const assignedBy = req.session.userId;
 
-  // Holiday / week-off check — auto-adjust the due date if needed.
-  let effectiveDate = date;
-  let adjusted = false, adjustedReason = '';
+  // The approver is the same for the whole batch, so resolve it once up front
+  // rather than per doer.
+  let approverId = null;
+  if (isDelegation && (approval || 'no') === 'yes') {
+    if (approverEmail) {
+      const row = await db.one('SELECT id FROM users WHERE email=? LIMIT 1', [approverEmail]);
+      if (row) approverId = row.id;
+    } else if (approver) {
+      const apId = parseInt(approver, 10);
+      if (apId) {
+        const row = await db.one('SELECT id FROM users WHERE id=? LIMIT 1', [apId]);
+        if (row) approverId = row.id;
+      }
+    }
+    if (!approverId) return res.status(400).json({ error: 'Please select a valid approver for this task.' });
+  }
+
+  // Holidays are shared, but week_off and extra_off are per person — one doer's
+  // Sunday off is another's Tuesday — so each doer's date is judged separately.
+  let holidaysSet = null, doersById = new Map();
   try {
-    const [holidaysSet, doerUser] = await Promise.all([
+    const [hs, rows] = await Promise.all([
       loadHolidaysSet(),
-      db.one('SELECT week_off, extra_off FROM users WHERE id=? LIMIT 1', [targetUser]),
+      db.rows(`SELECT id, name, week_off, extra_off FROM users WHERE id IN (${placeholders(targets)})`, targets),
     ]);
-    if (doerUser && isUserOffOn(doerUser, date, holidaysSet)) {
+    holidaysSet = hs;
+    doersById = indexBy(rows, 'id');
+  } catch (e) { console.error('holiday check error:', e.message); }
+
+  if (approverId && targets.includes(approverId)) {
+    const who = doersById.get(approverId);
+    return res.status(400).json({
+      error: `${who ? who.name : 'The approver'} cannot be both the approver and a doer — please deselect them.`,
+    });
+  }
+
+  const results = [];
+  for (const targetUser of targets) {
+    const doerUser = doersById.get(targetUser) || null;
+    let effectiveDate = date, adjusted = false, reason = '';
+
+    if (doerUser && holidaysSet && isUserOffOn(doerUser, date, holidaysSet)) {
       if (isDelegation) {
         effectiveDate = nextWorkingDay(doerUser, date, holidaysSet);
         adjusted = true;
-        adjustedReason = `Original date was a holiday/week-off — moved to ${effectiveDate}`;
+        reason = `Original date was a holiday/week-off — moved to ${effectiveDate}`;
       } else {
         // Checklist: a series simply has no entry on an off day.
-        return res.json({ success: true, skipped: true, reason: 'Skipped — selected date is a holiday or doer\'s week-off' });
+        results.push({ userId: targetUser, name: doerUser.name, created: false, adjusted: false,
+                       effectiveDate: date, reason: 'Skipped — holiday or week-off for this employee' });
+        continue;
       }
     }
-  } catch (e) { console.error('holiday check error:', e.message); }
 
-  if (isDelegation) {
-    // assigned_by is always the real delegator. The chosen approver is stored
-    // separately in approver_id so the doer can never approve their own work.
-    const assignedBy = req.session.userId;
-    let approverId = null;
-    if ((approval || 'no') === 'yes') {
-      if (approverEmail) {
-        const row = await db.one('SELECT id FROM users WHERE email=? LIMIT 1', [approverEmail]);
-        if (row) approverId = row.id;
-      } else if (approver) {
-        const apId = parseInt(approver, 10);
-        if (apId) {
-          const row = await db.one('SELECT id FROM users WHERE id=? LIMIT 1', [apId]);
-          if (row) approverId = row.id;
-        }
-      }
-      if (!approverId) return res.status(400).json({ error: 'Please select a valid approver for this task.' });
-      if (approverId === targetUser) return res.status(400).json({ error: 'The approver cannot be the same person as the doer.' });
+    if (isDelegation) {
+      await db.query(
+        `INSERT INTO delegation_tasks
+           (description,assigned_to,assigned_by,due_date,status,priority,approval,waiting_approval,approver_id,remarks,client_id,url)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [desc, targetUser, assignedBy, effectiveDate, 'pending', priority || 'low',
+         approval || 'no', 0, approverId, remarks || '', clientIdInt, url || null]);
+
+      // The same facts go to both channels, so they are built once here rather
+      // than written out twice and left to drift apart.
+      const facts = {
+        dueDate: effectiveDate,
+        priority: priority || 'low',
+        description: desc,
+        remarks: remarks || '',
+      };
+      const who = ({ doer, byUser, clientName }) => ({
+        ...facts,
+        doerName: doer.name,
+        assignedByName: byUser ? byUser.name : '',
+        clientName,
+      });
+      notifyTaskCreated({
+        doerId: targetUser, byId: assignedBy, clientId: clientIdInt,
+        build: (ctx) => wa.sendDelegationMessage(ctx.doer.phone, who(ctx)),
+        buildEmail: (ctx) => mail.sendDelegationEmail(ctx.to, who(ctx)),
+      });
+    } else {
+      await db.query(
+        `INSERT INTO checklist_tasks
+           (description,assigned_to,assigned_by,due_date,end_date,frequency,status,priority,remarks,client_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [desc, targetUser, assignedBy, effectiveDate, endDateVal, frequencyVal,
+         'pending', priority || 'low', remarks || '', clientIdInt]);
+
+      notifyTaskCreated({
+        doerId: targetUser, byId: assignedBy, clientId: clientIdInt,
+        build: ({ doer, byUser, clientName }) => wa.queueMessage(doer.phone,
+          wa.buildChecklistCreatedMessage({
+            doerName: doer.name,
+            assignedByName: byUser ? byUser.name : '',
+            description: desc,
+            frequency: frequencyVal,
+            startDate: effectiveDate,
+            endDate: endDateVal,
+            totalTasks: 1,
+            clientName,
+            remarks: remarks || '',
+          }), { delayMs: wa.checklistCreatedDelayMs, label: 'checklist-created' }),
+      });
     }
 
-    await db.query(
-      `INSERT INTO delegation_tasks
-         (description,assigned_to,assigned_by,due_date,status,priority,approval,waiting_approval,approver_id,remarks,client_id,url)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [desc, targetUser, assignedBy, effectiveDate, 'pending', priority || 'low',
-       approval || 'no', 0, approverId, remarks || '', clientIdInt, url || null]);
-
-    // The same facts go to both channels, so they are built once here rather
-    // than written out twice and left to drift apart.
-    const facts = {
-      dueDate: effectiveDate,
-      priority: priority || 'low',
-      description: desc,
-      remarks: remarks || '',
-    };
-    const who = ({ doer, byUser, clientName }) => ({
-      ...facts,
-      doerName: doer.name,
-      assignedByName: byUser ? byUser.name : '',
-      clientName,
-    });
-    notifyTaskCreated({
-      doerId: targetUser, byId: assignedBy, clientId: clientIdInt,
-      build: (ctx) => wa.sendDelegationMessage(ctx.doer.phone, who(ctx)),
-      buildEmail: (ctx) => mail.sendDelegationEmail(ctx.to, who(ctx)),
-    });
-  } else {
-    await db.query(
-      `INSERT INTO checklist_tasks
-         (description,assigned_to,assigned_by,due_date,end_date,frequency,status,priority,remarks,client_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [desc, targetUser, req.session.userId, effectiveDate, endDateVal, frequencyVal,
-       'pending', priority || 'low', remarks || '', clientIdInt]);
-
-    notifyTaskCreated({
-      doerId: targetUser, byId: req.session.userId, clientId: clientIdInt,
-      build: ({ doer, byUser, clientName }) => wa.queueMessage(doer.phone,
-        wa.buildChecklistCreatedMessage({
-          doerName: doer.name,
-          assignedByName: byUser ? byUser.name : '',
-          description: desc,
-          frequency: frequencyVal,
-          startDate: effectiveDate,
-          endDate: endDateVal,
-          totalTasks: 1,
-          clientName,
-          remarks: remarks || '',
-        }), { delayMs: wa.checklistCreatedDelayMs, label: 'checklist-created' }),
-    });
+    results.push({ userId: targetUser, name: doerUser ? doerUser.name : String(targetUser),
+                   created: true, adjusted, effectiveDate, reason });
   }
-  res.json({ success: true, adjusted, effectiveDate, adjustedReason });
+
+  const made = results.filter(r => r.created);
+  res.json({
+    success: true,
+    created: made.length,
+    results,
+    // One-doer callers (CSV import, and anything not yet using the picker) still
+    // read these top-level fields, so they keep their old shape.
+    ...(results.length === 1 ? {
+      adjusted: results[0].adjusted,
+      effectiveDate: results[0].effectiveDate,
+      adjustedReason: results[0].reason || '',
+      ...(results[0].created ? {} : { skipped: true, reason: results[0].reason }),
+    } : {}),
+  });
 }));
 
 // ── POST /api/tasks/bulk-checklist — a whole recurring series ──
+// One series per selected doer. The dates arrive already generated by the
+// browser, but each doer is filtered against their OWN week-off and extra-off
+// days, so two people given the same series can legitimately end up with
+// different numbers of tasks.
 router.post('/tasks/bulk-checklist', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const { desc, assignedTo, priority, remarks, client_id, clientId } = req.body;
-  let { dates } = req.body;
-  if (!desc || !assignedTo || !dates || !dates.length) return res.status(400).json({ error: 'Missing fields' });
+  const { dates } = req.body;
+  const targets = parseAssignees(assignedTo, true, req.session.userId);
+  if (!desc || !targets.length || !dates || !dates.length) return res.status(400).json({ error: 'Missing fields' });
   const cid = (() => {
     const n = parseInt(client_id != null ? client_id : clientId, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
@@ -261,49 +313,68 @@ router.post('/tasks/bulk-checklist', requireAuth, requireAdmin, asyncRoute(async
   const endDateVal = normDate(req.body.endDate != null ? req.body.endDate : req.body.end_date)
     || normDate([...dates].sort().pop());
 
-  // Drop holiday + week-off dates for this user.
-  let skippedCount = 0;
+  let holidaysSet = null, doersById = new Map();
   try {
-    const [holidaysSet, doerUser] = await Promise.all([
+    const [hs, rows] = await Promise.all([
       loadHolidaysSet(),
-      db.one('SELECT week_off, extra_off FROM users WHERE id=? LIMIT 1', [parseInt(assignedTo, 10)]),
+      db.rows(`SELECT id, name, week_off, extra_off FROM users WHERE id IN (${placeholders(targets)})`, targets),
     ]);
-    if (doerUser) {
-      const filtered = dates.filter(d => !isUserOffOn(doerUser, d, holidaysSet));
-      skippedCount = dates.length - filtered.length;
-      if (!filtered.length) {
-        return res.json({ success: true, count: 0, skipped: skippedCount, message: 'All dates were holidays / week-offs — nothing inserted' });
-      }
-      dates = filtered;
-    }
+    holidaysSet = hs;
+    doersById = indexBy(rows, 'id');
   } catch (e) { console.error('bulk-checklist holiday filter err:', e.message); }
 
-  const values = dates.map(date => [desc, parseInt(assignedTo, 10), req.session.userId, date,
-    endDateVal, frequencyVal, 'pending', priority || 'low', remarks || '', cid]);
-  await db.query(
-    `INSERT INTO checklist_tasks
-       (description,assigned_to,assigned_by,due_date,end_date,frequency,status,priority,remarks,client_id)
-     VALUES ?`, [values]);
+  let total = 0, totalSkipped = 0;
+  const perUser = [];
 
-  // ONE summary message for the whole series, not one per row.
-  const sortedDates = [...dates].sort();
-  notifyTaskCreated({
-    doerId: parseInt(assignedTo, 10), byId: req.session.userId, clientId: cid,
-    build: ({ doer, byUser, clientName }) => wa.queueMessage(doer.phone,
-      wa.buildChecklistCreatedMessage({
-        doerName: doer.name,
-        assignedByName: byUser ? byUser.name : '',
-        description: desc,
-        frequency: frequencyVal,
-        startDate: sortedDates[0],
-        endDate: endDateVal,
-        totalTasks: dates.length,
-        clientName,
-        remarks: remarks || '',
-      }), { delayMs: wa.checklistCreatedDelayMs, label: 'checklist-created' }),
-  });
+  for (const targetUser of targets) {
+    const doerUser = doersById.get(targetUser) || null;
+    const mine = (doerUser && holidaysSet)
+      ? dates.filter(d => !isUserOffOn(doerUser, d, holidaysSet))
+      : dates.slice();
+    const skipped = dates.length - mine.length;
+    totalSkipped += skipped;
 
-  res.json({ success: true, count: dates.length, skipped: skippedCount, endDate: endDateVal, frequency: frequencyVal });
+    if (!mine.length) {
+      perUser.push({ userId: targetUser, name: doerUser ? doerUser.name : String(targetUser),
+                     count: 0, skipped, reason: 'All dates were holidays / week-offs' });
+      continue;
+    }
+
+    await db.query(
+      `INSERT INTO checklist_tasks
+         (description,assigned_to,assigned_by,due_date,end_date,frequency,status,priority,remarks,client_id)
+       VALUES ?`,
+      [mine.map(date => [desc, targetUser, req.session.userId, date,
+        endDateVal, frequencyVal, 'pending', priority || 'low', remarks || '', cid])]);
+    total += mine.length;
+
+    // ONE summary message per doer for their whole series, not one per row.
+    const sorted = [...mine].sort();
+    notifyTaskCreated({
+      doerId: targetUser, byId: req.session.userId, clientId: cid,
+      build: ({ doer, byUser, clientName }) => wa.queueMessage(doer.phone,
+        wa.buildChecklistCreatedMessage({
+          doerName: doer.name,
+          assignedByName: byUser ? byUser.name : '',
+          description: desc,
+          frequency: frequencyVal,
+          startDate: sorted[0],
+          endDate: endDateVal,
+          totalTasks: mine.length,
+          clientName,
+          remarks: remarks || '',
+        }), { delayMs: wa.checklistCreatedDelayMs, label: 'checklist-created' }),
+      buildEmail: null,
+    });
+
+    perUser.push({ userId: targetUser, name: doerUser ? doerUser.name : String(targetUser),
+                   count: mine.length, skipped });
+  }
+
+  // count/skipped stay totals across everyone so the existing success message
+  // keeps working unchanged for the single-doer case.
+  res.json({ success: true, count: total, skipped: totalSkipped, doers: perUser.length,
+             perUser, endDate: endDateVal, frequency: frequencyVal });
 }));
 
 // ── PUT /api/tasks/:id/status — done / revised ────────
