@@ -314,7 +314,7 @@
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <div style="position:relative">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint)">🔍</span>
-          <input type="text" id="hrSearch" placeholder="Search name, code, designation, dept, phone…" oninput="hrDebounced()"
+          <input type="text" id="hrSearch" placeholder="Search name, code, designation, dept, phone, email…" oninput="hrDebounced()"
             style="padding:8px 12px 8px 32px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;width:300px"/>
         </div>
         <select id="hrStatusFilter" onchange="loadHr()" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none">
@@ -331,7 +331,7 @@
     <div id="hrTiles" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px"></div>
     <div class="users-grid">
       <table>
-        <thead><tr><th style="width:36px">#</th><th>Name</th><th>Designation</th><th>Department</th><th>Type</th><th>Status</th><th>Phone</th><th>Login</th><th>Action</th></tr></thead>
+        <thead><tr><th style="width:36px">#</th><th>Name</th><th>Designation</th><th>Department</th><th>Type</th><th>Status</th><th>Phone</th><th>Official Email</th><th>Login</th><th>Action</th></tr></thead>
         <tbody id="hrTbody"></tbody>
       </table>
     </div>

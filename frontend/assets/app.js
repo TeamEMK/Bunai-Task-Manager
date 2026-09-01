@@ -2566,7 +2566,7 @@ async function loadHr() {
 function renderHrTable(list) {
   const tbody = document.getElementById('hrTbody');
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--faint)">No employees yet — click “+ Add Employee”.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--faint)">No employees yet — click “+ Add Employee”.</td></tr>`;
     return;
   }
   list.forEach(e => { _hrMap[e.id] = e; });
@@ -2579,6 +2579,7 @@ function renderHrTable(list) {
       <td style="color:var(--muted-foreground)">${dtEscape(e.employment_type || '—')}</td>
       <td>${hrStatusPill(e.employment_status)}</td>
       <td style="color:var(--muted-foreground);white-space:nowrap">${dtEscape(e.personal_phone || '—')}</td>
+      <td style="color:var(--muted-foreground)">${dtEscape(e.official_email || '—')}</td>
       <td style="color:var(--muted-foreground)">${e.login_name ? '🔗 ' + dtEscape(e.login_name) : '—'}</td>
       <td onclick="event.stopPropagation()">
         <button class="action-btn edit" onclick="openEditHr(${e.id})">Edit</button>
