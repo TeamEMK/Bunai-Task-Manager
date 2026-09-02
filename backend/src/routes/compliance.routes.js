@@ -1,16 +1,17 @@
 // ══════════════════════════════════════════════════════
 // EMPLOYEE 360 + daily-report compliance grid.
 // Everything about one employee in one place for an increment review:
-// delegation + checklist stats, the units they handle,
+// delegation + checklist stats, daily-report compliance, the units they handle,
 // a weighted scorecard, and week-by-week committed vs achieved.
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { isYmd, istMondayOf, addDays } = require('../utils/dates');
 const { placeholders, indexBy, N } = require('../utils/collections');
 const { round1, deficitScoreOrNull } = require('../utils/scores');
+const { loadHolidaysSet, isUserOffOn } = require('../services/holidays');
 
 const router = express.Router();
 
@@ -246,6 +247,53 @@ router.get('/compliance/employee/:id/week-tasks', requireAuth, asyncRoute(async 
         ORDER BY ct.due_date, ct.id`, [id, from, to]),
   ]);
   res.json([...delTasks, ...chlTasks].sort((a, b) => (a.due_date < b.due_date ? -1 : 1)));
+}));
+
+// ── Last-7-days daily-report grid (admin) ─────────────
+router.get('/compliance/last7', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const dates = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0]);
+  }
+
+  const [users, filled, holidaysSet] = await Promise.all([
+    db.rows(
+      `SELECT id, name, email, role, department,
+              COALESCE(week_off,'') AS week_off, COALESCE(extra_off,'') AS extra_off
+         FROM users WHERE role IN ('admin','hod','pc','user') ORDER BY name ASC`),
+    db.rows(
+      `SELECT user_id, DATE_FORMAT(entry_date,'%Y-%m-%d') AS d
+         FROM daily_tasks WHERE entry_date BETWEEN ? AND ?
+        GROUP BY user_id, entry_date`, [dates[0], dates[dates.length - 1]]),
+    loadHolidaysSet(),
+  ]);
+
+  // (userId → Set(dates)) so the grid below is a hash lookup, not a scan.
+  const filledMap = new Map();
+  for (const f of filled) {
+    let set = filledMap.get(f.user_id);
+    if (!set) { set = new Set(); filledMap.set(f.user_id, set); }
+    set.add(f.d);
+  }
+
+  // Off-days are marked so the UI does not count them as missed.
+  const grid = users.map(u => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    department: u.department || '—',
+    status: dates.map(d => ({
+      date: d,
+      filled: filledMap.get(u.id)?.has(d) || false,
+      off: isUserOffOn(u, d, holidaysSet),
+      isHoliday: holidaysSet.has(d),
+    })),
+  }));
+
+  res.json({ dates, users: grid, holidays: [...holidaysSet] });
 }));
 
 module.exports = router;

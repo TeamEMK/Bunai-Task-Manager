@@ -70,6 +70,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
       <span class="nav-label-text">Form</span>
     </div>
+    <div class="nav-item" id="nav-daily" onclick="navigate('daily',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+      <span class="nav-label-text">Daily Task</span>
+    </div>
     <div class="nav-item" id="nav-pms" onclick="navigate('pms',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
       <span class="nav-label-text">PMS</span>
@@ -90,7 +94,7 @@
     </div>
     <div class="nav-item" id="nav-compliance" style="display:none" onclick="navigate('compliance',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
-      <span class="nav-label-text">Employee 360</span>
+      <span class="nav-label-text">Compliance Tracker</span>
     </div>
 
     <div class="nav-section">Inventory &amp; Sales</div>
@@ -118,9 +122,13 @@
     </div>
     <div class="nav-item" id="nav-clients" style="display:none" onclick="navigate('clients',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-      <span class="nav-label-text">Unit Master</span>
+      <span class="nav-label-text">Project Master</span>
     </div>
 
+    <div class="nav-item" id="nav-dailyreports" style="display:none" onclick="navigate('dailyreports',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <span class="nav-label-text">Daily Reports</span>
+    </div>
     <div class="nav-divider"></div>
     <div class="nav-item" onclick="navigate('profile',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
@@ -785,13 +793,70 @@
   <!-- ══════════════════════════════════════════════════════
        CLIENT MASTER (admin only)
        ══════════════════════════════════════════════════════ -->
+  <div id="page-daily" class="page">
+    <div class="dt-card">
+      <div class="dt-topbar">
+        <div class="dt-time" id="dtNow">—</div>
+        <div class="dt-welcome">Welcome <b id="dtUserName">—</b></div>
+      </div>
+
+      <div class="dt-meta-row">
+        <div class="dt-meta-field">
+          <label>Entry Date:</label>
+          <select id="dtEntryDate"></select>
+        </div>
+        <div class="dt-meta-field" style="text-align:right">
+          <label>Doer Name:</label>
+          <input type="text" id="dtDoerName" disabled/>
+        </div>
+      </div>
+
+      <!-- Already-submitted notice -->
+      <div id="dtLockedNotice" class="dt-locked" style="display:none">
+        🔒 You have already submitted for this date — entries are now locked.
+      </div>
+
+      <!-- Rows table -->
+      <div class="dt-table-wrap" id="dtTableWrap">
+        <table class="dt-table">
+          <thead>
+            <tr>
+              <th style="width:24%">Project Name</th>
+              <th style="width:22%">Department</th>
+              <th>Task Description</th>
+              <th style="width:90px">Time (min)</th>
+              <th style="width:72px">Dup</th>
+              <th style="width:72px">Del</th>
+            </tr>
+          </thead>
+          <tbody id="dtRowsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="dt-summary">
+        <span>Total Duration (Minutes):</span>
+        <strong id="dtTotalMin">0</strong>
+      </div>
+
+      <div class="dt-actions" id="dtActions">
+        <button class="dt-btn dt-btn-add" onclick="dtAddRow()">+ Add Row</button>
+        <button class="dt-btn dt-btn-submit" onclick="dtSubmit()">Submit All →</button>
+      </div>
+
+      <!-- Past entries -->
+      <div class="dt-history">
+        <div class="dt-history-title">📚 My Past Submissions</div>
+        <div id="dtHistoryWrap" class="dt-history-wrap"><div class="empty">No past submissions yet.</div></div>
+      </div>
+    </div>
+  </div>
   <div id="page-clients" class="page">
     <div class="cm-card">
-      <p class="cm-sub">Add or remove units here. Units can be tagged on delegation tasks and checklists.</p>
+      <p class="cm-sub">Add or remove projects here. Projects can be tagged on delegation tasks and checklists.</p>
 
       <div class="cm-add-row">
-        <input type="text" id="cmNewClient" placeholder="Enter new unit name..." onkeydown="if(event.key==='Enter')cmAdd()"/>
-        <button class="dt-btn dt-btn-add" onclick="cmAdd()">+ Add Unit</button>
+        <input type="text" id="cmNewClient" placeholder="Enter new project name..." onkeydown="if(event.key==='Enter')cmAdd()"/>
+        <button class="dt-btn dt-btn-add" onclick="cmAdd()">+ Add Project</button>
       </div>
 
       <!-- Bulk CSV Upload -->
@@ -799,7 +864,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
           <div>
             <div style="font-size:13px;font-weight:700;color:#92400e">📂 Bulk Upload (CSV)</div>
-            <div style="font-size:11px;color:#78350f;margin-top:2px">Upload multiple units at once. One unit name per line.</div>
+            <div style="font-size:11px;color:#78350f;margin-top:2px">Upload multiple projects at once. One project name per line.</div>
           </div>
           <button class="dt-btn dt-btn-add" onclick="cmDownloadSample()" style="padding:6px 12px;font-size:12px">⬇ Download Sample</button>
         </div>
@@ -809,7 +874,7 @@
         </div>
       </div>
 
-      <div id="cmListWrap" class="cm-list-wrap"><div class="empty">Loading units…</div></div>
+      <div id="cmListWrap" class="cm-list-wrap"><div class="empty">Loading projects…</div></div>
     </div>
   </div>
 
@@ -818,8 +883,32 @@
        ══════════════════════════════════════════════════════ -->
   <div id="page-compliance" class="page">
     <div class="cp-card">
-      <div id="cpE360View">
-        <p class="cp-sub">One employee, everything in one place — delegation, checklist and units. Built for increment-time review.</p>
+      <!-- Two views of the same data: the 7-day fill grid, and one employee in full. -->
+      <div class="tab-group" style="margin-bottom:16px">
+        <div class="tab active" id="cpTabFill" onclick="complianceTab('fill',this)">📅 Daily Fill (7-day)</div>
+        <div class="tab" id="cpTab360" onclick="complianceTab('e360',this)">👤 Employee 360</div>
+      </div>
+      <div id="cpFillView">
+      <div class="cp-header">
+        <button class="dt-btn dt-btn-add" onclick="loadCompliance()">🔄 Refresh</button>
+      </div>
+      <p class="cp-sub">Last 7 days — who filled the Daily Task and when. <span class="cp-dot cp-dot-yes"></span> = filled · <span class="cp-dot cp-dot-no"></span> = missed</p>
+
+      <div class="cp-filter-row">
+        <input type="text" id="cpSearch" placeholder="🔍 Search by name / email / department..." oninput="renderCompliance()"/>
+        <select id="cpRoleFilter" onchange="renderCompliance()">
+          <option value="">All Roles</option>
+          <option value="admin">Admin</option>
+          <option value="hod">HOD</option>
+          <option value="pc">PC</option>
+          <option value="user">User</option>
+        </select>
+      </div>
+
+      <div id="cpGridWrap" class="cp-grid-wrap"><div class="empty">Loading...</div></div>
+      </div><!-- /cpFillView -->
+      <div id="cpE360View" style="display:none">
+        <p class="cp-sub">One employee, everything in one place — delegation, checklist and projects. Built for increment-time review.</p>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <select id="e360User" onchange="loadEmp360()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-sans);font-size:13px;background:var(--card)"></select>
           <input type="date" id="e360From" onchange="loadEmp360()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"/>
@@ -838,6 +927,39 @@
   <!-- ══════════════════════════════════════════════════════
        PMS — production view, read-only over the existing sheets
        ══════════════════════════════════════════════════════ -->
+  <div id="page-dailyreports" class="page">
+    <div class="dr-card">
+      <div class="dr-header">
+        <div class="dr-month-picker">
+          <label>Month:</label>
+          <input type="month" id="drMonth" onchange="loadDailyReports()"/>
+          <button class="dt-btn dt-btn-add" onclick="drExportCSV()">⬇ Export CSV</button>
+        </div>
+      </div>
+
+
+      <!-- Top stats -->
+      <div class="dr-stats" id="drStats"></div>
+
+      <!-- Per-user summary -->
+      <div class="dr-section-title">📊 Per-User Summary</div>
+      <div id="drSummaryWrap" class="dr-table-wrap">
+        <div class="empty">Loading...</div>
+      </div>
+
+      <!-- Detailed entries -->
+      <div class="dr-section-title">📝 All Entries (this month)</div>
+      <div class="dr-filter-row">
+        <input type="text" id="drSearch" placeholder="🔍 Search by name / project / description..." oninput="renderDREntries()"/>
+        <select id="drUserFilter" onchange="renderDREntries()">
+          <option value="">All Users</option>
+        </select>
+      </div>
+      <div id="drEntriesWrap" class="dr-table-wrap">
+        <div class="empty">Loading...</div>
+      </div>
+    </div>
+  </div>
   <div id="page-pms" class="page">
     <div id="pmsBody"><div class="empty">Loading…</div></div>
   </div>
@@ -1140,8 +1262,8 @@
       </div>
     </div>
     <div class="form-group">
-      <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <select id="dClient"><option value="">— No Unit —</option></select>
+      <label>Project <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+      <select id="dClient"><option value="">— No Project —</option></select>
     </div>
     <div class="form-group">
       <label>Description</label>
@@ -1213,8 +1335,8 @@
     </div>
 
     <div class="form-group">
-      <label>Unit <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
-      <select id="cClient"><option value="">— No Unit —</option></select>
+      <label>Project <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+      <select id="cClient"><option value="">— No Project —</option></select>
     </div>
 
     <div class="form-group">

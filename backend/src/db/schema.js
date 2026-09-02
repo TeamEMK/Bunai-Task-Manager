@@ -125,6 +125,17 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  ['daily_tasks', `CREATE TABLE daily_tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    entry_date DATE NOT NULL,
+    client_name VARCHAR(255) NOT NULL,
+    department VARCHAR(255) DEFAULT '',
+    description TEXT NOT NULL,
+    duration_min INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['task_approvals', `CREATE TABLE task_approvals (
     id INT AUTO_INCREMENT PRIMARY KEY,
     task_id INT NOT NULL,
@@ -441,6 +452,13 @@ const INDEXES = [
   ['leave_requests', 'idx_user_status', 'user_id, status'],
   // Every listing ends with ORDER BY created_at DESC LIMIT 500.
   ['leave_requests', 'idx_created', 'created_at'],
+
+  // ── daily_tasks ──
+  ['daily_tasks', 'idx_user_date', 'user_id, entry_date'],
+  ['daily_tasks', 'idx_entry_date', 'entry_date'],
+  // Client stats page aggregates by client_name (a string, not an FK).
+  ['daily_tasks', 'idx_client_name', 'client_name(191)'],
+  ['daily_tasks', 'idx_client_user', 'client_name(191), user_id'],
 
   // ── clients ──
   ['clients', 'idx_handler', 'handler_id'],

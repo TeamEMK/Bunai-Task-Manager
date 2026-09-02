@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════
-// CLIENTS ("units") — admin manages, everyone reads.
+// CLIENTS ("projects") — admin manages, everyone reads.
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
@@ -63,4 +63,26 @@ router.post('/clients/bulk', requireAuth, requireAdmin, asyncRoute(async (req, r
   res.json({ success: true, added, skipped: skippedNames.length + (fresh.length - added), skippedNames });
 }));
 
+
+// Client stats — total hours + top 3 workers (all-time)
+router.get('/clients/:id/stats', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const client = await db.one('SELECT name FROM clients WHERE id=?', [req.params.id]);
+  if (!client) throw httpError(404, 'Client not found');
+
+  const [totals, topWorkers] = await Promise.all([
+    db.one('SELECT COALESCE(SUM(duration_min),0) AS total_minutes FROM daily_tasks WHERE client_name=?',
+      [client.name]),
+    db.rows(
+      `SELECT u.name, COALESCE(u.department,'') AS department,
+              SUM(dt.duration_min) AS total_minutes, COUNT(*) AS task_count
+         FROM daily_tasks dt
+         JOIN users u ON dt.user_id = u.id
+        WHERE dt.client_name = ?
+        GROUP BY dt.user_id, u.name, u.department
+        ORDER BY total_minutes DESC
+        LIMIT 3`, [client.name]),
+  ]);
+
+  res.json({ client_name: client.name, total_minutes: totals.total_minutes, top_workers: topWorkers });
+}));
 module.exports = router;

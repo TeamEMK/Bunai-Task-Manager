@@ -154,6 +154,7 @@ async function init() {
 
     if (ME.role === 'admin') {
       document.getElementById('nav-users').style.display = 'flex';
+      document.getElementById('nav-dailyreports').style.display = 'flex';
       document.getElementById('nav-hr').style.display = 'flex';
       document.getElementById('nav-mis').style.display = 'flex';
       document.getElementById('nav-fms').style.display = 'flex';
@@ -273,7 +274,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',profile:'Profile',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Unit Master',compliance:'Employee 360',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -366,7 +367,9 @@ function navigate(page, el, fromHash) {
   if (page==='fms-tasks') loadFMSTasks();
   if (page==='merchfms') loadMerchFMS();
   if (page==='clients') loadClients();
-  if (page==='compliance') loadEmp360();
+  if (page==='daily') loadDailyForm();
+  if (page==='compliance') loadCompliance();
+  if (page==='dailyreports') loadDailyReports();
   if (page==='leaves') loadLeaves();
   if (page==='pms') loadPMS();
   if (page==='ims') loadIMS();
@@ -1221,7 +1224,7 @@ function renderTasksTable() {
       <th>Doer</th>
       <th>Assignee</th>
       <th>Date</th>
-      ${showClientCol ? '<th>Unit</th>' : ''}
+      ${showClientCol ? '<th>Project</th>' : ''}
       <th>Remarks</th>
       <th>Status</th>
     </tr></thead>`;
@@ -1342,7 +1345,7 @@ function openTaskDetail(t) {
     row('Doer', dtEscape(t.assignedToName||'')),
     row('Assigned By', dtEscape(t.assignedByName||'')),
     row('Due Date', fmtDate(t.due_date||'')),
-    row('Unit', t.client_name ? `<span style="background:#fff7ed;color:#A63F43;padding:2px 8px;border-radius:6px;font-weight:600">🏢 ${dtEscape(t.client_name)}</span>` : null),
+    row('Project', t.client_name ? `<span style="background:#fff7ed;color:#A63F43;padding:2px 8px;border-radius:6px;font-weight:600">🏢 ${dtEscape(t.client_name)}</span>` : null),
     row('Priority', priorityBadge),
     row('Status', statusBadge),
     row('Approval', t.approval === 'yes' ? '<span style="color:#16a34a;font-weight:600">Required</span>' : '<span style="color:var(--muted-foreground)">Not required</span>'),
@@ -1572,7 +1575,7 @@ async function openDelegate() {
   document.getElementById('dApprover').innerHTML='<option value="">Select Approver</option>'+opts;
   // Client dropdown — pulls from Client Master
   const clientOpts = (clients || []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
-  document.getElementById('dClient').innerHTML = '<option value="">— No Unit —</option>' + clientOpts;
+  document.getElementById('dClient').innerHTML = '<option value="">— No Project —</option>' + clientOpts;
   // Hidden by default — only shown when Approval Required = Yes
   document.getElementById('dApproverGroup').style.display = 'none';
   document.getElementById('dApproverEmail').style.display = 'none';
@@ -1654,7 +1657,7 @@ async function openChecklist() {
   _cDoerPick = _cDoerPick || createUserPicker('cDoer', { placeholder: 'Select employee(s)' });
   _cDoerPick.setUsers(users || []);
   _cDoerPick.clear();
-  document.getElementById('cClient').innerHTML='<option value="">— No Unit —</option>'+
+  document.getElementById('cClient').innerHTML='<option value="">— No Project —</option>'+
     (clients || []).map(c=>`<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
 
   populateFrequencyOptions();
@@ -6108,12 +6111,12 @@ async function handleTransfer(id, action) {
 
 async function loadClients(){
   const wrap = document.getElementById('cmListWrap');
-  wrap.innerHTML = '<div class="empty">Loading units…</div>';
+  wrap.innerHTML = '<div class="empty">Loading projects…</div>';
   CM_OPEN_ID = null;
   try {
     const clients = await api('/api/clients');
     if (!clients || !clients.length) {
-      wrap.innerHTML = '<div class="empty">No units yet — add one above.</div>';
+      wrap.innerHTML = '<div class="empty">No projects yet — add one above.</div>';
       return;
     }
     let html = '';
@@ -6128,18 +6131,18 @@ async function loadClients(){
     }
     wrap.innerHTML = html;
   } catch(e) {
-    wrap.innerHTML = '<div class="empty">Failed to load units</div>';
+    wrap.innerHTML = '<div class="empty">Failed to load projects</div>';
   }
 }
 
 async function cmAdd(){
   const inp = document.getElementById('cmNewClient');
   const name = inp.value.trim();
-  if (!name) { showToast('Enter unit name', 'error'); return; }
+  if (!name) { showToast('Enter project name', 'error'); return; }
   try {
     const r = await api('/api/clients', 'POST', { name });
     if (r.error) showToast(r.error, 'error');
-    else { showToast('✅ Unit added'); inp.value = ''; loadClients(); }
+    else { showToast('✅ Project added'); inp.value = ''; loadClients(); }
   } catch(e) { showToast('Failed to add', 'error'); }
 }
 
@@ -6147,7 +6150,7 @@ async function cmDelete(id, name){
   if (!confirm(`Remove client "${name}"?`)) return;
   try {
     await api('/api/clients/' + id, 'DELETE');
-    showToast('🗑 Unit removed');
+    showToast('🗑 Project removed');
     loadClients();
   } catch(e) { showToast('Failed to delete', 'error'); }
 }
@@ -6157,7 +6160,7 @@ function cmDownloadSample() {
   const csv = `client_name\nVibes\nCCIS\nParty Walls\nA1 India\nKala Textiles`;
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'units_sample.csv';
+  a.download = 'projects_sample.csv';
   a.click();
   showToast('✅ Sample downloaded');
 }
@@ -6177,11 +6180,11 @@ async function cmBulkUpload() {
     // Skip first row if it looks like a header. Old client_* spellings stay accepted so CSVs made before the rename still import.
     let names = lines.map(line => line.split(',')[0].trim().replace(/^["']|["']$/g, ''));
     const firstLower = (names[0] || '').toLowerCase();
-    if (['client_name', 'name', 'client name', 'clients', 'unit_name', 'unit name', 'units'].includes(firstLower)) {
+    if (['client_name', 'name', 'client name', 'clients', 'unit_name', 'unit name', 'units', 'project_name', 'project name', 'projects'].includes(firstLower)) {
       names = names.slice(1);
     }
     names = names.filter(n => n);
-    if (!names.length) { showToast('No valid unit names found in CSV', 'error'); return; }
+    if (!names.length) { showToast('No valid project names found in CSV', 'error'); return; }
 
     if (!confirm(`Upload ${names.length} client${names.length===1?'':'s'} from CSV?`)) return;
 
@@ -6711,7 +6714,7 @@ function renderEmp360(d) {
   const gc = gradeColor(sc.grade);
 
   const catRows = Object.entries(sc.categories).map(([k, v]) => {
-    const nice = { delegation: 'Delegation', checklist: 'Checklist', clients: 'Units' }[k] || k;
+    const nice = { delegation: 'Delegation', checklist: 'Checklist', clients: 'Projects' }[k] || k;
     if (v === null) {
       // Nothing to measure — say so rather than showing a misleading zero.
       return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
@@ -6730,7 +6733,7 @@ function renderEmp360(d) {
     `<tr><td>${dtEscape(c.name)}</td>
      <td><span class="status-badge ${c.is_active ? 'completed' : 'pending'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
      <td>${c.tasks}</td><td>${c.pending}</td></tr>`).join('')
-    : `<tr><td colspan="4" class="empty">No units handled</td></tr>`;
+    : `<tr><td colspan="4" class="empty">No projects handled</td></tr>`;
 
   const weekly = d.weekly.length ? d.weekly.map(w =>
     `<tr onclick="openWeekTasks('${w.weekStart}','${w.weekEnd}')" style="cursor:pointer" title="Click to see this week's tasks">
@@ -6768,9 +6771,9 @@ function renderEmp360(d) {
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
-      ${card(label(`Units handled — ${d.clients.active} active / ${d.clients.total}`) +
+      ${card(label(`Projects handled — ${d.clients.active} active / ${d.clients.total}`) +
         `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
-          <th>Unit</th><th>Status</th><th>Tasks</th><th>Pending</th>
+          <th>Project</th><th>Status</th><th>Tasks</th><th>Pending</th>
         </tr></thead><tbody>${units}</tbody></table></div>`)}
     </div>
 
@@ -6794,7 +6797,7 @@ async function openWeekTasks(from, to) {
   if (rows.error) { box.innerHTML = `<div class="empty" style="color:#dc2626">${dtEscape(rows.error)}</div>`; return; }
   if (!rows.length) { box.innerHTML = '<div class="empty">No tasks that week</div>'; return; }
   box.innerHTML = `<div class="flat-tasks-scroll"><table style="width:100%"><thead><tr>
-      <th>Date</th><th>Task</th><th>Type</th><th>Unit</th><th>Status</th>
+      <th>Date</th><th>Task</th><th>Type</th><th>Project</th><th>Status</th>
     </tr></thead><tbody>${rows.map(t => `<tr>
       <td style="white-space:nowrap">${fmtDate(t.due_date)}</td>
       <td>${dtEscape(t.title || '')}</td>
@@ -6930,6 +6933,530 @@ function pmsToggle(so) {
   _pmsOpen = _pmsOpen === so ? null : so;
   renderPMS();
 }
+
+
+
+// ══════════════════════════════════════════════════════
+// DAILY TASK · COMPLIANCE TRACKER · DAILY REPORTS
+// Restored from before the removal commit. The Scheduler that was taken out
+// alongside them stays out, so nothing here touches meetings.
+// ══════════════════════════════════════════════════════
+let DT_CLIENTS = [];
+let DT_DEPARTMENTS = [];
+let DT_LOCKED = false;
+let CM_OPEN_ID = null;
+let CP_DATA = null;
+let DR_DATA = null;
+
+function dtPad(n){ return n<10 ? '0'+n : n; }
+
+function dtFormatDate(d){ return `${d.getFullYear()}-${dtPad(d.getMonth()+1)}-${dtPad(d.getDate())}`; }
+
+function dtFormatDDMMYYYY(d){ return `${dtPad(d.getDate())}/${dtPad(d.getMonth()+1)}/${d.getFullYear()}`; }
+
+function dtTickClock(){
+  const now = new Date();
+  const t = `${dtFormatDDMMYYYY(now)} ${dtPad(now.getHours())}:${dtPad(now.getMinutes())}:${dtPad(now.getSeconds())}`;
+  const el = document.getElementById('dtNow');
+  if (el) el.textContent = t;
+}
+
+async function loadDailyForm(){
+  dtTickClock();
+  document.getElementById('dtUserName').textContent = ME.name;
+  document.getElementById('dtDoerName').value = ME.name;
+
+  // Date dropdown — today + yesterday only
+  const sel = document.getElementById('dtEntryDate');
+  sel.innerHTML = '';
+  const today = new Date();
+  for (let i = 0; i < 2; i++){
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const v = dtFormatDate(d);
+    const label = i === 0 ? `Today (${dtFormatDDMMYYYY(d)})` : `Yesterday (${dtFormatDDMMYYYY(d)})`;
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = label;
+    sel.appendChild(opt);
+  }
+  sel.onchange = dtCheckLockAndRender;
+
+  // Load clients + departments
+  try {
+    const [clients, departments] = await Promise.all([
+      api('/api/clients'),
+      api('/api/departments')
+    ]);
+    DT_CLIENTS = Array.isArray(clients) ? clients : [];
+    DT_DEPARTMENTS = Array.isArray(departments) ? departments : [];
+  } catch(e) {
+    DT_CLIENTS = []; DT_DEPARTMENTS = [];
+  }
+
+  await dtCheckLockAndRender();
+  await dtLoadHistory();
+}
+
+async function dtCheckLockAndRender(){
+  const date = document.getElementById('dtEntryDate').value;
+  try {
+    const r = await api('/api/daily-tasks/status?date=' + date);
+    DT_LOCKED = !!r.submitted;
+  } catch(e) { DT_LOCKED = false; }
+
+  const lockNotice = document.getElementById('dtLockedNotice');
+  const tableWrap = document.getElementById('dtTableWrap');
+  const actions = document.getElementById('dtActions');
+
+  if (DT_LOCKED) {
+    lockNotice.style.display = 'block';
+    tableWrap.style.display = 'none';
+    actions.style.display = 'none';
+  } else {
+    lockNotice.style.display = 'none';
+    tableWrap.style.display = 'block';
+    actions.style.display = 'flex';
+    // Reset rows to a single empty row
+    document.getElementById('dtRowsBody').innerHTML = '';
+    dtAddRow();
+  }
+  dtRecalcTotal();
+}
+
+function dtClientOptions(selected){
+  let html = '<option value="">--select--</option>';
+  for (const c of DT_CLIENTS) {
+    const sel = (selected === c.name) ? 'selected' : '';
+    html += `<option value="${dtEscape(c.name)}" ${sel}>${dtEscape(c.name)}</option>`;
+  }
+  return html;
+}
+
+function dtDeptOptions(selected){
+  let html = '<option value="">--select--</option>';
+  for (const d of DT_DEPARTMENTS) {
+    const sel = (selected === d) ? 'selected' : '';
+    html += `<option value="${dtEscape(d)}" ${sel}>${dtEscape(d)}</option>`;
+  }
+  return html;
+}
+
+function dtAddRow(prefill){
+  const tbody = document.getElementById('dtRowsBody');
+  const tr = document.createElement('tr');
+  tr.className = 'dt-row';
+  tr.innerHTML = `
+    <td><select class="dt-client">${dtClientOptions(prefill?.client)}</select></td>
+    <td><select class="dt-dept">${dtDeptOptions(prefill?.dept)}</select></td>
+    <td><textarea class="dt-desc" placeholder="What did you do?">${dtEscape(prefill?.desc||'')}</textarea></td>
+    <td><input type="number" min="1" class="dt-time" value="${prefill?.time||''}" placeholder="0" oninput="dtRecalcTotal()"/></td>
+    <td><button class="dt-row-btn dt-btn-dup" onclick="dtDupRow(this)">Dup</button></td>
+    <td><button class="dt-row-btn dt-btn-del" onclick="dtDelRow(this)">Del</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function dtDupRow(btn){
+  const tr = btn.closest('tr');
+  const prefill = {
+    client: tr.querySelector('.dt-client').value,
+    dept: tr.querySelector('.dt-dept').value,
+    desc: tr.querySelector('.dt-desc').value,
+    time: tr.querySelector('.dt-time').value,
+  };
+  dtAddRow(prefill);
+  dtRecalcTotal();
+}
+
+function dtDelRow(btn){
+  const tbody = document.getElementById('dtRowsBody');
+  if (tbody.children.length <= 1) {
+    showToast('At least 1 row required','error');
+    return;
+  }
+  btn.closest('tr').remove();
+  dtRecalcTotal();
+}
+
+function dtRecalcTotal(){
+  let total = 0;
+  document.querySelectorAll('.dt-time').forEach(inp => {
+    const v = parseInt(inp.value) || 0;
+    if (v > 0) total += v;
+  });
+  const el = document.getElementById('dtTotalMin');
+  if (el) el.textContent = total;
+}
+
+async function dtSubmit(){
+  if (DT_LOCKED) { showToast('Already submitted for this date','error'); return; }
+  const date = document.getElementById('dtEntryDate').value;
+  const rows = [];
+  for (const tr of document.querySelectorAll('#dtRowsBody tr')) {
+    const client = tr.querySelector('.dt-client').value.trim();
+    const dept = tr.querySelector('.dt-dept').value.trim();
+    const desc = tr.querySelector('.dt-desc').value.trim();
+    const time = parseInt(tr.querySelector('.dt-time').value) || 0;
+    if (!client || !desc || time <= 0) {
+      showToast('Each row needs Unit, Description and Time (>0)','error');
+      return;
+    }
+    rows.push({ client_name: client, department: dept, description: desc, duration_min: time });
+  }
+  if (!rows.length) { showToast('Add at least 1 row','error'); return; }
+
+  const btn = document.querySelector('.dt-btn-submit');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+  try {
+    const r = await api('/api/daily-tasks', 'POST', { entry_date: date, rows });
+    if (r.error) { showToast(r.error, 'error'); }
+    else {
+      showToast(`✅ ${r.count} entries submitted!`);
+      DT_LOCKED = true;
+      await dtCheckLockAndRender();
+      await dtLoadHistory();
+    }
+  } catch(e) {
+    showToast('Submit failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit All →';
+  }
+}
+
+async function dtLoadHistory(){
+  const wrap = document.getElementById('dtHistoryWrap');
+  try {
+    const rows = await api('/api/daily-tasks/mine');
+    if (!rows || !rows.length) {
+      wrap.innerHTML = '<div class="empty">No past submissions yet.</div>';
+      return;
+    }
+    // Group by date
+    const byDate = {};
+    for (const r of rows) {
+      if (!byDate[r.entry_date]) byDate[r.entry_date] = [];
+      byDate[r.entry_date].push(r);
+    }
+    let html = '';
+    for (const date of Object.keys(byDate)) {
+      const items = byDate[date];
+      const total = items.reduce((a,b) => a + (b.duration_min||0), 0);
+      html += `<div class="dt-history-day">
+        <div class="dt-history-date">📅 ${date}  ·  ${items.length} task${items.length>1?'s':''}  ·  ${total} min total</div>`;
+      for (const it of items) {
+        html += `<div class="dt-history-row">
+          <span class="pill">${dtEscape(it.client_name)}</span>
+          ${it.department ? `<span class="pill" style="background:#dbeafe;color:#1e40af">${dtEscape(it.department)}</span>` : ''}
+          <span style="flex:1">${dtEscape(it.description)}</span>
+          <span style="color:#A63F43;font-weight:600">${it.duration_min} min</span>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    wrap.innerHTML = html;
+  } catch(e) {
+    wrap.innerHTML = '<div class="empty">Failed to load history</div>';
+  }
+}
+
+async function cmToggleDetail(id) {
+  const detail = document.getElementById('cm-detail-' + id);
+  const row = document.querySelector(`[data-cm-id="${id}"]`);
+
+  if (CM_OPEN_ID === id) {
+    detail.style.display = 'none';
+    row.classList.remove('cm-active');
+    CM_OPEN_ID = null;
+    return;
+  }
+
+  // Close any open panel
+  if (CM_OPEN_ID) {
+    const prev = document.getElementById('cm-detail-' + CM_OPEN_ID);
+    const prevRow = document.querySelector(`[data-cm-id="${CM_OPEN_ID}"]`);
+    if (prev) prev.style.display = 'none';
+    if (prevRow) prevRow.classList.remove('cm-active');
+  }
+
+  detail.style.display = 'block';
+  row.classList.add('cm-active');
+  CM_OPEN_ID = id;
+
+  if (detail.dataset.loaded) return;
+  detail.innerHTML = '<div style="padding:14px;text-align:center;color:var(--faint);font-size:13px">Loading stats…</div>';
+
+  try {
+    const stats = await api('/api/clients/' + id + '/stats');
+    detail.dataset.loaded = '1';
+    const totalHrs = (stats.total_minutes / 60).toFixed(1);
+    const medals = ['🥇','🥈','🥉'];
+    let workersHtml = '';
+    if (!stats.top_workers || !stats.top_workers.length) {
+      workersHtml = '<div style="color:var(--faint);font-size:13px;padding:6px 0">No work recorded yet</div>';
+    } else {
+      for (let i = 0; i < stats.top_workers.length; i++) {
+        const w = stats.top_workers[i];
+        const hrs = (w.total_minutes / 60).toFixed(1);
+        workersHtml += `<div class="cm-worker-row">
+          <span class="cm-worker-rank">${medals[i]}</span>
+          <span class="cm-worker-name">${dtEscape(w.name)}</span>
+          ${w.department ? `<span class="cm-worker-dept">${dtEscape(w.department)}</span>` : ''}
+          <span class="cm-worker-hrs">${hrs} hrs</span>
+        </div>`;
+      }
+    }
+    detail.innerHTML = `<div class="cm-detail-inner">
+      <div class="cm-detail-total">
+        <span class="cm-detail-label">Total Hours</span>
+        <span class="cm-detail-val">${totalHrs}</span>
+        <span style="font-size:11px;color:#92400e;font-weight:600">hrs</span>
+      </div>
+      <div class="cm-detail-workers">
+        <div class="cm-detail-workers-title">Top 3 Contributors</div>
+        ${workersHtml}
+      </div>
+    </div>`;
+  } catch(e) {
+    detail.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">Failed to load stats</div>';
+  }
+}
+
+async function loadCompliance(){
+  const wrap = document.getElementById('cpGridWrap');
+  wrap.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    CP_DATA = await api('/api/compliance/last7');
+    renderCompliance();
+  } catch(e) {
+    wrap.innerHTML = '<div class="empty">Failed to load compliance data</div>';
+  }
+}
+
+function renderCompliance(){
+  if (!CP_DATA) return;
+  const wrap = document.getElementById('cpGridWrap');
+  const search = (document.getElementById('cpSearch')?.value || '').toLowerCase();
+  const roleF = document.getElementById('cpRoleFilter')?.value || '';
+
+  const dates = CP_DATA.dates;
+  let users = CP_DATA.users;
+
+  if (search) {
+    users = users.filter(u =>
+      u.name.toLowerCase().includes(search) ||
+      u.email.toLowerCase().includes(search) ||
+      (u.department||'').toLowerCase().includes(search)
+    );
+  }
+  if (roleF) users = users.filter(u => u.role === roleF);
+
+  if (!users.length) { wrap.innerHTML = '<div class="empty">No users match filters</div>'; return; }
+
+  let html = `<table class="cp-grid"><thead><tr>
+    <th style="text-align:left">Name</th>
+    <th style="text-align:left">Role</th>
+    <th style="text-align:left">Department</th>`;
+  for (const d of dates) {
+    const dt = new Date(d);
+    const dayLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
+    html += `<th>${dayLabel}<br><span style="font-weight:400;font-size:10px;opacity:.85">${d.slice(5)}</span></th>`;
+  }
+  html += `<th>Score</th></tr></thead><tbody>`;
+
+  for (const u of users) {
+    // Working days = days that aren't user's off/holiday
+    const workingDays = u.status.filter(s => !s.off).length;
+    const filledCnt = u.status.filter(s => s.filled).length;
+    const denom = workingDays || 1;
+    const pct = Math.round((filledCnt/denom)*100);
+    const pillClass = pct >= 80 ? 'cp-summary-good' : pct >= 50 ? 'cp-summary-meh' : 'cp-summary-bad';
+
+    html += `<tr>
+      <td>${dtEscape(u.name)}</td>
+      <td>${u.role}</td>
+      <td>${dtEscape(u.department)}</td>`;
+    for (const s of u.status) {
+      let cell;
+      if (s.off) {
+        cell = s.isHoliday
+          ? '<span class="cp-cell-holiday" title="Holiday">🎉 Off</span>'
+          : '<span class="cp-cell-off" title="Week off">Off</span>';
+      } else if (s.filled) {
+        cell = '<span class="cp-cell-yes">✓</span>';
+      } else {
+        cell = '<span class="cp-cell-no">✗</span>';
+      }
+      html += `<td>${cell}</td>`;
+    }
+    html += `<td><span class="cp-summary-pill ${pillClass}">${filledCnt}/${workingDays} (${pct}%)</span></td></tr>`;
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+// Compliance page has two views; Employee 360 loads lazily on first open.
+function complianceTab(which, el) {
+  document.querySelectorAll('#page-compliance .tab-group .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const fill = which === 'fill';
+  document.getElementById('cpFillView').style.display = fill ? 'block' : 'none';
+  document.getElementById('cpE360View').style.display = fill ? 'none' : 'block';
+  if (!fill) loadEmp360();
+}
+
+async function loadDailyReports(){
+  const monthInput = document.getElementById('drMonth');
+  if (!monthInput.value) {
+    const now = new Date();
+    monthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  document.getElementById('drStats').innerHTML = '<div class="empty">Loading...</div>';
+  document.getElementById('drSummaryWrap').innerHTML = '<div class="empty">Loading...</div>';
+  document.getElementById('drEntriesWrap').innerHTML = '<div class="empty">Loading...</div>';
+
+  try {
+    DR_DATA = await api('/api/daily-tasks/report?month=' + monthInput.value);
+    if (DR_DATA.error) throw new Error(DR_DATA.error);
+    renderDRStats();
+    renderDRSummary();
+    renderDREntriesUserDropdown();
+    renderDREntries();
+  } catch(e) {
+    document.getElementById('drStats').innerHTML = `<div class="empty">Failed: ${e.message}</div>`;
+    document.getElementById('drSummaryWrap').innerHTML = '';
+    document.getElementById('drEntriesWrap').innerHTML = '';
+  }
+}
+
+function renderDRStats(){
+  const d = DR_DATA;
+  const totalHours = (d.total_minutes / 60).toFixed(1);
+  const monthLabel = new Date(d.month + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  document.getElementById('drStats').innerHTML = `
+    <div class="dr-stat">
+      <div class="dr-stat-label">Month</div>
+      <div class="dr-stat-value" style="font-size:20px">${monthLabel}</div>
+    </div>
+    <div class="dr-stat">
+      <div class="dr-stat-label">Total Entries</div>
+      <div class="dr-stat-value">${d.total_entries}</div>
+      <div class="dr-stat-sub">across ${d.summary.length} user${d.summary.length===1?'':'s'}</div>
+    </div>
+    <div class="dr-stat">
+      <div class="dr-stat-label">Total Time</div>
+      <div class="dr-stat-value">${d.total_minutes}<span style="font-size:14px"> min</span></div>
+      <div class="dr-stat-sub">≈ ${totalHours} hours</div>
+    </div>
+    <div class="dr-stat">
+      <div class="dr-stat-label">Active Users</div>
+      <div class="dr-stat-value">${d.summary.length}</div>
+      <div class="dr-stat-sub">submitted at least once</div>
+    </div>
+  `;
+}
+
+function renderDRSummary(){
+  const wrap = document.getElementById('drSummaryWrap');
+  if (!DR_DATA.summary.length) {
+    wrap.innerHTML = '<div class="empty">No submissions in this month yet.</div>';
+    return;
+  }
+  let html = `<table class="dr-table"><thead><tr>
+    <th>User</th><th>Department</th><th>Days Filled</th>
+    <th>Total Tasks</th><th>Total Minutes</th><th>Hours</th><th>Avg/Day</th>
+  </tr></thead><tbody>`;
+  for (const u of DR_DATA.summary) {
+    const hours = (u.total_minutes / 60).toFixed(1);
+    const avg = u.days_filled > 0 ? Math.round(u.total_minutes / u.days_filled) : 0;
+    html += `<tr>
+      <td><b>${dtEscape(u.name)}</b><br><span style="color:var(--muted-foreground);font-size:11px">${dtEscape(u.email)}</span></td>
+      <td>${dtEscape(u.department || '—')}</td>
+      <td>${u.days_filled} day${u.days_filled===1?'':'s'}</td>
+      <td>${u.total_tasks}</td>
+      <td><span class="pill-min">${u.total_minutes} min</span></td>
+      <td>${hours} hr</td>
+      <td>${avg} min/day</td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+function renderDREntriesUserDropdown(){
+  const sel = document.getElementById('drUserFilter');
+  const cur = sel.value;
+  let html = '<option value="">All Users</option>';
+  for (const u of DR_DATA.summary) {
+    const selected = cur == u.user_id ? 'selected' : '';
+    html += `<option value="${u.user_id}" ${selected}>${dtEscape(u.name)}</option>`;
+  }
+  sel.innerHTML = html;
+}
+
+function renderDREntries(){
+  if (!DR_DATA) return;
+  const wrap = document.getElementById('drEntriesWrap');
+  const search = (document.getElementById('drSearch')?.value || '').toLowerCase();
+  const userId = document.getElementById('drUserFilter')?.value || '';
+
+  let entries = DR_DATA.entries;
+  if (userId) entries = entries.filter(e => String(e.user_id) === String(userId));
+  if (search) {
+    entries = entries.filter(e =>
+      e.doer_name.toLowerCase().includes(search) ||
+      e.client_name.toLowerCase().includes(search) ||
+      (e.description||'').toLowerCase().includes(search) ||
+      (e.department||'').toLowerCase().includes(search)
+    );
+  }
+
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="empty">No entries match the filters.</div>';
+    return;
+  }
+
+  let html = `<table class="dr-table"><thead><tr>
+    <th>Date</th><th>User</th><th>Project</th><th>Department</th>
+    <th>Description</th><th>Time</th>
+  </tr></thead><tbody>`;
+  for (const e of entries) {
+    html += `<tr>
+      <td><b>${e.entry_date}</b></td>
+      <td>${dtEscape(e.doer_name)}</td>
+      <td><span class="pill-tag">${dtEscape(e.client_name)}</span></td>
+      <td>${e.department ? `<span class="pill-dept">${dtEscape(e.department)}</span>` : '—'}</td>
+      <td>${dtEscape(e.description)}</td>
+      <td><span class="pill-min">${e.duration_min} min</span></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+function drExportCSV(){
+  if (!DR_DATA || !DR_DATA.entries.length) {
+    showToast('No data to export', 'error'); return;
+  }
+  const rows = [['Date', 'User', 'Email', 'Unit', 'Department', 'Description', 'Minutes']];
+  for (const e of DR_DATA.entries) {
+    rows.push([
+      e.entry_date,
+      (e.doer_name||'').replace(/,/g,';'),
+      e.doer_email,
+      (e.client_name||'').replace(/,/g,';'),
+      (e.department||'').replace(/,/g,';'),
+      (e.description||'').replace(/,/g,';').replace(/\n/g,' '),
+      e.duration_min
+    ]);
+  }
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = `daily_tasks_${DR_DATA.month}.csv`;
+  a.click();
+  showToast('✅ CSV downloaded');
+}
+
+setInterval(dtTickClock, 1000);
 
 init();
 setDefaultMISDates();

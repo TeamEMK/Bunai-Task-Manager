@@ -21,6 +21,7 @@ api.use(require('./users.routes'));
 api.use(require('./hr.routes'));
 api.use(require('./comments.routes'));
 api.use(require('./compliance.routes'));
+api.use(require('./dailyTasks.routes'));
 api.use(require('./clients.routes'));
 api.use(require('./leaves.routes'));
 api.use(require('./holidays.routes'));
