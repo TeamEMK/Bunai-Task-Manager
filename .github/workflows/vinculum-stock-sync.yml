@@ -16,7 +16,7 @@
 #
 # Run it by hand any time from the Actions tab → this workflow → "Run workflow".
 # ─────────────────────────────────────────────────────────────────────────
-name: Vinculum sync (stock + orders)
+name: Vinculum sync (stock + orders + returns)
 
 on:
   schedule:
@@ -52,6 +52,21 @@ jobs:
       - name: Sync recent orders from Vin eRetail
         if: ${{ always() }}
         run: node backend/orders-sync.js sync 10
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
+          VIN_ORDER_API_KEY: ${{ secrets.VIN_ORDER_API_KEY }}
+          VIN_ORDER_API_OWNER: ${{ secrets.VIN_ORDER_API_OWNER }}
+
+      # Refresh the last 10 days of Return / RTO orders. Same APIUSER key and the
+      # same 7-day window cap as orders; read-only.
+      - name: Sync recent returns from Vin eRetail
+        if: ${{ always() }}
+        run: node backend/returns-sync.js sync 10
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_PORT: ${{ secrets.DB_PORT }}

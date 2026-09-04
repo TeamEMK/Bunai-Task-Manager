@@ -838,6 +838,8 @@ tbody tr:last-child td{border-bottom:none;}
 /* Clickable daily-revenue chart bars — brighten + lift on hover. */
 .sales-bar > div{transition:background .12s,filter .12s;}
 .sales-bar:hover > div{background:#4f46e5 !important;filter:brightness(1.08);}
+.returns-bar > div{transition:background .12s,filter .12s;}
+.returns-bar:hover > div{background:#be123c !important;filter:brightness(1.08);}
 
 /* HR form section headings + read-only detail rows. */
 .hr-sec{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin:18px 0 8px;padding-bottom:5px;border-bottom:1.5px solid var(--border);}

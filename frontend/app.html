@@ -110,6 +110,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
       <span class="nav-label-text">Sales</span>
     </div>
+    <div class="nav-item" id="nav-returns" style="display:none" onclick="navigate('returns',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
+      <span class="nav-label-text">Returns</span>
+    </div>
 
     <div class="nav-section" id="navsec-admin">Admin &amp; Reports</div>
     <div class="nav-item" id="nav-mis" style="display:none" onclick="navigate('mis',this)">
@@ -441,6 +445,49 @@
       </table>
     </div>
     <div id="salesOrdersPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
+  </div>
+
+  <!-- ── RETURNS (Return / RTO analytics from Vin eRetail) ── -->
+  <div id="page-returns" class="page">
+    <div class="cp-filter-row" style="margin-bottom:14px;align-items:center;flex-wrap:wrap;gap:8px">
+      <select id="returnsRange" onchange="returnsPreset(this.value)" style="min-width:132px">
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="45" selected>Last 45 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="all">All time</option>
+        <option value="custom">Custom range</option>
+      </select>
+      <input type="date" id="returnsFrom" onchange="returnsCustom()" style="max-width:158px"/>
+      <span style="color:var(--faint)">→</span>
+      <input type="date" id="returnsTo" onchange="returnsCustom()" style="max-width:158px"/>
+      <button class="btn btn-sm" onclick="loadReturns()" style="margin-left:auto">↻ Refresh</button>
+      <span id="returnsSpan" style="font-size:12px;color:var(--faint)"></span>
+    </div>
+
+    <div id="returnsNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
+
+    <div id="returnsTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+
+    <div id="returnsTrend" style="margin-bottom:16px"></div>
+
+    <div id="returnsBreakdown" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
+
+    <div id="returnsTopSkus" style="margin-bottom:16px"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px;flex-wrap:wrap">
+      <div id="returnsListLabel" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Returns</div>
+      <select id="returnsTypeFilter" onchange="loadReturnsList(1)" style="margin-left:auto"><option value="">All types</option><option value="RTO">RTO</option><option value="Delivered Return">Delivered Return</option></select>
+      <select id="returnsStatusFilter" onchange="loadReturnsList(1)"><option value="">All status</option><option value="Confirmed">Confirmed</option><option value="Closed">Closed</option></select>
+      <input id="returnsSearch" type="text" placeholder="Search return, order, customer, phone, city, tracking…" oninput="returnsSearchDebounced()" style="min-width:240px;max-width:340px"/>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead><tr><th>Return</th><th>Type</th><th>Order</th><th>Date</th><th>Channel</th><th>Customer</th><th>City</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody id="returnsBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="returnsPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
   </div>
 
   <div id="page-profile" class="page">
@@ -1060,6 +1107,33 @@
     <div id="orderDetailBody" style="max-height:70vh;overflow:auto">Loading…</div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('orderDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="returnDetailModal">
+  <div class="modal" style="width:720px;max-width:94vw">
+    <h3 id="returnDetailTitle">Return</h3>
+    <div id="returnDetailBody" style="max-height:70vh;overflow:auto">Loading…</div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('returnDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="returnsListModal">
+  <div class="modal" style="width:900px;max-width:94vw">
+    <h3 id="returnsModalTitle">Returns</h3>
+    <div id="returnsModalSummary" style="margin:-4px 0 12px;font-size:13px;color:var(--muted-foreground)"></div>
+    <div class="table-container" style="max-height:60vh;overflow:auto">
+      <table>
+        <thead><tr><th>Return</th><th>Type</th><th>Order</th><th>Date</th><th>Channel</th><th>Customer</th><th>City</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody id="returnsModalBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;align-items:center">
+      <div id="returnsModalPager" style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted-foreground)"></div>
+      <button class="btn btn-outline" onclick="closeModal('returnsListModal')">Close</button>
     </div>
   </div>
 </div>

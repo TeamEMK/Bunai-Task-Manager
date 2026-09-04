@@ -160,6 +160,7 @@ async function init() {
       document.getElementById('nav-fms').style.display = 'flex';
       document.getElementById('nav-ims').style.display = 'flex';
       document.getElementById('nav-sales').style.display = 'flex';
+      document.getElementById('nav-returns').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -274,7 +275,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -326,6 +327,7 @@ function canOpenPage(page) {
   if (page === 'mis') return ME && (ME.role === 'admin' || ME.role === 'hod');
   if (page === 'ims') return ME && ME.role === 'admin';
   if (page === 'sales') return ME && ME.role === 'admin';
+  if (page === 'returns') return ME && ME.role === 'admin';
   if (page === 'hr') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
@@ -348,6 +350,8 @@ function navigate(page, el, fromHash) {
   if (page === 'sales' && (!ME || ME.role !== 'admin')) return;
   // HR page — admin only
   if (page === 'hr' && (!ME || ME.role !== 'admin')) return;
+  // Returns page — admin only
+  if (page === 'returns' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
@@ -375,6 +379,7 @@ function navigate(page, el, fromHash) {
   if (page==='ims') loadIMS();
   if (page==='stock') loadStock();
   if (page==='sales') loadSales();
+  if (page==='returns') loadReturns();
   window.scrollTo(0,0);
 }
 
@@ -3174,6 +3179,285 @@ function salesFilter(kind) {
   const titles = { all: 'All orders', live: 'Live orders (delivered + shipped)', cancelled: 'Cancelled orders' };
   const base = kind === 'live' ? { flag: 'live' } : kind === 'cancelled' ? { flag: 'cancelled' } : {};
   salesModalOpen(base, titles[kind] || 'Orders');
+}
+
+// ══════════════════════════════════════════════════════
+// RETURNS — Return / RTO analytics (admin only). Reads /api/returns*, filled
+// by returns-sync.js (v1/order/orderreturn). Mirrors the Sales page.
+// ══════════════════════════════════════════════════════
+function returnsNotice(kind, msg) {
+  const el = document.getElementById('returnsNotice'); if (!el) return;
+  const map = { ok: ['#059669', '#ecfdf5', '#a7f3d0'], busy: ['#b45309', '#fffbeb', '#fde68a'] };
+  const [c, bg, bd] = map[kind] || map.busy;
+  el.style.display = 'block'; el.style.color = c; el.style.background = bg; el.style.border = '1px solid ' + bd; el.textContent = msg;
+}
+function returnsSetRange(days) { const to = new Date(), from = new Date(to.getTime() - days * 86400000); document.getElementById('returnsFrom').value = salesYmd(from); document.getElementById('returnsTo').value = salesYmd(to); }
+function returnsPreset(v) { const f = document.getElementById('returnsFrom'), t = document.getElementById('returnsTo'); if (v === 'all') { f.value = ''; t.value = ''; } else if (v !== 'custom') returnsSetRange(Number(v)); loadReturns(); }
+function returnsCustom() { document.getElementById('returnsRange').value = 'custom'; loadReturns(); }
+
+function returnsTile(label, value, sub, tone, filter) {
+  const col = tone === 'warn' ? '#dc2626' : tone === 'good' ? '#16a34a' : 'var(--foreground)';
+  const attr = filter ? ` class="sales-kpi" data-filter="${filter}" onclick="returnsFilter('${filter}')"` : '';
+  return `<div${attr} style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:9px">${label}</div>
+    <div style="font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${col}">${value}</div>
+    ${sub ? `<div style="font-size:12px;color:var(--faint);margin-top:6px">${sub}</div>` : ''}</div>`;
+}
+
+// Daily returns bar chart — interactive: each bar hover-tips (date, count,
+// value) and is clickable (opens that day's returns). Left axis marks counts.
+function returnsTrendChart(daily) {
+  if (!daily || !daily.length) return '';
+  const totalN = daily.reduce((s, d) => s + (Number(d.n) || 0), 0);
+  const totalAmt = daily.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const avg = Math.round(totalN / daily.length);
+  const peak = daily.reduce((a, b) => (Number(b.n) || 0) > (Number(a.n) || 0) ? b : a, daily[0]);
+  const data = daily.length > 92 ? daily.slice(-92) : daily;
+  const max = Math.max(1, ...data.map(d => Number(d.n) || 0));
+  const fmtD = s => new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const ymd = s => salesYmd(new Date(s));
+  const peakYmd = ymd(peak.d);
+  const bars = data.map(d => {
+    const n = Number(d.n) || 0; const h = n > 0 ? Math.max(2, n / max * 100) : 0;
+    const isPeak = ymd(d.d) === peakYmd && n > 0;
+    return `<div class="returns-bar" data-d="${ymd(d.d)}" data-lbl="${fmtD(d.d)}" data-n="${n}" data-amt="${Number(d.amount) || 0}"
+        onmouseenter="returnsBarTip(event,this)" onmousemove="returnsBarTip(event,this)" onmouseleave="returnsBarTipHide()"
+        onclick="returnsDayDetail(this.dataset.d)"
+        style="flex:1;min-width:0;display:flex;align-items:flex-end;height:100%;cursor:pointer">
+      <div style="width:100%;height:${h}%;background:${isPeak ? '#9f1239' : '#e11d48'};border-radius:2px 2px 0 0"></div></div>`;
+  }).join('');
+  const marks = [1, .75, .5, .25].map(f => `
+    <div style="position:absolute;left:0;right:0;bottom:${(f * 100).toFixed(2)}%;border-top:1px dashed var(--border);opacity:.7"></div>
+    <div style="position:absolute;left:-42px;bottom:calc(${(f * 100).toFixed(2)}% - 6px);width:38px;text-align:right;font-size:9px;color:var(--faint)">${Math.round(max * f)}</div>`).join('');
+  const step = Math.max(1, Math.round(data.length / 6));
+  const labels = data.map((d, i) => (i % step === 0 || i === data.length - 1)
+    ? `<span style="flex:1;text-align:center;font-size:9.5px;color:var(--faint);white-space:nowrap">${fmtD(d.d)}</span>` : '<span style="flex:1"></span>').join('');
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:6px">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Daily returns</div>
+      <div style="font-size:11.5px;color:var(--muted-foreground)">Total <b>${totalN}</b> · <b>${inr(totalAmt)}</b> · avg <b>${avg}</b>/day · peak <b>${peak.n}</b> (${fmtD(peak.d)})</div>
+    </div>
+    <div style="padding-left:42px">
+      <div style="position:relative;height:130px;border-bottom:1px solid var(--border)">
+        ${marks}
+        <div style="display:flex;align-items:flex-end;gap:2px;height:100%;position:relative;z-index:1">${bars}</div>
+        <div id="returnsChartTip" style="position:absolute;top:2px;display:none;pointer-events:none;z-index:5;background:#4c0519;color:#fff;padding:6px 9px;border-radius:8px;font-size:11px;line-height:1.35;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.28)"></div>
+      </div>
+      <div style="display:flex;gap:2px;margin-top:5px">${labels}</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--faint);margin-top:9px;padding-left:42px">💡 Hover a bar for the day's figures · click a bar to see that day's returns</div>
+  </div>`;
+}
+function returnsBarTip(e, el) {
+  const tip = document.getElementById('returnsChartTip'); if (!tip) return;
+  const d = el.dataset;
+  tip.innerHTML = `<div style="font-weight:700;margin-bottom:1px">${dtEscape(d.lbl)}</div>
+    <div style="font-size:12.5px;font-weight:600">${d.n} return${d.n === '1' ? '' : 's'}</div>
+    <div style="color:#fecdd3">₹${Number(d.amt).toLocaleString('en-IN')}</div>
+    <div style="color:#fda4af;font-size:9.5px;margin-top:2px">click for returns →</div>`;
+  tip.style.display = 'block';
+  const plot = tip.parentElement.getBoundingClientRect();
+  const bar = el.getBoundingClientRect();
+  let left = bar.left - plot.left + bar.width / 2;
+  const tw = tip.offsetWidth;
+  left = Math.max(tw / 2, Math.min(plot.width - tw / 2, left));
+  tip.style.left = left + 'px';
+  tip.style.transform = 'translateX(-50%)';
+}
+function returnsBarTipHide() { const t = document.getElementById('returnsChartTip'); if (t) t.style.display = 'none'; }
+async function returnsDayDetail(ymd) {
+  if (!ymd) return;
+  const [Y, M, D] = ymd.split('-').map(Number);
+  const title = new Date(Y, M - 1, D).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  returnsModalOpen({ from: ymd, to: ymd }, title + ' — returns');
+}
+
+// Breakdown panel; rows clickable when `dim` is a list filter (type / status).
+function returnsPanel(title, rows, dim) {
+  const max = Math.max(1, ...rows.map(r => r.n));
+  const body = rows.map(r => {
+    const click = dim ? ` class="sales-row" style="cursor:pointer" data-val="${dtEscape(r.label)}" onclick="returnsFilterBy('${dim}', this.dataset.val)"` : '';
+    return `<div${click} style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:3px 5px;border-radius:7px">
+      <div style="flex:0 0 46%;font-size:12.5px;color:var(--foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${dtEscape(r.label)}">${dtEscape(r.label)}</div>
+      <div style="flex:1;background:var(--border);border-radius:6px;height:8px;overflow:hidden"><div style="width:${Math.round(r.n / max * 100)}%;height:100%;background:#e11d48"></div></div>
+      <div style="flex:0 0 auto;font-size:12px;color:var(--muted-foreground);font-variant-numeric:tabular-nums">${r.n}${r.sub ? ' · ' + r.sub : ''}</div>
+    </div>`;
+  }).join('');
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+    <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin-bottom:8px">${title}</div>
+    ${body || '<div class="empty">—</div>'}</div>`;
+}
+// Breakdown row → popup of matching returns (type / status / channel).
+function returnsFilterBy(dim, val) {
+  returnsModalOpen({ [dim]: val }, `${val} — returns`);
+}
+// KPI card → popup of that subset.
+function returnsFilter(kind) {
+  const titles = { all: 'All returns', rto: 'RTO — courier returns', delivered: 'Delivered returns — customer' };
+  const base = kind === 'rto' ? { type: 'RTO' } : kind === 'delivered' ? { type: 'Delivered Return' } : {};
+  returnsModalOpen(base, titles[kind] || 'Returns');
+}
+// Shared loader for the returns popup — pulls the full filtered set, paginated,
+// so counts match the cards. `base` may carry from/to (day drill-down) or a
+// dimension filter; the page's date range fills in when no from/to is given.
+function returnsModalOpen(base, title) {
+  window._returnsModal = { base: base || {}, title };
+  document.getElementById('returnsModalTitle').textContent = title;
+  document.getElementById('returnsListModal').classList.add('open');
+  returnsModalLoad(1);
+}
+async function returnsModalLoad(page) {
+  const st = window._returnsModal; if (!st) return;
+  const params = new URLSearchParams(st.base);
+  if (!params.has('from')) {
+    const rangeSel = document.getElementById('returnsRange');
+    const fromI = document.getElementById('returnsFrom'), toI = document.getElementById('returnsTo');
+    if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  }
+  params.set('page', String(page || 1));
+  document.getElementById('returnsModalSummary').textContent = 'Loading…';
+  document.getElementById('returnsModalBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  const pagerEl = document.getElementById('returnsModalPager'); if (pagerEl) pagerEl.innerHTML = '';
+  const d = await api('/api/returns/list?' + params.toString());
+  if (d.error) { document.getElementById('returnsModalSummary').textContent = 'Error: ' + dtEscape(d.error); return; }
+  const total = Number(d.total || 0), pages = d.pages || 1, p = d.page || 1;
+  const lo = total ? (p - 1) * (d.per || 100) + 1 : 0, hi = Math.min(total, (p - 1) * (d.per || 100) + (d.returns || []).length);
+  document.getElementById('returnsModalSummary').textContent =
+    `${total.toLocaleString('en-IN')} returns · ${inr(d.amount || 0)}` + (pages > 1 ? ` · showing ${lo}–${hi}` : '');
+  returnsRenderList(d.returns || [], 'returnsModalBody');
+  if (pagerEl && pages > 1) {
+    pagerEl.innerHTML =
+      `<button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="returnsModalLoad(${p - 1})">‹ Prev</button>
+       <span>Page ${p} / ${pages}</span>
+       <button class="btn btn-sm" ${p >= pages ? 'disabled' : ''} onclick="returnsModalLoad(${p + 1})">Next ›</button>`;
+  }
+}
+
+function returnsTopSkus(rows) {
+  if (!rows || !rows.length) return '';
+  const max = Math.max(1, ...rows.map(r => Number(r.qty) || 0));
+  const body = rows.map((r, i) => `<tr>
+    <td style="color:var(--faint)">${i + 1}</td>
+    <td style="font-family:var(--font-mono);font-size:11.5px;white-space:nowrap">${dtEscape(r.sku)}</td>
+    <td>${dtEscape(r.sku_name || '')}</td>
+    <td style="width:120px"><div style="background:var(--border);border-radius:5px;height:7px"><div style="width:${Math.round((Number(r.qty) || 0) / max * 100)}%;height:100%;background:#e11d48;border-radius:5px"></div></div></td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${Number(r.qty).toLocaleString('en-IN')}</td>
+  </tr>`).join('');
+  return `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:0 2px 8px">Most returned products</div>
+    <div class="table-container"><table><thead><tr><th style="width:24px">#</th><th>SKU</th><th>Product</th><th>Returned</th><th style="text-align:right">Qty</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+async function loadReturns() {
+  const rangeSel = document.getElementById('returnsRange');
+  const fromI = document.getElementById('returnsFrom'), toI = document.getElementById('returnsTo');
+  if (rangeSel && rangeSel.value === '45' && !fromI.value && !toI.value) returnsSetRange(45);
+  const tiles = document.getElementById('returnsTiles'), trend = document.getElementById('returnsTrend'),
+    bd = document.getElementById('returnsBreakdown'), top = document.getElementById('returnsTopSkus'),
+    span = document.getElementById('returnsSpan');
+  tiles.innerHTML = ''; trend.innerHTML = ''; bd.innerHTML = ''; top.innerHTML = '';
+  const params = new URLSearchParams();
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  const d = await api('/api/returns' + (params.toString() ? '?' + params : ''));
+  if (d.notConfigured) { returnsNotice('busy', 'No returns synced on this server yet — run the Vin returns sync.'); document.getElementById('returnsBody').innerHTML = '<tr><td colspan="9" class="empty">No returns synced yet.</td></tr>'; return; }
+  if (d.error) { document.getElementById('returnsBody').innerHTML = `<tr><td colspan="9" class="empty">Could not load returns — ${dtEscape(d.error)}</td></tr>`; return; }
+  const t = d.totals || {};
+  tiles.innerHTML =
+    returnsTile('Returns', Number(t.returns || 0).toLocaleString('en-IN'), 'RTO + delivered', null, 'all') +
+    returnsTile('Return value', inr(t.amount), null, 'warn', 'all') +
+    returnsTile('Units returned', Number(t.units || 0).toLocaleString('en-IN'), null, null, 'all') +
+    returnsTile('RTO', Number(t.rto || 0).toLocaleString('en-IN'), 'courier returns', null, 'rto') +
+    returnsTile('Delivered returns', Number(t.delivered || 0).toLocaleString('en-IN'), 'customer returns', null, 'delivered');
+  trend.innerHTML = returnsTrendChart(d.daily);
+  bd.innerHTML =
+    returnsPanel('By type', (d.byType || []).map(x => ({ label: x.type, n: x.n, sub: inr(x.amount) })), 'type') +
+    returnsPanel('By status', (d.byStatus || []).map(x => ({ label: x.status, n: x.n })), 'status') +
+    returnsPanel('Top return reasons', (d.byReason || []).map(x => ({ label: x.reason, n: x.n })), null) +
+    returnsPanel('By channel', (d.byChannel || []).map(x => ({ label: x.channel, n: x.n, sub: inr(x.amount) })), null);
+  top.innerHTML = returnsTopSkus(d.topSkus);
+  const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) span.textContent = `${fmtD(fromI.value)} → ${fmtD(toI.value)}`;
+  else if (d.span) span.textContent = `${fmtD(d.span.first_return)} → ${fmtD(d.span.last_return)}`;
+  if (d.lastSync && d.lastSync.started_at) {
+    const mins = Math.round((Date.now() - new Date(d.lastSync.started_at).getTime()) / 60000);
+    const ago = mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
+    returnsNotice('ok', `Live from Vin eRetail · last synced ${ago} · ${Number(d.lastSync.returns_seen || 0).toLocaleString('en-IN')} returns`);
+  } else returnsNotice('busy', 'Returns loaded. Set up the daily returns sync to keep this live.');
+  loadReturnsList(1);
+}
+
+async function loadReturnsList(page) {
+  const rangeSel = document.getElementById('returnsRange');
+  const fromI = document.getElementById('returnsFrom'), toI = document.getElementById('returnsTo');
+  const q = (document.getElementById('returnsSearch') || {}).value || '';
+  const type = (document.getElementById('returnsTypeFilter') || {}).value || '';
+  const status = (document.getElementById('returnsStatusFilter') || {}).value || '';
+  const params = new URLSearchParams({ page: String(page || 1) });
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  if (q.trim()) params.set('q', q.trim());
+  if (type) params.set('type', type);
+  if (status) params.set('status', status);
+  const body = document.getElementById('returnsBody');
+  body.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  const d = await api('/api/returns/list?' + params.toString());
+  if (d.error) { body.innerHTML = `<tr><td colspan="9" class="empty">Could not load returns — ${dtEscape(d.error)}</td></tr>`; return; }
+  document.getElementById('returnsListLabel').textContent = `Returns (${Number(d.total || 0).toLocaleString('en-IN')})`;
+  returnsRenderList(d.returns || []);
+  const pager = document.getElementById('returnsPager');
+  const p = d.page || 1, pages = d.pages || 1;
+  pager.innerHTML = `<span>Page ${p} of ${pages} · ${Number(d.total || 0).toLocaleString('en-IN')} returns · ${inr(d.amount || 0)}</span>
+    <span style="display:flex;gap:6px">
+      <button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="loadReturnsList(${p - 1})">‹ Prev</button>
+      <button class="btn btn-sm" ${p >= pages ? 'disabled' : ''} onclick="loadReturnsList(${p + 1})">Next ›</button></span>`;
+}
+let _returnsTimer = null;
+function returnsSearchDebounced() { clearTimeout(_returnsTimer); _returnsTimer = setTimeout(() => loadReturnsList(1), 300); }
+
+function returnsRenderList(list, bodyId) {
+  const body = document.getElementById(bodyId || 'returnsBody');
+  if (!body) return;
+  const pill = s => { const t = /closed/i.test(s) ? '#16a34a' : '#d97706'; return `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;color:${t};background:${t}1a">${dtEscape(s || '—')}</span>`; };
+  const typeb = ty => { const t = /rto/i.test(ty) ? '#dc2626' : '#7c3aed'; return `<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;color:${t};background:${t}14">${dtEscape(ty || '—')}</span>`; };
+  const fmtDT = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
+  body.innerHTML = (list || []).map(o => `<tr class="sales-row" style="cursor:pointer" data-id="${dtEscape(o.return_no)}" onclick="openReturnDetail(this.dataset.id)">
+    <td style="font-family:var(--font-mono);font-size:11.5px;white-space:nowrap">${dtEscape(o.return_no)}</td>
+    <td>${typeb(o.return_type)}</td>
+    <td style="font-family:var(--font-mono);font-size:11px;white-space:nowrap">${dtEscape(o.eretail_order_no || '—')}</td>
+    <td style="white-space:nowrap">${fmtDT(o.return_date)}</td>
+    <td>${dtEscape(o.channel_name || '—')}</td>
+    <td style="white-space:nowrap">${dtEscape(o.customer_name || '—')}</td>
+    <td>${dtEscape([o.customer_city, o.customer_state].filter(Boolean).join(', '))}</td>
+    <td>${pill(o.status)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${inr(o.return_amount)}</td>
+  </tr>`).join('') || '<tr><td colspan="9" class="empty">No returns in this view.</td></tr>';
+}
+
+async function openReturnDetail(id) {
+  const bodyEl = document.getElementById('returnDetailBody');
+  document.getElementById('returnDetailTitle').textContent = id;
+  bodyEl.innerHTML = '<div class="empty" style="padding:20px">Loading…</div>';
+  document.getElementById('returnDetailModal').classList.add('open');
+  const d = await api('/api/returns/detail?id=' + encodeURIComponent(id));
+  if (d.error || d.notFound) { bodyEl.innerHTML = '<div class="empty" style="padding:20px">Could not load this return.</div>'; return; }
+  const o = d.ret || {};
+  document.getElementById('returnDetailTitle').textContent = `Return ${dtEscape(o.return_no)}`;
+  const dt = v => v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const money = v => Number(v) ? inr(v) : '';
+  const row = (l, val) => (val === null || val === undefined || val === '') ? '' :
+    `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)"><div style="flex:0 0 40%;font-size:12px;color:var(--muted-foreground)">${l}</div><div style="flex:1;font-size:12.5px;word-break:break-word">${dtEscape(String(val))}</div></div>`;
+  const fields = [
+    ['Type', o.return_type], ['Status', o.status], ['Return date', dt(o.return_date)], ['Confirmed', dt(o.return_confirmdate)], ['Closed', dt(o.return_closedate)],
+    ['Return amount', money(o.return_amount)], ['Order no', o.eretail_order_no], ['Order type', o.order_type], ['Channel', o.channel_name],
+    ['Return location', o.return_location_name], ['Invoice', o.invoice_no], ['Delivery', o.delivery_no], ['Tracking', o.tracking_no], ['Return tracking', o.return_tracking_no],
+    ['Refund status', o.refund_status], ['Refund date', dt(o.refund_date)], ['Credit note', o.credit_note_no],
+    ['Customer', o.customer_name], ['Phone', o.customer_phone], ['Email', o.customer_email], ['Address', o.customer_address], ['City', o.customer_city], ['State', o.customer_state], ['Pincode', o.customer_pincode],
+    ['Remarks', o.remarks], ['Refund remarks', o.refund_remarks], ['Ext return no', o.ext_return_no], ['Ext invoice', o.ext_invoice_no],
+  ];
+  const items = d.items || [];
+  const itemsHtml = items.length ? `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground);margin:16px 0 6px">Items (${items.length})</div>
+    <div class="table-container"><table><thead><tr><th>SKU</th><th>Product</th><th style="text-align:right">Ret qty</th><th style="text-align:right">Price</th><th>Reason</th></tr></thead>
+    <tbody>${items.map(it => `<tr><td style="font-family:var(--font-mono);font-size:11px;white-space:nowrap">${dtEscape(it.sku || '')}</td><td>${dtEscape(it.sku_name || '')}</td><td style="text-align:right">${Number(it.return_qty)}</td><td style="text-align:right">${inr(it.unit_price)}</td><td>${dtEscape(it.return_reason || '')}</td></tr>`).join('')}</tbody></table></div>` : '';
+  const rawHtml = d.raw ? `<details style="margin-top:16px"><summary style="cursor:pointer;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">All fields (${Object.keys(d.raw).length})</summary><div style="margin-top:8px">${Object.entries(d.raw).filter(([, v]) => v != null && v !== '' && typeof v !== 'object').map(([k, v]) => row(k, String(v))).join('')}</div></details>` : '';
+  bodyEl.innerHTML = `<div>${fields.map(f => row(f[0], f[1])).join('')}</div>${itemsHtml}${rawHtml}`;
 }
 
 async function api(url,method='GET',body=null) {
