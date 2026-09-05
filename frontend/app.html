@@ -528,8 +528,8 @@
 
     <!-- Tabs -->
     <div style="display:flex;gap:4px;background:var(--muted);padding:3px;border-radius:8px;width:fit-content;margin-bottom:18px">
-      <div class="tab active" id="apprTabTask" onclick="switchApprovalTab('task',this)">📋 Task Approvals</div>
-      <div class="tab" id="apprTabTransfer" onclick="switchApprovalTab('transfer',this)" style="display:none">🔀 Transfer Requests</div>
+      <div class="tab active" id="apprTabTask" onclick="switchApprovalTab('task',this)">📋 Task Approvals <span id="apprTaskBadge" style="display:none;background:#F8AFB1;color:#1B1B1B;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:4px">0</span></div>
+      <div class="tab" id="apprTabTransfer" onclick="switchApprovalTab('transfer',this)" style="display:none">🔀 Transfer Requests <span id="apprTransferBadge" style="display:none;background:#F8AFB1;color:#1B1B1B;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:4px">0</span></div>
       <div class="tab" id="apprTabLeave" onclick="switchApprovalTab('leave',this)">🗓 Leave Approvals <span id="apprLeaveBadge" style="display:none;background:#F8AFB1;color:#1B1B1B;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:4px">0</span></div>
     </div>
 

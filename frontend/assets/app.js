@@ -2425,7 +2425,12 @@ async function loadApprovalBadge() {
   } else {
     badge.style.display = 'none';
   }
-  // Approvals page tab badge (leaves only)
+  // Approvals page tab badges — task + leave (transfer is set in loadTransferBadge).
+  const taskTabBadge = document.getElementById('apprTaskBadge');
+  if (taskTabBadge) {
+    if (taskCnt > 0) { taskTabBadge.textContent = taskCnt; taskTabBadge.style.display = 'inline-block'; }
+    else taskTabBadge.style.display = 'none';
+  }
   const tabBadge = document.getElementById('apprLeaveBadge');
   if (tabBadge) {
     if (leaveCnt > 0) { tabBadge.textContent = leaveCnt; tabBadge.style.display = 'inline-block'; }
@@ -6353,6 +6358,11 @@ async function loadTransferBadge() {
     const d = await api('/api/transfers/count');
     const badge = document.getElementById('transferBadge');
     if (badge) { badge.textContent = d.count||0; badge.style.display = d.count>0 ? 'flex' : 'none'; }
+    const tabBadge = document.getElementById('apprTransferBadge');
+    if (tabBadge) {
+      if ((d.count||0) > 0) { tabBadge.textContent = d.count; tabBadge.style.display = 'inline-block'; }
+      else tabBadge.style.display = 'none';
+    }
   } catch(e) {}
 }
 
