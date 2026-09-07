@@ -386,6 +386,11 @@
         <option value="10">10 or fewer</option>
         <option value="20">20 or fewer</option>
       </select>
+      <select id="stockGroupBy" onchange="loadStock()" title="Club every size of a product onto one row">
+        <option value="sku">Every SKU</option>
+        <option value="style">Club sizes</option>
+        <option value="design">Club sizes + colours</option>
+      </select>
       <select id="stockSoldDays" onchange="loadStock()" title="Sales window for the Sold / reorder column">
         <option value="7">Sold: 7 days</option>
         <option value="30">Sold: 30 days</option>
@@ -401,7 +406,7 @@
 
     <div class="table-container">
       <table>
-        <thead><tr><th style="width:44px">#</th><th>SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (45d)</th></tr></thead>
+        <thead><tr><th style="width:44px">#</th><th id="stockSkuHeader">SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (45d)</th></tr></thead>
         <tbody id="stockBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>

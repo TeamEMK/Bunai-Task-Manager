@@ -533,6 +533,9 @@ async function loadStock() {
     if (low === 'reorder') params.set('reorder', '1');
     else if (low !== '') params.set('low', low);
     if (soldDays) params.set('soldDays', soldDays);
+    const groupSel = document.getElementById('stockGroupBy');
+    const groupBy = groupSel ? groupSel.value : 'sku';
+    if (groupBy && groupBy !== 'sku') params.set('groupBy', groupBy);
 
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
 
@@ -599,7 +602,12 @@ async function loadStock() {
 
     const soldHdr = document.getElementById('stockSoldHeader');
     if (soldHdr && d.soldDays) soldHdr.textContent = 'Sold (' + d.soldDays + 'd)';
-    window._stockSkus = [...new Set(d.rows.map(r => r.sku))];   // for Live check
+    // Live check needs real SKUs to ask Vinculum about, and a clubbed row's
+    // "SKU" is a key that exists nowhere in Vinculum — so send its members.
+    window._stockSkus = [...new Set(d.rows.flatMap(r => r.skus || [r.sku]))];
+    const clubbed = (d.groupBy || 'sku') !== 'sku';
+    const skuHdr = document.getElementById('stockSkuHeader');
+    if (skuHdr) skuHdr.textContent = clubbed ? (d.groupBy === 'design' ? 'Design' : 'Style') : 'SKU';
     body.innerHTML = d.rows.length ? d.rows.map((r, i) => {
       const qty = Number(r.qty);
       const sold = Number(r.sold) || 0;
@@ -610,8 +618,12 @@ async function loadStock() {
       const soldCol = reorder ? '#dc2626' : 'var(--muted-foreground)';
       return `<tr>
         <td style="color:var(--faint);font-variant-numeric:tabular-nums">${i + 1}</td>
-        <td style="white-space:nowrap;font-family:var(--font-mono);font-size:12px">${dtEscape(r.sku)}</td>
-        <td>${dtEscape(r.description || '—')}</td>
+        <td style="white-space:nowrap;font-family:var(--font-mono);font-size:12px">${dtEscape(r.sku)}${r.skuCount > 1
+          ? ` <span style="font-family:var(--font-sans);font-size:10.5px;color:var(--faint)" title="${dtEscape((r.skus || []).join(', '))}">+${r.skuCount - 1}</span>`
+          : ''}</td>
+        <td>${dtEscape(r.description || '—')}${clubbed && r.nameCount > 1
+          ? ` <span style="font-size:10.5px;color:var(--faint)">· ${r.nameCount} names</span>`
+          : ''}</td>
         <td style="white-space:nowrap">${dtEscape(r.warehouse)}</td>
         <td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:${colour}">${qty.toLocaleString('en-IN')}</td>
         <td style="text-align:right;font-variant-numeric:tabular-nums;color:${soldCol}">${sold ? sold.toLocaleString('en-IN') : '—'}${reorder ? ' <span style="font-size:10.5px;font-weight:700" title="Stock is below window sales — reorder">⚠</span>' : ''}</td>
