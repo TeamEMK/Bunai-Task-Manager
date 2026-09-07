@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
+    "test": "node backend/tests/run.js",
     "postinstall": "echo 'Dependencies installed for Bunai Task Manager'"
   },
   "dependencies": {

@@ -121,9 +121,9 @@ async function getDriveClient() {
 // PO_DRIVE_FOLDER_ID (optional) — if set, the file goes into that folder (which
 // must be shared with the service-account email as Editor); otherwise it lands
 // in the service account's own Drive, which has no storage quota of its own.
-async function uploadPODocToDrive(buffer, originalName, mimeType) {
+async function uploadToDrive(buffer, originalName, mimeType, prefix = 'FILE') {
   const drive = await getDriveClient();
-  const fileMeta = { name: `PO_${Date.now()}_${originalName}` };
+  const fileMeta = { name: `${prefix}_${Date.now()}_${originalName}` };
   if (config.google.poDriveFolderId) fileMeta.parents = [config.google.poDriveFolderId];
   // supportsAllDrives is required whenever the parent is (or lives inside) a
   // Shared Drive — without it the API only looks at "My Drive" and 404s.
@@ -143,6 +143,10 @@ async function uploadPODocToDrive(buffer, originalName, mimeType) {
   return meta.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
 }
 
+// The PO screen's original entry point, kept so its callers stay unchanged.
+const uploadPODocToDrive = (buffer, originalName, mimeType) =>
+  uploadToDrive(buffer, originalName, mimeType, 'PO');
+
 // Pre-warm auth on startup so the first sheet-backed request does not pay for
 // the token exchange.
 function prewarm() {
@@ -155,6 +159,6 @@ module.exports = {
   getSheetsClient, getReadClient, getWriteClient, READ_SCOPE, WRITE_SCOPE,
   readValues, invalidateSheet,
   listTabs, resolveTabNameByGid, findTabByTitle, forgetTabs,
-  getDriveClient, uploadPODocToDrive,
+  getDriveClient, uploadToDrive, uploadPODocToDrive,
   prewarm,
 };

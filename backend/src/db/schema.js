@@ -206,7 +206,8 @@ const TABLES = [
     extra_col VARCHAR(10) DEFAULT '',
     show_cols TEXT,
     delay_reason_col VARCHAR(10) DEFAULT '',
-    doer_name_col VARCHAR(10) DEFAULT ''
+    doer_name_col VARCHAR(10) DEFAULT '',
+    header_map TEXT
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
   ['fms_step_doers', `CREATE TABLE fms_step_doers (
@@ -222,7 +223,9 @@ const TABLES = [
     col_letter VARCHAR(10) DEFAULT '',
     field_type VARCHAR(20) DEFAULT 'text',
     dropdown_options TEXT,
-    required TINYINT(1) DEFAULT 1
+    required TINYINT(1) DEFAULT 1,
+    header_name VARCHAR(255) DEFAULT '',
+    header_occ INT DEFAULT 0
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
   ['week_plans', `CREATE TABLE week_plans (
@@ -317,11 +320,19 @@ const COLUMNS = [
   ['fms_steps', 'show_cols', `TEXT AFTER extra_col`],
   ['fms_steps', 'delay_reason_col', `VARCHAR(10) DEFAULT '' AFTER show_cols`],
   ['fms_steps', 'doer_name_col', `VARCHAR(10) DEFAULT '' AFTER delay_reason_col`],
+  // The header name each mapped column carried when the FMS was saved. Columns
+  // move when someone inserts one in the sheet; the letter does not follow, the
+  // name does. See services/fmsColumns.js.
+  ['fms_steps', 'header_map', `TEXT AFTER doer_name_col`],
   ['fms_extra_rows', 'col_letter', `VARCHAR(10) DEFAULT '' AFTER row_label`],
   ['fms_extra_rows', 'field_type', `VARCHAR(20) DEFAULT 'text' AFTER col_letter`],
   ['fms_extra_rows', 'dropdown_options', `TEXT AFTER field_type`],
   // Required flag — default 1 so existing rows continue to be mandatory.
   ['fms_extra_rows', 'required', `TINYINT(1) DEFAULT 1 AFTER dropdown_options`],
+  // On an extra row rather than in the step's header_map: saving an FMS deletes
+  // and re-inserts these rows, so anything keyed by row id would go stale.
+  ['fms_extra_rows', 'header_name', `VARCHAR(255) DEFAULT '' AFTER required`],
+  ['fms_extra_rows', 'header_occ', `INT DEFAULT 0 AFTER header_name`],
 
   // The weekly check-in: what the employee committed to for that Monday.
   ['week_plans', 'improvement_pct', `DECIMAL(5,2) DEFAULT 0`],

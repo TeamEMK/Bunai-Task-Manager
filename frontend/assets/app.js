@@ -4502,24 +4502,95 @@ async function proceedToStepsConfig() {
   if (addDelConfBtn) addDelConfBtn.style.display='none';
   document.getElementById('fmsStepsModal').classList.add('open');
 
-  // Fetch headers after modal open
+  // Read the sheet and propose the whole configuration. Everything it fills in
+  // is editable right here before saving, so a wrong guess costs nothing — but
+  // a silent one would, which is why the server leaves unclear fields empty.
   fmsSheetHeaders = [];
+  let detection = null;
   try {
-    const hRes = await api('/api/fms/fetch-headers', 'POST', {
+    detection = await api('/api/fms/detect-steps', 'POST', {
       sheetId: fmsData.sheetId,
       sheetName: fmsData.sheetName,
       headerRow: fmsData.headerRow
     });
-    fmsSheetHeaders = hRes.headers || [];
-    if (fmsSheetHeaders.length) showToast(`✅ ${fmsSheetHeaders.length} headers loaded!`);
-    else showToast('⚠️ No headers found','error');
+    fmsSheetHeaders = detection.headers || [];
   } catch(e) {
-    showToast('⚠️ Headers fetch failed — using text input','error');
+    // Fall back to headers alone; the admin then fills the steps by hand as before.
+    try {
+      const hRes = await api('/api/fms/fetch-headers', 'POST', {
+        sheetId: fmsData.sheetId, sheetName: fmsData.sheetName, headerRow: fmsData.headerRow
+      });
+      fmsSheetHeaders = hRes.headers || [];
+      showToast('⚠️ Could not auto-detect steps — headers loaded, fill the steps manually','error');
+    } catch(e2) {
+      showToast('⚠️ Sheet could not be read — using text inputs','error');
+    }
+  }
+
+  if (detection && detection.steps && detection.steps.length) {
+    fmsSteps = detection.steps.map(fmsStepFromDetection);
+    fmsData.totalSteps = fmsSteps.length;
+    showToast(`✅ ${fmsSteps.length} steps detected from the sheet`);
+  } else if (fmsSheetHeaders.length) {
+    showToast(`✅ ${fmsSheetHeaders.length} headers loaded`);
   }
 
   // Re-render steps with headers
   container.innerHTML = '';
+  renderFMSDetectionNote(detection);
   fmsSteps.forEach((_, i) => appendFMSStepBox(i, 'fmsStepsContainer'));
+}
+
+// The server's suggestion, in the shape the step boxes edit.
+function fmsStepFromDetection(d) {
+  return {
+    stepName: d.stepName || '',
+    doers: d.doers || [],
+    planCol: d.planCol || '',
+    actualCol: d.actualCol || '',
+    extraInput: d.extraInput || 'no',
+    extraCol: '',
+    extraRows: (d.extraRows || []).map(r => ({
+      col_letter: r.col_letter || '',
+      field_type: r.field_type || 'text',
+      label: r.label || '',
+      dropdown_options: r.dropdown_options || '',
+      required: r.required === 1 ? 1 : 0,
+    })),
+    showCols: d.showCols || [],
+    delayReasonCol: d.delayReasonCol || '',
+    doerNameCol: d.doerNameCol || '',
+    _detected: true,
+    _doerUnmatched: d.doerUnmatched || [],
+  };
+}
+
+// What the detector filled in, and — just as importantly — what it left out.
+// A column dropped without a word is how a doer ends up typing into a cell that
+// a formula overwrites an hour later.
+function renderFMSDetectionNote(detection) {
+  const box = document.getElementById('fmsDetectNote');
+  if (!box) return;
+  if (!detection || !detection.steps || !detection.steps.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const skipped = detection.skipped || [];
+  const unmatched = [...new Set((detection.steps || []).flatMap(s => s.doerUnmatched || []))];
+  const parts = [
+    `<b>${detection.steps.length} step${detection.steps.length === 1 ? '' : 's'}</b> read from the sheet — check each one before saving.`,
+  ];
+  if (skipped.length) {
+    parts.push(`<div style="margin-top:6px">Left out (the sheet fills these itself): ` +
+      skipped.map(k => `<span style="background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 6px;margin-right:4px;display:inline-block">${dtEscape(k.name)} <span style="color:var(--faint)">${dtEscape(k.reason)}</span></span>`).join('') + `</div>`);
+  }
+  if (unmatched.length) {
+    parts.push(`<div style="margin-top:6px">No user matches these names, so no doer was assigned: ` +
+      unmatched.map(n => `<span style="background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 6px;margin-right:4px;display:inline-block">${dtEscape(n)}</span>`).join('') + `</div>`);
+  }
+  box.innerHTML = parts.join('');
+  box.style.display = 'block';
 }
 
 function appendFMSStepBox(idx, containerId) {
@@ -4737,6 +4808,7 @@ function buildExtraRowHTML(idx, ri, headers) {
     <option value="number" ${r.field_type==='number'?'selected':''}>🔢 Number</option>
     <option value="date" ${r.field_type==='date'?'selected':''}>📅 Date</option>
     <option value="link" ${r.field_type==='link'?'selected':''}>🔗 Link</option>
+    <option value="file" ${r.field_type==='file'?'selected':''}>📎 File</option>
     <option value="dropdown" ${r.field_type==='dropdown'?'selected':''}>🔽 Dropdown</option>
   </select>`;
   const dropOptsSection = r.field_type==='dropdown' ? buildDropdownOptionsHTML(idx, ri, r) : '';
@@ -5814,6 +5886,10 @@ function openFMSDoneModal(rowIdx) {
         case 'link':
           inputHtml = `<input type="url" id="fmsExtra_${i}" placeholder="https://..." style="${inputStyle}"/>`;
           break;
+        case 'file':
+          // Uploaded on save; the cell receives the Drive link.
+          inputHtml = `<input type="file" id="fmsExtra_${i}" style="${inputStyle};padding:7px 10px"/>`;
+          break;
         case 'dropdown': {
           const rawOpts = (r.dropdown_options || '').split(',').map(o => o.trim()).filter(Boolean);
           const optionsList = rawOpts.length
@@ -5871,7 +5947,7 @@ async function saveFMSDone() {
     const r = extraRows[i];
     const isRequired = !(r.required === 0 || r.required === false || r.required === '0');
     const el = document.getElementById(`fmsExtra_${i}`);
-    const val = el ? el.value.trim() : '';
+    const val = el ? (el.type === 'file' ? (el.files && el.files.length ? 'file' : '') : el.value.trim()) : '';
     if (isRequired && !val) {
       const label = r.label || r.row_label || r.col_letter || `Field ${i+1}`;
       errEl.textContent = `"${label}" field is required!`;
@@ -5884,10 +5960,39 @@ async function saveFMSDone() {
       if (el) el.style.border = '1.5px solid var(--border)';
     }
   }
-  const extraInputs = extraRows.map((r, i) => {
+  // rowId is what the server maps back to a column. The letter goes along only
+  // so an older server still understands the request; the sheet may have moved
+  // since this page loaded, and the row id survives that.
+  const extraInputs = [];
+  for (let i = 0; i < extraRows.length; i++) {
+    const r = extraRows[i];
     const el = document.getElementById(`fmsExtra_${i}`);
-    return { colLetter: r.col_letter, value: el ? el.value.trim() : '' };
-  }).filter(e => e.colLetter && e.value !== '');
+    if (!el) continue;
+    let value = '';
+    if (el.type === 'file') {
+      if (!el.files || !el.files.length) continue;
+      saveBtn.textContent = '⏳ Uploading...';
+      try {
+        const fd = new FormData();
+        fd.append('file', el.files[0]);
+        const up = await fetch('/api/fms-tasks/upload', { method: 'POST', credentials: 'include', body: fd });
+        const j = await up.json();
+        if (!up.ok || j.error) throw new Error(j.error || 'Upload failed');
+        value = j.url;
+      } catch (err) {
+        errEl.textContent = `Upload failed for "${r.label || r.col_letter}": ${err.message}`;
+        errEl.style.display = 'block';
+        saveBtn.textContent = '💾 Save to Sheet';
+        saveBtn.disabled = false;
+        return;
+      }
+    } else {
+      value = el.value.trim();
+    }
+    if (value === '') continue;
+    extraInputs.push({ rowId: r.id, colLetter: r.col_letter, value });
+  }
+  saveBtn.textContent = '⏳ Saving...';
 
   const r = await api(`/api/fms-tasks/${fmsId}/steps/${stepId}/done`, 'POST', {
     rowNumber: parseInt(rowNum),

@@ -14,6 +14,15 @@ const {
 } = require('../utils/sheetCells');
 const google = require('../services/google');
 const fmsRepo = require('../services/fmsRepo');
+const fmsColumns = require('../services/fmsColumns');
+const fmsDetect = require('../services/fmsDetect');
+const sheetIntrospect = require('../services/sheetIntrospect');
+const multer = require('multer');
+
+// A file field's value in the sheet is a Drive link, so the upload happens
+// before the row is written. Kept in memory: the deployment targets have
+// read-only or ephemeral filesystems.
+const fmsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = express.Router();
 
@@ -164,6 +173,68 @@ router.get('/fms/sheet-column-values', requireAuth, requireAdmin, asyncRoute(asy
   });
 }));
 
+// IMPORTANT: must stay above /api/fms/:id.
+// Reads the sheet and proposes the whole step configuration — names, plan and
+// actual columns, doers, and each step's remaining columns as typed extra
+// inputs. Nothing is saved: the admin sees the suggestion on the same screen
+// and corrects it before saving, which is why every rule here prefers an empty
+// field over a confident guess.
+router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const { sheetId, sheetName, headerRow } = req.body;
+  if (!sheetId) return res.status(400).json({ error: 'sheetId required' });
+
+  const meta = await sheetIntrospect.readColumnMeta(sheetId, sheetName, headerRow);
+  const detected = fmsDetect.detectSteps(meta.columns);
+
+  // ── Doers, matched against the app's user list ──
+  // Read each distinct doer column in full rather than trusting the sample: a
+  // name that appears only on row 200 should still be matched.
+  const doerCols = [...new Set(detected.steps.map(s => s.doerNameCol).filter(Boolean))];
+  const users = await db.rows('SELECT id, name FROM users');
+  // Two people with the same name cannot be told apart, so that name matches
+  // nobody — assigning either one would be a coin flip on someone's work.
+  const byName = new Map();
+  for (const u of users) {
+    const key = u.name.trim().toLowerCase();
+    byName.set(key, byName.has(key) ? null : u);
+  }
+
+  const columnNames = new Map();
+  await Promise.all(doerCols.map(async (col) => {
+    try {
+      const vals = await google.readValues(meta.spreadsheetId, `${meta.tab}!${col}:${col}`);
+      const skip = (parseInt(headerRow, 10) || 1);
+      columnNames.set(col, [...new Set(
+        vals.slice(skip).map(r => String(r[0] ?? '').trim()).filter(Boolean))]);
+    } catch (_) { columnNames.set(col, []); }
+  }));
+
+  for (const step of detected.steps) {
+    if (!step.doerNameCol) continue;
+    const names = columnNames.get(step.doerNameCol) || [];
+    const matched = [];
+    const unmatched = [];
+    for (const n of names) {
+      const u = byName.get(n.toLowerCase());
+      if (u) matched.push({ id: u.id, name: u.name, sheetName: n });
+      else unmatched.push(n);          // ambiguous or unknown — left unassigned
+    }
+    step.doers = matched.map(m => m.id);
+    step.doerMatches = matched;
+    step.doerUnmatched = unmatched;
+  }
+
+  res.json({
+    headers: meta.headers,
+    steps: detected.steps,
+    leadingColumns: detected.leadingColumns,
+    // Columns deliberately left out, with the reason, so nothing disappears
+    // without the admin being told.
+    skipped: detected.skipped,
+    detectedSteps: detected.steps.length,
+  });
+}));
+
 router.get('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const sheet = await db.one('SELECT * FROM fms_sheets WHERE id=?', [req.params.id]);
   if (!sheet) throw httpError(404, 'FMS not found');
@@ -176,14 +247,25 @@ router.get('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) =>
 
 // Writes the step rows of an FMS inside an open transaction. Each step's doers
 // and extra rows go in as one multi-row INSERT instead of one per value.
-async function writeSteps(conn, fmsId, steps) {
+async function writeSteps(conn, fmsId, steps, headers = []) {
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
+    // Every letter the admin picked is recorded alongside the header NAME it
+    // pointed at. The letter is only a fallback from here on; the name is what
+    // survives someone inserting a column in the sheet.
+    const asStep = {
+      plan_col: s.planCol || '', actual_col: s.actualCol || '',
+      doer_name_col: s.doerNameCol || '', delay_reason_col: s.delayReasonCol || '',
+    };
+    const headerMap = fmsColumns.buildHeaderMap(asStep, [], headers);
+    headerMap.show = fmsColumns.buildShowMap(s.showCols || [], headers);
+
     const [sr] = await conn.query(
-      `INSERT INTO fms_steps (fms_id,step_order,step_name,plan_col,actual_col,extra_input,extra_col,show_cols,delay_reason_col,doer_name_col)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO fms_steps (fms_id,step_order,step_name,plan_col,actual_col,extra_input,extra_col,show_cols,delay_reason_col,doer_name_col,header_map)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [fmsId, i + 1, s.stepName, s.planCol || '', s.actualCol || '', s.extraInput || 'no',
-       s.extraCol || '', JSON.stringify(s.showCols || []), s.delayReasonCol || '', s.doerNameCol || '']);
+       s.extraCol || '', JSON.stringify(s.showCols || []), s.delayReasonCol || '', s.doerNameCol || '',
+       JSON.stringify(headerMap)]);
     const stepId = sr.insertId;
 
     if (s.doers?.length) {
@@ -192,12 +274,32 @@ async function writeSteps(conn, fmsId, steps) {
     }
     if (s.extraInput === 'yes' && s.extraRows?.length) {
       await conn.query(
-        `INSERT INTO fms_extra_rows (step_id,row_label,col_letter,field_type,dropdown_options,required) VALUES ?`,
-        [s.extraRows.map(row => [
-          stepId, row.label || row.col_letter || '', row.col_letter || '',
-          row.field_type || 'text', row.dropdown_options || '',
-          (row.required === false || row.required === 0) ? 0 : 1])]);
+        `INSERT INTO fms_extra_rows (step_id,row_label,col_letter,field_type,dropdown_options,required,header_name,header_occ) VALUES ?`,
+        [s.extraRows.map(row => {
+          const h = fmsColumns.buildRowHeader(row, headers);
+          return [
+            stepId, row.label || row.col_letter || '', row.col_letter || '',
+            row.field_type || 'text', row.dropdown_options || '',
+            (row.required === false || row.required === 0) ? 0 : 1,
+            h.header_name, h.header_occ];
+        })]);
     }
+  }
+}
+
+// The header row as it stands right now. Saving an FMS reads it once so the
+// mapping is recorded against what the sheet actually says today.
+async function currentHeaders(sheetId, sheetName, headerRow) {
+  try {
+    const row = Math.max(1, parseInt(headerRow, 10) || 1);
+    const values = await google.readValues(
+      extractSpreadsheetId(sheetId), `${sheetName || 'Sheet1'}!${row}:${row}`, { fresh: true });
+    return (values[0] || []).map(h => String(h ?? '').trim());
+  } catch (e) {
+    // A sheet that cannot be read must not block saving the configuration —
+    // the letters still work, and the mapping fills in on the next save.
+    console.warn('  ⚠️ FMS save: header row unreadable —', e.message);
+    return [];
   }
 }
 
@@ -209,7 +311,7 @@ router.post('/fms', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
     const [result] = await conn.query(
       `INSERT INTO fms_sheets (fms_name,sheet_name,sheet_id,header_row,total_steps,created_by) VALUES (?,?,?,?,?,?)`,
       [fmsName || sheetName, sheetName, sheetId, headerRow || 1, totalSteps || 1, req.session.userId]);
-    await writeSteps(conn, result.insertId, steps || []);
+    await writeSteps(conn, result.insertId, steps || [], await currentHeaders(sheetId, sheetName, headerRow));
     await conn.commit();
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -237,7 +339,7 @@ router.put('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) =>
     }
     await conn.query('DELETE FROM fms_steps WHERE fms_id=?', [req.params.id]);
 
-    await writeSteps(conn, req.params.id, steps || []);
+    await writeSteps(conn, req.params.id, steps || [], await currentHeaders(sheetId, sheetName, headerRow));
     await conn.commit();
     res.json({ success: true });
   } catch (err) {
@@ -313,6 +415,24 @@ router.get('/fms-tasks/:id', requireAuth, asyncRoute(async (req, res) => {
   res.json({ sheet, steps });
 }));
 
+// One-time, fire-and-forget: gives a pre-mapping step its header names. It runs
+// on a read, so a failure must never affect the response — the letters keep
+// working either way and the next read tries again.
+function backfillHeaderMap(step, extraRows, headers) {
+  (async () => {
+    const map = fmsColumns.buildHeaderMap(step, extraRows, headers);
+    map.show = fmsColumns.buildShowMap(fmsRepo.parseShowCols(step), headers);
+    await db.query('UPDATE fms_steps SET header_map=? WHERE id=?', [JSON.stringify(map), step.id]);
+    for (const row of extraRows) {
+      const h = fmsColumns.buildRowHeader(row, headers);
+      if (!h.header_name) continue;
+      await db.query('UPDATE fms_extra_rows SET header_name=?, header_occ=? WHERE id=?',
+        [h.header_name, h.header_occ, row.id]);
+    }
+    console.log(`  ✅ FMS step ${step.id}: column mapping backfilled from header names`);
+  })().catch(e => console.warn('  ⚠️ FMS header-map backfill:', e.message));
+}
+
 // Pending rows of a step (plan filled, actual empty).
 router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async (req, res) => {
   const isAdmin = req.session.role === 'admin';
@@ -325,19 +445,35 @@ router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async
   if (!step) throw httpError(404, 'Step not found');
 
   const myName = (currentUser?.name || '').trim().toLowerCase();
-  const planIdx = colToIdx(step.plan_col);
-  const actualIdx = colToIdx(step.actual_col);
-  const doerNameIdx = step.doer_name_col ? colToIdx(step.doer_name_col) : -1;
-  const showCols = fmsRepo.parseShowCols(step);
+  const spreadsheetId = extractSpreadsheetId(sheet.sheet_id);
+  const tabName = sheet.sheet_name || 'Sheet1';
+  const headerRowIdx = (sheet.header_row || 1) - 1;
+
+  // Resolve the step's columns against the header row BEFORE deciding what to
+  // read. Sizing the range from the stored letters would read the old
+  // positions, which is the bug this mapping exists to prevent.
+  const extraRows = await db.rows(
+    `SELECT id, col_letter, header_name, header_occ FROM fms_extra_rows WHERE step_id=? ORDER BY id ASC`,
+    [step.id]);
+  const headerOnly = await google.readValues(spreadsheetId, `${tabName}!${headerRowIdx + 1}:${headerRowIdx + 1}`);
+  const headerRowValues = headerOnly[0] || [];
+  let cols = fmsColumns.resolveStep(step, extraRows, headerRowValues);
+  // An FMS configured before header mapping existed has letters only. The
+  // letters still point at the right columns TODAY, so this is the moment to
+  // record what they are called — after which the mapping survives a move.
+  if (!cols.mapped && headerRowValues.length) backfillHeaderMap(step, extraRows, headerRowValues);
+
+  const planIdx = cols.plan;
+  const actualIdx = cols.actual;
+  const doerNameIdx = cols.doer;
+  const showCols = cols.show;
 
   // Fetch only as far as the furthest needed column.
   const maxIdx = Math.max(planIdx, actualIdx, doerNameIdx, ...(showCols.length ? showCols : [0]));
   const allRows = await google.readValues(
-    extractSpreadsheetId(sheet.sheet_id),
-    `${sheet.sheet_name || 'Sheet1'}!A:${maxIdx >= 0 ? idxToCol(maxIdx) : 'Z'}`);
+    spreadsheetId, `${tabName}!A:${maxIdx >= 0 ? idxToCol(maxIdx) : 'Z'}`);
 
-  const headerRowIdx = (sheet.header_row || 1) - 1;
-  const headers = allRows[headerRowIdx] || [];
+  const headers = allRows[headerRowIdx] || headerOnly[0] || [];
   const dataRows = allRows.slice(headerRowIdx + 1);
 
   // Non-admins see only their own rows; admins see all.
@@ -377,9 +513,19 @@ router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async
     rows: matchedRows, headers,
     total: matchedRows.length, totalPending, assignedToMe,
     filtered: applyDoerFilter,
-    doerColumn: step.doer_name_col || null,
+    doerColumn: doerNameIdx >= 0 ? idxToCol(doerNameIdx) : null,
+    // Non-empty when a mapped header no longer exists in the sheet. The screen
+    // can say so instead of quietly showing the wrong column.
+    unresolved: cols.unresolved,
     isAdmin,
   });
+}));
+
+// Uploads one file for a `file` extra input and returns the link to store.
+router.post('/fms-tasks/upload', requireAuth, fmsUpload.single('file'), asyncRoute(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'A file is required' });
+  const url = await google.uploadToDrive(req.file.buffer, req.file.originalname, req.file.mimetype, 'FMS');
+  res.json({ url });
 }));
 
 // Mark a row done — writes the actual timestamp, the delay reason, any extra
@@ -396,28 +542,47 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
   if (!sheet) throw httpError(404, 'FMS not found');
   if (!step) throw httpError(404, 'Step not found');
 
-  const actualCol = (step.actual_col || '').toUpperCase();
-  if (!actualCol) return res.status(400).json({ error: 'Actual column not configured for this step' });
-
   const spreadsheetId = extractSpreadsheetId(sheet.sheet_id);
   const tabName = sheet.sheet_name || 'Sheet1';
+  const headerRowIdx = (sheet.header_row || 1) - 1;
+
+  // Writing is where a stale column does real damage: it puts a timestamp on
+  // somebody else's step. So the target is resolved from the header row here
+  // too, exactly as on the read path — never from the letter the browser sent.
+  const extraRows = await db.rows(
+    `SELECT id, col_letter, header_name, header_occ FROM fms_extra_rows WHERE step_id=? ORDER BY id ASC`,
+    [step.id]);
+  const headerOnly = await google.readValues(
+    spreadsheetId, `${tabName}!${headerRowIdx + 1}:${headerRowIdx + 1}`, { fresh: true });
+  const cols = fmsColumns.resolveStep(step, extraRows, headerOnly[0] || []);
+
+  const actualCol = fmsColumns.letterAt(cols.actual);
+  if (!actualCol) return res.status(400).json({ error: 'Actual column not configured for this step' });
 
   const data = [{ range: `${tabName}!${actualCol}${rowNumber}`, values: [[istSheetSerialNow()]] }];
 
-  if (delayReason && step.delay_reason_col) {
-    data.push({ range: `${tabName}!${step.delay_reason_col.toUpperCase()}${rowNumber}`, values: [[delayReason]] });
+  const delayCol = fmsColumns.letterAt(cols.delay);
+  if (delayReason && delayCol) {
+    data.push({ range: `${tabName}!${delayCol}${rowNumber}`, values: [[delayReason]] });
   }
   if (extraInputs && extraInputs.length) {
+    // Match on the row id, not the letter. The browser holds the configuration
+    // it was handed when the page loaded; the sheet may have moved since.
+    const byId = new Map(extraRows.map(r => [String(r.id), r]));
     for (const ei of extraInputs) {
-      if (ei.colLetter && ei.value !== undefined && ei.value !== '') {
-        data.push({ range: `${tabName}!${ei.colLetter.toUpperCase()}${rowNumber}`, values: [[ei.value]] });
-      }
+      if (ei.value === undefined || ei.value === '') continue;
+      const row = ei.rowId != null ? byId.get(String(ei.rowId)) : null;
+      const letter = row
+        ? fmsColumns.letterAt(cols.extras[row.id])
+        : (ei.colLetter || '').toUpperCase();   // older client — fall back to what it sent
+      if (letter) data.push({ range: `${tabName}!${letter}${rowNumber}`, values: [[ei.value]] });
     }
   }
-  if (step.doer_name_col) {
+  const doerCol = fmsColumns.letterAt(cols.doer);
+  if (doerCol) {
     const user = await db.one('SELECT name FROM users WHERE id=? LIMIT 1', [req.session.userId]);
     if (user?.name) {
-      data.push({ range: `${tabName}!${step.doer_name_col.toUpperCase()}${rowNumber}`, values: [[user.name]] });
+      data.push({ range: `${tabName}!${doerCol}${rowNumber}`, values: [[user.name]] });
     }
   }
 
