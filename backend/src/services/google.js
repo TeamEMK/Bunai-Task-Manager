@@ -13,8 +13,47 @@ let _sheetsReadClient = null;
 let _sheetsWriteClient = null;
 let _driveClient = null;
 
+// A service-account file pasted into an environment variable arrives damaged
+// more often than not. The dashboard may add a byte-order mark or wrapping
+// quotes, and the line breaks inside private_key — which JSON requires to be
+// written as an escape — routinely come through as real newlines, which is a
+// syntax error. Failing the parse takes down every sheet-backed feature at
+// once, so the common damage is repaired first.
+function parseServiceAccountJson(raw) {
+  let text = String(raw).trim();
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  // Strip wrapping quotes, but not the leading quote of the object's first key.
+  const wrapped = (text.startsWith("'") && text.endsWith("'"))
+    || (text.startsWith('"') && text.endsWith('"') && !text.startsWith('{"'));
+  if (wrapped) text = text.slice(1, -1);
+
+  try { return JSON.parse(text); } catch (_) { /* fall through to the repair */ }
+
+  // Escape line breaks that fall INSIDE a string. Breaks between tokens are
+  // legal whitespace and must be left alone, so this tracks the quoting instead
+  // of replacing blindly.
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (const ch of text) {
+    if (escaped) { out += ch; escaped = false; continue; }
+    if (ch === '\\') { out += ch; escaped = inString; continue; }
+    if (ch === '"') { inString = !inString; out += ch; continue; }
+    if (inString && ch === '\n') { out += '\\n'; continue; }
+    if (inString && ch === '\r') { out += '\\r'; continue; }
+    out += ch;
+  }
+
+  try { return JSON.parse(out); } catch (e) {
+    throw new Error(
+      `GOOGLE_CREDENTIALS is set but could not be parsed as JSON (${e.message}). `
+      + 'It must be the contents of the service-account .json file. If the private key was '
+      + 'pasted with real line breaks, they need to be escaped so the value is one line.');
+  }
+}
+
 function loadCredentials() {
-  if (config.google.credentialsJson) return JSON.parse(config.google.credentialsJson);
+  if (config.google.credentialsJson) return parseServiceAccountJson(config.google.credentialsJson);
   // Local-dev fallback — credentials.json at the repo root (gitignored).
   try { return require(path.join(config.root, 'credentials.json')); }
   catch (e) {
@@ -167,6 +206,6 @@ module.exports = {
   getSheetsClient, getReadClient, getWriteClient, READ_SCOPE, WRITE_SCOPE,
   readValues, invalidateSheet,
   listTabs, resolveTabNameByGid, findTabByTitle, forgetTabs,
-  getDriveClient, uploadToDrive, uploadPODocToDrive, serviceAccountEmail,
+  getDriveClient, uploadToDrive, uploadPODocToDrive, serviceAccountEmail, parseServiceAccountJson,
   prewarm,
 };
