@@ -321,16 +321,17 @@ async function writeSteps(conn, fmsId, steps, headers = []) {
     const asStep = {
       plan_col: s.planCol || '', actual_col: s.actualCol || '',
       doer_name_col: s.doerNameCol || '', delay_reason_col: s.delayReasonCol || '',
+      complete_col: s.completeCol || '',
     };
     const headerMap = fmsColumns.buildHeaderMap(asStep, [], headers);
     headerMap.show = fmsColumns.buildShowMap(s.showCols || [], headers);
 
     const [sr] = await conn.query(
-      `INSERT INTO fms_steps (fms_id,step_order,step_name,plan_col,actual_col,extra_input,extra_col,show_cols,delay_reason_col,doer_name_col,header_map)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO fms_steps (fms_id,step_order,step_name,plan_col,actual_col,extra_input,extra_col,show_cols,delay_reason_col,doer_name_col,complete_col,header_map)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [fmsId, i + 1, s.stepName, s.planCol || '', s.actualCol || '', s.extraInput || 'no',
        s.extraCol || '', JSON.stringify(s.showCols || []), s.delayReasonCol || '', s.doerNameCol || '',
-       JSON.stringify(headerMap)]);
+       s.completeCol || '', JSON.stringify(headerMap)]);
     const stepId = sr.insertId;
 
     if (s.doers?.length) {
@@ -621,10 +622,22 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
     spreadsheetId, `${tabName}!${headerRowIdx + 1}:${headerRowIdx + 1}`, { fresh: true });
   const cols = fmsColumns.resolveStep(step, extraRows, headerOnly[0] || []);
 
+  // Two ways a step gets completed, and the sheet decides which.
+  //
+  // Where the sheet derives the actual date itself — typically
+  // =if(H8,H8,if(J8,$A$1,"")), which freezes a timestamp the moment a checkbox
+  // is ticked — writing our own timestamp would replace that formula and leave
+  // the checkbox and the date disagreeing forever after. So the app ticks the
+  // checkbox and lets the sheet fill the date, exactly as a person would.
+  const completeCol = fmsColumns.letterAt(cols.complete);
   const actualCol = fmsColumns.letterAt(cols.actual);
-  if (!actualCol) return res.status(400).json({ error: 'Actual column not configured for this step' });
+  if (!completeCol && !actualCol) {
+    return res.status(400).json({ error: 'Neither an Actual column nor a completion checkbox is configured for this step' });
+  }
 
-  const data = [{ range: `${tabName}!${actualCol}${rowNumber}`, values: [[istSheetSerialNow()]] }];
+  const data = completeCol
+    ? [{ range: `${tabName}!${completeCol}${rowNumber}`, values: [[true]] }]
+    : [{ range: `${tabName}!${actualCol}${rowNumber}`, values: [[istSheetSerialNow()]] }];
 
   const delayCol = fmsColumns.letterAt(cols.delay);
   if (delayReason && delayCol) {
@@ -659,7 +672,13 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
   // The row just changed — drop any cached read of this sheet.
   google.invalidateSheet(spreadsheetId);
 
-  res.json({ success: true });
+  res.json({
+    success: true,
+    // Which mechanism was used, so the screen can say "ticked Status" rather
+    // than implying a date was written.
+    completedBy: completeCol ? 'checkbox' : 'timestamp',
+    column: completeCol || actualCol,
+  });
 }));
 
 module.exports = router;

@@ -196,20 +196,32 @@ function detectSteps(columns, { labelRows = [] } = {}) {
     if (delayRaw && delayRaw.isFormula) {
       warnings.push({ col: delayRaw.col, name: delayRaw.name, reason: 'computed by the sheet — left unmapped so its formula is not overwritten' });
     }
-    // The same danger applies to the column the app stamps on completion.
+    // The column the app stamps on completion is the same hazard. When the
+    // sheet derives it from a checkbox, ticking that checkbox is what completing
+    // the step means here — so that becomes the write target and the derived
+    // column is left to the formula that owns it.
+    const checkbox = inBand.find(c => c.validation?.type === 'boolean');
+    let completeCol = null;
     if (actualCol?.isFormula) {
-      const checkbox = inBand.find(c => c.validation?.type === 'boolean');
-      warnings.push({
-        col: actualCol.col, name: actualCol.name,
-        reason: checkbox
-          ? `filled by a formula — this step looks like it completes by ticking "${checkbox.name}" (${checkbox.col}), not by writing here`
-          : 'filled by a formula — marking the step done would replace that formula',
-      });
+      if (checkbox) {
+        completeCol = checkbox;
+        warnings.push({
+          col: checkbox.col, name: checkbox.name,
+          kind: 'info',
+          reason: `this step completes by ticking it — "${actualCol.name}" (${actualCol.col}) is filled by the sheet, so the app ticks here instead of writing there`,
+        });
+      } else {
+        warnings.push({
+          col: actualCol.col, name: actualCol.name,
+          reason: 'filled by a formula, and there is no checkbox to tick — marking the step done would replace that formula',
+        });
+      }
     }
 
     const extraRows = [];
     for (const c of inBand) {
       if (c === planCol || c === actualCol || c === doerCol || c === delayCol) continue;
+      if (c === completeCol) continue;              // it is the step's switch, not an input
       if (classify(c.name) !== 'other') continue;    // a stray second plan/actual
       const reason = exclusionReason(c);
       if (reason) { skipped.push({ col: c.col, name: c.name || `COL ${c.col}`, reason, step: i + 1 }); continue; }
@@ -240,6 +252,8 @@ function detectSteps(columns, { labelRows = [] } = {}) {
       actualCol: actualCol?.col || '',
       actualHeader: actualCol?.name || '',
       doerNameCol: doerCol?.col || '',
+      completeCol: completeCol?.col || '',
+      completeHeader: completeCol?.name || '',
       doerNameHeader: doerCol?.name || '',
       delayReasonCol: delayCol?.col || '',
       delayReasonHeader: delayCol?.name || '',

@@ -16,7 +16,7 @@ const fmsColumns = require('./fmsColumns');
 
 const SHEET_COLUMNS = 'id, fms_name, sheet_name, sheet_id, header_row, total_steps, created_by, created_at';
 const STEP_COLUMNS = `id, fms_id, step_order, step_name, plan_col, actual_col, extra_input, extra_col,
-                      show_cols, delay_reason_col, doer_name_col, header_map`;
+                      show_cols, delay_reason_col, doer_name_col, complete_col, header_map`;
 
 const stepsForSheets = async (sheetIds) => {
   if (!sheetIds.length) return new Map();

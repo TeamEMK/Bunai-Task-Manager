@@ -150,9 +150,29 @@ eq(liveOut.steps.map(s => [s.planCol, s.actualCol, s.doerNameCol]), [['G', 'H', 
 // "Time Delay" is derived from the two dates. Writing a reason there would
 // destroy the formula, so it is refused however well the name matches.
 eq(liveOut.steps.map(s => s.delayReasonCol), ['', ''], 'a computed column is never the delay target');
-eq(liveOut.steps[0].warnings.map(w => w.col), ['I', 'H'], 'both hazards reported');
-eq(/ticking "Status" \(J\)/.test(liveOut.steps[0].warnings[1].reason), true,
-  'says the step completes by ticking the checkbox, not by writing to Actual');
+
+// The Actual column is derived from the checkbox, so completing the step means
+// ticking the checkbox. That becomes the write target; the derived column is
+// left to the formula that owns it.
+eq(liveOut.steps.map(s => s.completeCol), ['J', 'O'], 'the checkbox is the completion target');
+eq(liveOut.steps.map(s => s.completeHeader), ['Status', 'Status'], 'and it is named');
+eq(liveOut.steps[0].warnings.map(w => w.col), ['I', 'J'], 'the delay formula and the completion switch are both reported');
+eq(liveOut.steps[0].warnings[1].kind, 'info', 'the completion note is information, not a hazard');
+eq(/completes by ticking it/.test(liveOut.steps[0].warnings[1].reason), true,
+  'it says the step completes by ticking, rather than warning about a formula');
+// The checkbox is the switch, so it is not offered as an input to type into.
+eq(liveOut.skipped.map(k => k.col), [], 'the checkbox is no longer listed as a skipped column');
+
+// Without a checkbox there is nothing to tick, so the hazard stands.
+reset();
+const noBox = detectSteps([
+  col('Planned', { isFormula: true, formulaCells: 8 }),
+  col('Actual', { isFormula: true, formulaCells: 8 }),
+  col('Doer'),
+]);
+eq(noBox.steps[0].completeCol, '', 'no checkbox, no completion column');
+eq(/no checkbox to tick/.test(noBox.steps[0].warnings[0].reason), true,
+  'and the formula hazard is stated plainly');
 eq(liveOut.leadingColumns.length, 6, 'the identity columns stay out of the steps');
 
 section('stepLabelsFrom');

@@ -4331,7 +4331,8 @@ async function openEditFMS() {
     extraRows: (s.extraRows||[]).map(r=>({col_letter:r.col_letter||'', field_type:r.field_type||'text', label:r.row_label||r.label||r.col_letter||'', dropdown_options:r.dropdown_options||'', required: r.required==null?1:(r.required?1:0)})),
     showCols: s.show_cols_parsed || [],
     delayReasonCol: s.delay_reason_col||'',
-    doerNameCol: s.doer_name_col||''
+    doerNameCol: s.doer_name_col||'',
+    completeCol: s.complete_col||''
   }));
 
   fmsDeleteMode = false;
@@ -4413,7 +4414,7 @@ async function saveEditFMS() {
   const r = await api(`/api/fms/${fmsActiveId}`,'PUT',{
     fmsName: fmsName || sheetName,
     sheetName, sheetId, headerRow,
-    steps: fmsSteps.map(s=>({...s, showCols:s.showCols||[], delayReasonCol:s.delayReasonCol||'', doerNameCol:s.doerNameCol||s.doer_name_col||'', extraRows:(s.extraRows||[]).map(r=>({...r,dropdown_options:r.dropdown_options||''}))}))
+    steps: fmsSteps.map(s=>({...s, showCols:s.showCols||[], delayReasonCol:s.delayReasonCol||'', doerNameCol:s.doerNameCol||s.doer_name_col||'', completeCol:s.completeCol||s.complete_col||'', extraRows:(s.extraRows||[]).map(r=>({...r,dropdown_options:r.dropdown_options||''}))}))
   });
   if (r.error) { err.textContent=r.error; err.style.display='block'; return; }
 
@@ -4542,7 +4543,7 @@ async function proceedToStepsConfig() {
   const container = document.getElementById('fmsStepsContainer');
   container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted-foreground)">⏳ Loading headers...</div>';
   for (let i=0; i<fmsData.totalSteps; i++) {
-    fmsSteps.push({ stepName:`Step ${i+1}`, doers:[], planCol:'', actualCol:'', extraInput:'no', extraCol:'', extraRows:[], showCols:[], delayReasonCol:'', doerNameCol:'' }); // extraRows items: {col_letter, field_type, label}
+    fmsSteps.push({ stepName:`Step ${i+1}`, doers:[], planCol:'', actualCol:'', extraInput:'no', extraCol:'', extraRows:[], showCols:[], delayReasonCol:'', doerNameCol:'', completeCol:'' }); // extraRows items: {col_letter, field_type, label}
   }
 
   fmsDeleteMode = false;
@@ -4632,6 +4633,7 @@ function fmsStepFromDetection(d) {
     showCols: d.showCols || [],
     delayReasonCol: d.delayReasonCol || '',
     doerNameCol: d.doerNameCol || '',
+    completeCol: d.completeCol || '',
     _detected: true,
     _doerUnmatched: d.doerUnmatched || [],
   };
@@ -4830,6 +4832,18 @@ function buildStepBoxHTML(idx) {
         </button>
       </div>
       <div id="fmsLoadDoersResult_${idx}" style="margin-top:8px;font-size:12px;display:none"></div>
+    </div>
+
+    <div class="form-group" style="margin:10px 0 0">
+      <label>Complete By Ticking <span style="color:var(--faint);font-weight:400;font-size:11px">(for sheets where a checkbox fills the Actual date itself — leave as None to write the date directly)</span></label>
+      ${headers.length ? `
+      <select class="header-select" onchange="fmsSteps[${idx}].completeCol=this.value">
+        <option value="">-- None (write the timestamp into Actual) --</option>
+        ${headers.map(h=>`<option value="${h.col}" ${(s.completeCol||'')===h.col?'selected':''}>${h.name} (COL ${h.col})</option>`).join('')}
+      </select>` : `
+      <input type="text" value="${s.completeCol||''}" placeholder="e.g. J"
+        oninput="fmsSteps[${idx}].completeCol=this.value"
+        style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none"/>`}
     </div>
 
     <div class="form-group" style="margin:10px 0 0">
@@ -5104,7 +5118,7 @@ function getActiveFMSContainer() {
 
 function addFMSStep() {
   const idx = fmsSteps.length;
-  fmsSteps.push({stepName:`Step ${idx+1}`, doers:[], planCol:'', actualCol:'', extraInput:'no', extraCol:'', extraRows:[], showCols:[], delayReasonCol:'', doerNameCol:''});
+  fmsSteps.push({stepName:`Step ${idx+1}`, doers:[], planCol:'', actualCol:'', extraInput:'no', extraCol:'', extraRows:[], showCols:[], delayReasonCol:'', doerNameCol:'', completeCol:''});
   appendFMSStepBox(idx, getActiveFMSContainer());
   updateEditStepNav();
 }
@@ -5250,7 +5264,7 @@ async function saveFMS() {
     sheetId: fmsData.sheetId,
     headerRow: fmsData.headerRow,
     totalSteps: fmsSteps.length,
-    steps: fmsSteps.map(s=>({...s, showCols: s.showCols||[], delayReasonCol: s.delayReasonCol||'', doerNameCol: s.doerNameCol||s.doer_name_col||'', extraRows: (s.extraRows||[]).map(r=>({...r, dropdown_options: r.dropdown_options||''}))}))
+    steps: fmsSteps.map(s=>({...s, showCols: s.showCols||[], delayReasonCol: s.delayReasonCol||'', doerNameCol: s.doerNameCol||s.doer_name_col||'', completeCol: s.completeCol||s.complete_col||'', extraRows: (s.extraRows||[]).map(r=>({...r, dropdown_options: r.dropdown_options||''}))}))
   };
 
   const r = await api('/api/fms', 'POST', body);
@@ -5943,11 +5957,16 @@ function openFMSDoneModal(rowIdx) {
   // Set plan display
   document.getElementById('fmsDonePlanDisplay').textContent = row.planValue || '—';
 
-  // Set actual = current full timestamp (DD/MM/YYYY HH:mm:ss) — saved to sheet as-is
+  // What saving will actually do. On a sheet that derives the actual date from a
+  // checkbox, the app ticks that checkbox and the sheet fills the date — so
+  // showing a timestamp here would promise something it does not write.
   const now = new Date();
   const pad = n => String(n).padStart(2,'0');
   const actualStr = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  document.getElementById('fmsDoneActualDisplay').textContent = actualStr;
+  const completeCol = (window._fmsActiveStepData || {}).complete_col || '';
+  document.getElementById('fmsDoneActualDisplay').textContent = completeCol
+    ? `✓ tick "${completeCol}" — the sheet fills the date itself`
+    : actualStr;
 
   // Check delay: actual > plan = delayed
   const planVal = (row.planValue || '').trim();
