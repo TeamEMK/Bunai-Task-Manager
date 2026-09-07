@@ -393,6 +393,7 @@
         <option value="90">Sold: 90 days</option>
       </select>
       <button class="btn btn-sm" onclick="loadStock()">Refresh</button>
+      <button class="btn btn-sm" id="stockSyncGhBtn" onclick="runVinSync('stock')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)">↻ Sync from Vinculum</button>
       <button class="btn btn-sm" id="stockLiveBtn" onclick="liveCheckStock()" title="Ask Vinculum for the current stock of the SKUs shown (up to 20)">⚡ Live check</button>
       <button class="btn btn-sm" id="stockSyncBtn" onclick="syncStockNow()" style="display:none">Sync now</button>
       <span id="stockSynced" style="font-size:12px;color:var(--faint);margin-left:auto"></span>
@@ -420,7 +421,8 @@
       <input type="date" id="salesFrom" onchange="salesCustom()" style="max-width:158px"/>
       <span style="color:var(--faint)">→</span>
       <input type="date" id="salesTo" onchange="salesCustom()" style="max-width:158px"/>
-      <button class="btn btn-sm" onclick="loadSales()" style="margin-left:auto">↻ Refresh</button>
+      <button class="btn btn-sm" id="salesSyncGhBtn" onclick="runVinSync('sales')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)" style="margin-left:auto">↻ Sync from Vinculum</button>
+      <button class="btn btn-sm" onclick="loadSales()">↻ Refresh</button>
       <span id="salesSpan" style="font-size:12px;color:var(--faint)"></span>
     </div>
 
@@ -461,7 +463,8 @@
       <input type="date" id="returnsFrom" onchange="returnsCustom()" style="max-width:158px"/>
       <span style="color:var(--faint)">→</span>
       <input type="date" id="returnsTo" onchange="returnsCustom()" style="max-width:158px"/>
-      <button class="btn btn-sm" onclick="loadReturns()" style="margin-left:auto">↻ Refresh</button>
+      <button class="btn btn-sm" id="returnsSyncGhBtn" onclick="runVinSync('returns')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)" style="margin-left:auto">↻ Sync from Vinculum</button>
+      <button class="btn btn-sm" onclick="loadReturns()">↻ Refresh</button>
       <span id="returnsSpan" style="font-size:12px;color:var(--faint)"></span>
     </div>
 

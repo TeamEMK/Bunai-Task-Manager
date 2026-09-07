@@ -468,11 +468,61 @@ async function syncStockNow() {
   }
 }
 
+// ── One-click Vinculum sync (Stock / Sales / Returns pages) ──
+// Triggers the GitHub Actions workflow (stock + orders + returns — Vercel can't
+// run the long pull in-process), then watches THIS page's own sync log for the
+// fresh run and reloads it. The whole workflow runs regardless of which page's
+// button was clicked; each page just waits for its own data to land.
+const VIN_SYNC = {
+  stock:   { endpoint: '/api/stock',   notice: (k, m) => stockNotice(k, m),  reload: () => loadStock(),   seen: d => d.lastSync && d.lastSync.rows_seen,    label: 'stock rows' },
+  sales:   { endpoint: '/api/sales',   notice: (k, m) => salesNotice(k, m),  reload: () => loadSales(),   seen: d => d.lastSync && d.lastSync.orders_seen,  label: 'orders' },
+  returns: { endpoint: '/api/returns', notice: (k, m) => returnsNotice(k, m), reload: () => loadReturns(), seen: d => d.lastSync && d.lastSync.returns_seen, label: 'returns' },
+};
+const _vinSyncPoll = {};
+function _vinSyncBtn(kind) { return document.getElementById(kind + 'SyncGhBtn'); }
+function _vinSyncReset(kind) { const b = _vinSyncBtn(kind); if (b) { b.disabled = false; b.textContent = '↻ Sync from Vinculum'; } }
+
+async function runVinSync(kind) {
+  const cfg = VIN_SYNC[kind]; if (!cfg) return;
+  const btn = _vinSyncBtn(kind);
+  // Remember the current sync so we can tell when a NEW run has landed.
+  let before = null;
+  try { const d0 = await api(cfg.endpoint); before = d0.lastSync ? d0.lastSync.started_at : null; } catch (_) {}
+  let r;
+  try { r = await api('/api/sync/run', 'POST'); } catch (e) { cfg.notice('bad', 'Could not start sync — ' + (e.message || 'error')); return; }
+  if (r.error) { cfg.notice('bad', r.error); return; }
+  cfg.notice('busy', '⏳ Sync started on GitHub — pulling stock, orders & returns from Vinculum. Takes ~5-7 min; you can leave this page, it keeps running.');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing… (~6 min)'; }
+  _vinSyncWatch(kind, before, Date.now());
+}
+function _vinSyncWatch(kind, before, startedAt) {
+  const cfg = VIN_SYNC[kind];
+  clearInterval(_vinSyncPoll[kind]);
+  _vinSyncPoll[kind] = setInterval(async () => {
+    if (Date.now() - startedAt > 13 * 60000) {          // stop watching after ~13 min
+      clearInterval(_vinSyncPoll[kind]); _vinSyncReset(kind);
+      cfg.notice('busy', 'Still running on GitHub — give it another minute, then hit Refresh.');
+      return;
+    }
+    try {
+      const d = await api(cfg.endpoint);
+      const now = d.lastSync ? d.lastSync.started_at : null;
+      if (now && now !== before && d.lastSync.ended_at) {   // a fresh finished run
+        clearInterval(_vinSyncPoll[kind]); _vinSyncReset(kind);
+        cfg.notice('ok', `✓ Synced — ${Number(cfg.seen(d) || 0).toLocaleString('en-IN')} ${cfg.label} updated.`);
+        cfg.reload();
+      }
+    } catch (_) { /* transient blip — keep watching */ }
+  }, 20000);
+}
+
 async function loadStock() {
   const body = document.getElementById('stockBody');
   const tiles = document.getElementById('stockSynced');
   const syncBtn = document.getElementById('stockSyncBtn');
-  if (syncBtn) syncBtn.style.display = (ME && ME.role === 'admin') ? '' : 'none';
+  if (syncBtn) syncBtn.style.display = 'none';   // replaced by "↻ Sync from Vinculum" (GitHub trigger)
+  const ghBtn = document.getElementById('stockSyncGhBtn');
+  if (ghBtn) ghBtn.style.display = (ME && ME.role === 'admin') ? '' : 'none';
   try {
     const q = document.getElementById('stockSearch').value.trim();
     const low = document.getElementById('stockLow').value;
