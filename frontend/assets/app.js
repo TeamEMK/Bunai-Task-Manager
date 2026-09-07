@@ -4719,7 +4719,7 @@ function appendFMSStepBox(idx, containerId) {
 function buildStepBoxHTML(idx) {
   const s = fmsSteps[idx];
   const userOptions = fmsAllUsers.map(u=>`
-    <div class="multi-select-item" data-uid="${u.id}" onclick="toggleFMSDoer(event,${idx},${u.id})">
+    <div class="multi-select-item" data-uid="${u.id}" data-name="${dtEscape((u.name||'').toLowerCase())}" onclick="toggleFMSDoer(event,${idx},${u.id})">
       <input type="checkbox" ${(s.doers||[]).map(d=>parseInt(d)).includes(parseInt(u.id))?'checked':''}/> ${u.name}
     </div>`).join('');
 
@@ -4774,7 +4774,16 @@ function buildStepBoxHTML(idx) {
           <div class="selected-tags" id="fmsDoerTags_${idx}" onclick="toggleFMSDropdown(${idx})">
             <span style="color:var(--faint);font-size:12px">Select users...</span>
           </div>
-          <div class="multi-select-dropdown" id="fmsDoerDrop_${idx}">${userOptions}</div>
+          <div class="multi-select-dropdown" id="fmsDoerDrop_${idx}">
+            <div class="multi-select-search">
+              <input type="text" id="fmsDoerSearch_${idx}" placeholder="Search users…" autocomplete="off"
+                onclick="event.stopPropagation()"
+                oninput="filterFMSDoers(${idx},this.value)"
+                onkeydown="fmsDoerSearchKey(event,${idx})"/>
+            </div>
+            <div class="multi-select-list">${userOptions}</div>
+            <div class="multi-select-empty" id="fmsDoerEmpty_${idx}" style="display:none">No user by that name</div>
+          </div>
         </div>
         ${doerHintHTML}
       </div>
@@ -5018,8 +5027,53 @@ function removeFMSExtraRow(idx, ri) {
   updateFMSDoerTags(idx);
 }
 
+// A company's whole user list scrolls past in a 240px box, so picking one out
+// of it was the slow part of setting an FMS up. The list filters as you type.
+function filterFMSDoers(idx, q) {
+  const drop = document.getElementById(`fmsDoerDrop_${idx}`);
+  if (!drop) return;
+  // Each word has to appear somewhere in the name, so "pal swa" finds
+  // "Palak Swami" without having to type it in order.
+  const parts = String(q || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  let shown = 0;
+  drop.querySelectorAll('.multi-select-item').forEach(item => {
+    const hit = parts.every(part => (item.dataset.name || '').includes(part));
+    item.style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  });
+  const empty = document.getElementById(`fmsDoerEmpty_${idx}`);
+  if (empty) empty.style.display = shown ? 'none' : 'block';
+}
+
+// Clears whatever was typed and puts the full list back — every open starts
+// from the same place rather than from the last search.
+function resetFMSDoerSearch(idx) {
+  const box = document.getElementById(`fmsDoerSearch_${idx}`);
+  if (!box) return;
+  box.value = '';
+  filterFMSDoers(idx, '');
+}
+
+// Enter takes the top name and empties the box, so several doers can be added
+// without reaching for the mouse. Escape closes the list.
+function fmsDoerSearchKey(e, idx) {
+  const drop = document.getElementById(`fmsDoerDrop_${idx}`);
+  if (e.key === 'Escape') { if (drop) drop.classList.remove('open'); resetFMSDoerSearch(idx); return; }
+  if (e.key !== 'Enter' || !drop) return;
+  e.preventDefault();
+  const first = Array.from(drop.querySelectorAll('.multi-select-item')).find(i => i.style.display !== 'none');
+  if (!first) return;
+  toggleFMSDoer(e, idx, first.dataset.uid);
+  resetFMSDoerSearch(idx);
+}
+
 function toggleFMSDropdown(idx) {
-  document.getElementById(`fmsDoerDrop_${idx}`).classList.toggle('open');
+  const drop = document.getElementById(`fmsDoerDrop_${idx}`);
+  if (!drop) return;
+  const opening = !drop.classList.contains('open');
+  drop.classList.toggle('open', opening);
+  resetFMSDoerSearch(idx);
+  if (opening) setTimeout(() => { const b = document.getElementById(`fmsDoerSearch_${idx}`); if (b) b.focus(); }, 0);
 }
 
 function toggleFMSDoer(e, idx, uid) {
@@ -5053,7 +5107,10 @@ function setupMultiSelect(idx) {
   document.addEventListener('click', function(e) {
     const drop = document.getElementById(`fmsDoerDrop_${idx}`);
     const wrap = document.getElementById(`fmsDoerWrap_${idx}`);
-    if (drop && wrap && !wrap.contains(e.target)) drop.classList.remove('open');
+    if (drop && wrap && !wrap.contains(e.target) && drop.classList.contains('open')) {
+      drop.classList.remove('open');
+      resetFMSDoerSearch(idx);
+    }
   });
 }
 
