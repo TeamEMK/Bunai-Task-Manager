@@ -17,6 +17,7 @@ const fmsRepo = require('../services/fmsRepo');
 const fmsColumns = require('../services/fmsColumns');
 const fmsDetect = require('../services/fmsDetect');
 const sheetIntrospect = require('../services/sheetIntrospect');
+const doerMatch = require('../services/doerMatch');
 const multer = require('multer');
 
 // A file field's value in the sheet is a Drive link, so the upload happens
@@ -233,29 +234,16 @@ async function runDetection(req, res) {
   // name that appears only on row 200 should still be matched.
   const doerCols = [...new Set(detected.steps.map(s => s.doerNameCol).filter(Boolean))];
   const users = await db.rows('SELECT id, name FROM users');
-  // Two people with the same name cannot be told apart, so that name matches
-  // nobody — assigning either one would be a coin flip on someone's work.
-  const byName = new Map();
-  for (const u of users) {
-    const key = u.name.trim().toLowerCase();
-    byName.set(key, byName.has(key) ? null : u);
-  }
+  const userIndex = doerMatch.buildIndex(users);
 
   const columnNames = new Map();
   await Promise.all(doerCols.map(async (col) => {
     try {
       const vals = await google.readValues(meta.spreadsheetId, `${meta.tab}!${col}:${col}`);
-      const skip = usedRow;
       columnNames.set(col, [...new Set(
-        vals.slice(skip).map(r => String(r[0] ?? '').trim()).filter(Boolean))]);
+        vals.slice(usedRow).flatMap(r => doerMatch.splitNames(r[0])))]);
     } catch (_) { columnNames.set(col, []); }
   }));
-
-  // One cell often holds several people — "Ashok/Mamaji", "Paridhi & Rahees".
-  const splitNames = (text) => String(text || '')
-    .split(/[\/,&+]|\band\b/i)
-    .map(n => n.trim())
-    .filter(Boolean);
 
   for (const step of detected.steps) {
     // Two places name the doer, and on a planning sheet only the second is
@@ -264,22 +252,15 @@ async function runDetection(req, res) {
     // who it belongs to. Both are considered.
     const candidates = [
       ...(columnNames.get(step.doerNameCol) || []),
-      ...splitNames(step.doerLabel),
+      ...doerMatch.splitNames(step.doerLabel),
     ];
-    const matched = [];
-    const unmatched = [];
-    const seen = new Set();
-    for (const n of candidates) {
-      const key = n.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const u = byName.get(key);
-      if (u) matched.push({ id: u.id, name: u.name, sheetName: n });
-      else unmatched.push(n);          // unknown or ambiguous — left unassigned
-    }
+    const { matched, unmatched } = doerMatch.matchNames(candidates, userIndex);
     step.doers = matched.map(m => m.id);
     step.doerMatches = matched;
     step.doerUnmatched = unmatched;
+    // What the sheet actually says, kept whether or not it resolved, so a step
+    // the matcher could not settle still shows the admin the names to assign.
+    step.doerSheetNames = [...new Set(candidates.map(c => c.trim()).filter(Boolean))];
   }
 
   res.json({

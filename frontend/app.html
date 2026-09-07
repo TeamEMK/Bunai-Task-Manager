@@ -386,6 +386,11 @@
         <option value="10">10 or fewer</option>
         <option value="20">20 or fewer</option>
       </select>
+      <select id="stockGroupBy" onchange="loadStock()" title="Club every size of a product onto one row">
+        <option value="sku">Every SKU</option>
+        <option value="style">Club sizes</option>
+        <option value="design">Club sizes + colours</option>
+      </select>
       <select id="stockSoldDays" onchange="loadStock()" title="Sales window for the Sold / reorder column">
         <option value="7">Sold: 7 days</option>
         <option value="30">Sold: 30 days</option>
@@ -401,7 +406,7 @@
 
     <div class="table-container">
       <table>
-        <thead><tr><th style="width:44px">#</th><th>SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (45d)</th></tr></thead>
+        <thead><tr><th style="width:44px">#</th><th id="stockSkuHeader">SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (45d)</th></tr></thead>
         <tbody id="stockBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -1145,6 +1150,7 @@
   <div class="modal" style="width:860px;max-width:94vw">
     <h3 id="salesDetailTitle">Orders</h3>
     <div id="salesDetailSummary" style="margin:-4px 0 12px;font-size:13px;color:var(--muted-foreground)"></div>
+    <div id="salesDetailBreakdown" style="margin:0 0 12px"></div>
     <div class="table-container" style="max-height:60vh;overflow:auto">
       <table>
         <thead><tr><th>Order</th><th>Customer</th><th>Phone</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>

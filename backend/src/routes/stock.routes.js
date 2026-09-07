@@ -10,10 +10,16 @@ const { requireAuth, requireAdmin, requireCronSecret } = require('../middleware/
 const { asyncRoute } = require('../middleware/errors');
 const { runVinculumSync } = require('../services/scheduler');
 const vin = require('../../vinculum');
+const skuGroup = require('../services/skuGroup');
 
 const router = express.Router();
 
 const ROW_LIMIT = 500;
+// Clubbing has to see every row before it can add anything up — a product cut
+// off at row 500 would report a fraction of its stock as the whole. This cap
+// only exists so a runaway table cannot take the page down; hitting it is
+// reported as truncated, the same as any other trim.
+const GROUP_SCAN_LIMIT = 50000;
 
 router.get('/stock', requireAuth, async (req, res) => {
   try {
@@ -27,23 +33,30 @@ router.get('/stock', requireAuth, async (req, res) => {
     // Reorder view: only SKUs selling faster than they are stocked. Computed
     // after the sold column is joined in, so it can't be a plain WHERE.
     const reorder = req.query.reorder === '1';
+    // Club every size (and optionally every colour) of a product onto one row.
+    // A kurta in five sizes and two colours is ten SKUs, so an unclubbed page of
+    // stock is really a page of one product. 'sku' — the default — is off.
+    const asked = String(req.query.groupBy || 'sku');
+    const grouping = (skuGroup.isMode(asked) && asked !== 'sku') ? asked : null;
 
     const where = [];
     const args = [];
     if (q) { where.push('(i.sku LIKE ? OR s.description LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
     // The low threshold is skipped in reorder mode — reorder is its own filter,
     // applied after the sold figures are known.
-    if (!reorder && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
+    // It is also skipped when clubbing: filtering single sizes and then adding
+    // them up would report a product as low on stock because one size is.
+    if (!reorder && !grouping && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
 
     // Five independent reads, issued together.
-    const [rows, totals, lastSync, lastOk, counts] = await Promise.all([
+    let [rows, totals, lastSync, lastOk, counts] = await Promise.all([
       db.rows(
         `SELECT i.sku, i.warehouse, i.qty, i.synced_at, COALESCE(s.description, '') AS description
            FROM vin_inventory i
            LEFT JOIN vin_skus s ON s.sku = i.sku
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY i.qty ASC, i.sku ASC
-          LIMIT ${reorder ? 2000 : ROW_LIMIT}`, args),
+          LIMIT ${grouping ? GROUP_SCAN_LIMIT : reorder ? 2000 : ROW_LIMIT}`, args),
       db.rows(
         `SELECT warehouse, COUNT(*) AS skus, COALESCE(SUM(qty),0) AS units
            FROM vin_inventory WHERE qty > 0 GROUP BY warehouse ORDER BY warehouse`),
@@ -62,24 +75,53 @@ router.get('/stock', requireAuth, async (req, res) => {
            FROM vin_inventory`),
     ]);
 
-    // Enrich each row with units sold in the last 45 days (from live orders),
-    // turning the stock list into a reorder view. Separate, guarded query — if
-    // orders were never synced the column is simply blank, not an error.
+    // Enrich each row with units sold in the window (from live orders), turning
+    // the stock list into a reorder view. Separate, guarded query — if orders
+    // were never synced the column is simply blank, not an error.
     try {
-      const skus = [...new Set(rows.map(r => r.sku))];
-      if (skus.length) {
+      if (grouping) {
+        // Grouping needs every row, so the SKU list would be thousands long.
+        // Asking for the whole window's sales in one go is cheaper than an IN
+        // clause that size, and the extra SKUs simply go unclaimed.
         const sold = await db.rows(
           `SELECT it.sku, SUM(it.order_qty) sold
              FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
             WHERE LOWER(it.status) <> 'cancelled'
               AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
-              AND it.sku IN (${skus.map(() => '?').join(',')})
-            GROUP BY it.sku`, skus);
+            GROUP BY it.sku`);
         const m = {};
         for (const s of sold) m[s.sku] = Number(s.sold) || 0;
         rows.forEach(r => { r.sold = m[r.sku] || 0; });
+      } else {
+        const skus = [...new Set(rows.map(r => r.sku))];
+        if (skus.length) {
+          const sold = await db.rows(
+            `SELECT it.sku, SUM(it.order_qty) sold
+               FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+              WHERE LOWER(it.status) <> 'cancelled'
+                AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+                AND it.sku IN (${skus.map(() => '?').join(',')})
+              GROUP BY it.sku`, skus);
+          const m = {};
+          for (const s of sold) m[s.sku] = Number(s.sold) || 0;
+          rows.forEach(r => { r.sold = m[r.sku] || 0; });
+        }
       }
     } catch (_) { rows.forEach(r => { r.sold = 0; }); }
+
+    // Club sizes (and optionally colours) onto one row per product. This has to
+    // happen after the sold figures land, so a clubbed row's sales are the sum
+    // of its members' — and before the filters below, so "10 or fewer" means ten
+    // of the product, not ten of one size.
+    // Whether the scan itself was cut short — once rows are clubbed the raw
+    // count is gone, and a clubbed row built from a truncated scan under-reports
+    // its own stock, so this has to be remembered here.
+    const scanCutShort = grouping ? rows.length >= GROUP_SCAN_LIMIT : false;
+    if (grouping) {
+      rows = skuGroup.collapse(rows, grouping);
+      rows.sort((a, b) => (a.qty - b.qty) || String(a.sku).localeCompare(String(b.sku)));
+      if (!reorder && Number.isFinite(low)) rows = rows.filter(r => Number(r.qty) <= low);
+    }
 
     // In reorder mode, keep only SKUs whose sales outrun their stock, most
     // under-stocked first, then trim to the display limit.
@@ -122,8 +164,12 @@ router.get('/stock', requireAuth, async (req, res) => {
     } catch (_) { /* orders not synced yet */ }
 
     res.json({
-      rows: outRows, totals, lastSync, lastOk, counts, soldDays, period,
-      truncated: reorder ? outRows.length === ROW_LIMIT : rows.length === ROW_LIMIT,
+      rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
+      totals, lastSync, lastOk, counts, soldDays, period,
+      groupBy: grouping || 'sku',
+      truncated: scanCutShort || (reorder
+        ? outRows.length === ROW_LIMIT
+        : outRows.length > ROW_LIMIT || (!grouping && rows.length === ROW_LIMIT)),
     });
   } catch (e) {
     // A missing table means the sync has never been set up on this deployment.

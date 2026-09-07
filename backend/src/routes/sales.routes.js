@@ -92,30 +92,83 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
 // current stock. Same optional ?from&to window as /sales.
 router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const sku = String(req.query.sku || '').trim();
-    if (!sku) return res.status(400).json({ error: 'No SKU given' });
+    // One SKU or several. A clubbed row on the Stock page is a product, not a
+    // SKU, so its orders are all its sizes' orders put together — asking for them
+    // one at a time would show the buyer of a large the same order twice.
+    const list = String(req.query.skus || req.query.sku || '')
+      .split(',').map(s => s.trim()).filter(Boolean).slice(0, 60);
+    if (!list.length) return res.status(400).json({ error: 'No SKU given' });
+    const inSku = `i.sku IN (${list.map(() => '?').join(',')})`;
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
     const ranged = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to);
-    const dc = ranged ? 'AND o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)' : '';
+    // The Stock page states its window in days ("Sold 45d"), so a click there
+    // should open exactly the orders that number counts. Validated to a bare int,
+    // like every other INTERVAL in this codebase.
+    // Zero means no window at all, which is how the Sales page asks. Clamping
+    // up to 1 the way soldDays does would turn "all time" into "since
+    // yesterday" and report every product as never sold.
+    // A stock row is one product in ONE warehouse. Without this the popup summed
+    // every warehouse, so a row reading 0 in GUJ opened saying 240 in stock.
+    // Orders carry no warehouse, so only the stock figures narrow.
+    const warehouse = String(req.query.warehouse || '').trim();
+    const askedDays = parseInt(req.query.days, 10);
+    const days = Number.isFinite(askedDays) && askedDays > 0 ? Math.min(365, askedDays) : 0;
+    const dc = ranged
+      ? 'AND o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)'
+      : (days ? `AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${days} DAY)` : '');
     const A = ranged ? [from, to] : [];
 
-    const [summary, orders] = await Promise.all([
+    const [summary, orders, bySku] = await Promise.all([
       db.one(
         `SELECT MAX(i.sku_name) name, ROUND(SUM(i.order_qty)) qty,
                 ROUND(SUM(i.order_qty * i.unit_price)) value, COUNT(DISTINCT o.order_id) orders
            FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
-          WHERE i.sku = ? AND LOWER(i.status) <> 'cancelled' ${dc}`, [sku, ...A]),
+          WHERE ${inSku} AND LOWER(i.status) <> 'cancelled' ${dc}`, [...list, ...A]),
       db.rows(
         `SELECT DISTINCT o.order_id, o.ext_order_no, o.order_date, o.payment_method, o.status,
                 o.order_amount, o.channel_name, o.ship_city, o.ship_state, o.customer_name, o.customer_phone
            FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
-          WHERE i.sku = ? ${dc}
-          ORDER BY o.order_date DESC LIMIT 200`, [sku, ...A]),
+          WHERE ${inSku} ${dc}
+          ORDER BY o.order_date DESC LIMIT 200`, [...list, ...A]),
+      // The same figures per member SKU. A clubbed product with no orders at all
+      // would otherwise open an empty popup that says nothing about the sizes it
+      // clubbed — which is the one thing the row promised.
+      db.rows(
+        `SELECT i.sku, ROUND(SUM(i.order_qty)) qty,
+                ROUND(SUM(i.order_qty * i.unit_price)) value, COUNT(DISTINCT o.order_id) orders
+           FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+          WHERE ${inSku} AND LOWER(i.status) <> 'cancelled' ${dc}
+          GROUP BY i.sku`, [...list, ...A]),
     ]);
+    // Stock per SKU, then totalled here — the breakdown and the headline figure
+    // must come from one read, or they can disagree.
     let stock = null;
-    try { const s = await db.one('SELECT ROUND(SUM(qty)) qty FROM vin_inventory WHERE sku = ?', [sku]); stock = s ? s.qty : null; } catch (_) {}
-    res.json({ sku, summary, stock, orders });
+    const stockBySku = new Map();
+    try {
+      const rows = await db.rows(
+        `SELECT sku, ROUND(SUM(qty)) qty FROM vin_inventory
+          WHERE sku IN (${list.map(() => '?').join(',')})${warehouse ? ' AND warehouse = ?' : ''}
+          GROUP BY sku`, warehouse ? [...list, warehouse] : list);
+      for (const r of rows) stockBySku.set(r.sku, Number(r.qty) || 0);
+      stock = rows.length ? rows.reduce((a, r) => a + (Number(r.qty) || 0), 0) : null;
+    } catch (_) {}
+
+    // Every member is listed, including the ones that sold nothing — a size
+    // sitting on stock and moving none is exactly what someone opens this to see.
+    const soldBySku = new Map(bySku.map(r => [r.sku, r]));
+    const members = list.map((s) => {
+      const sold = soldBySku.get(s);
+      return {
+        sku: s,
+        qty: sold ? Number(sold.qty) || 0 : 0,
+        value: sold ? Number(sold.value) || 0 : 0,
+        orders: sold ? Number(sold.orders) || 0 : 0,
+        stock: stockBySku.has(s) ? stockBySku.get(s) : null,
+      };
+    });
+
+    res.json({ sku: list[0], skus: list, days: days || null, warehouse: warehouse || null, summary, stock, orders, members });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
     res.status(500).json({ error: e.message });
