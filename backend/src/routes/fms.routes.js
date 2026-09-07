@@ -183,6 +183,31 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
   const { sheetId, sheetName, headerRow } = req.body;
   if (!sheetId) return res.status(400).json({ error: 'sheetId required' });
 
+  // Sheet failures are the common case here — wrong tab name, or the file never
+  // shared with the identity this server actually signs as. The generic handler
+  // turns those into a bare "Sheet not found", which leaves the admin staring
+  // at an empty screen with nothing to act on. So they are answered properly.
+  try {
+    return await runDetection(req, res);
+  } catch (err) {
+    const status = err.code === 403 || err.code === 404 ? 400 : 500;
+    const account = google.serviceAccountEmail();
+    const hint = err.code === 403
+      ? `This server reads sheets as ${account || 'its service account'}. Share the sheet with that address (Viewer is enough).`
+      : err.code === 404
+        ? 'Check the Sheet ID and that the tab name matches exactly, including spaces.'
+        : '';
+    console.error('  ❌ detect-steps:', err.code || '', err.message);
+    return res.status(status).json({
+      error: `${err.message}${hint ? ' — ' + hint : ''}`,
+      serviceAccount: account,
+      googleCode: err.code || null,
+    });
+  }
+}));
+
+async function runDetection(req, res) {
+  const { sheetId, sheetName, headerRow } = req.body;
   const askedRow = Math.max(1, parseInt(headerRow, 10) || 1);
   let usedRow = askedRow;
   let meta = await sheetIntrospect.readColumnMeta(sheetId, sheetName, usedRow);
@@ -226,15 +251,31 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
     } catch (_) { columnNames.set(col, []); }
   }));
 
+  // One cell often holds several people — "Ashok/Mamaji", "Paridhi & Rahees".
+  const splitNames = (text) => String(text || '')
+    .split(/[\/,&+]|\band\b/i)
+    .map(n => n.trim())
+    .filter(Boolean);
+
   for (const step of detected.steps) {
-    if (!step.doerNameCol) continue;
-    const names = columnNames.get(step.doerNameCol) || [];
+    // Two places name the doer, and on a planning sheet only the second is
+    // filled: the Doer COLUMN is where the app stamps a name when the step is
+    // completed, while the "Who" row above the header is where the plan says
+    // who it belongs to. Both are considered.
+    const candidates = [
+      ...(columnNames.get(step.doerNameCol) || []),
+      ...splitNames(step.doerLabel),
+    ];
     const matched = [];
     const unmatched = [];
-    for (const n of names) {
-      const u = byName.get(n.toLowerCase());
+    const seen = new Set();
+    for (const n of candidates) {
+      const key = n.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const u = byName.get(key);
       if (u) matched.push({ id: u.id, name: u.name, sheetName: n });
-      else unmatched.push(n);          // ambiguous or unknown — left unassigned
+      else unmatched.push(n);          // unknown or ambiguous — left unassigned
     }
     step.doers = matched.map(m => m.id);
     step.doerMatches = matched;
@@ -257,7 +298,7 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
     warnings: detected.steps.flatMap((st, i) => (st.warnings || []).map(w => ({ ...w, step: i + 1 }))),
     detectedSteps: detected.steps.length,
   });
-}));
+}
 
 router.get('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const sheet = await db.one('SELECT * FROM fms_sheets WHERE id=?', [req.params.id]);
@@ -280,16 +321,17 @@ async function writeSteps(conn, fmsId, steps, headers = []) {
     const asStep = {
       plan_col: s.planCol || '', actual_col: s.actualCol || '',
       doer_name_col: s.doerNameCol || '', delay_reason_col: s.delayReasonCol || '',
+      complete_col: s.completeCol || '',
     };
     const headerMap = fmsColumns.buildHeaderMap(asStep, [], headers);
     headerMap.show = fmsColumns.buildShowMap(s.showCols || [], headers);
 
     const [sr] = await conn.query(
-      `INSERT INTO fms_steps (fms_id,step_order,step_name,plan_col,actual_col,extra_input,extra_col,show_cols,delay_reason_col,doer_name_col,header_map)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO fms_steps (fms_id,step_order,step_name,plan_col,actual_col,extra_input,extra_col,show_cols,delay_reason_col,doer_name_col,complete_col,header_map)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [fmsId, i + 1, s.stepName, s.planCol || '', s.actualCol || '', s.extraInput || 'no',
        s.extraCol || '', JSON.stringify(s.showCols || []), s.delayReasonCol || '', s.doerNameCol || '',
-       JSON.stringify(headerMap)]);
+       s.completeCol || '', JSON.stringify(headerMap)]);
     const stepId = sr.insertId;
 
     if (s.doers?.length) {
@@ -580,10 +622,22 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
     spreadsheetId, `${tabName}!${headerRowIdx + 1}:${headerRowIdx + 1}`, { fresh: true });
   const cols = fmsColumns.resolveStep(step, extraRows, headerOnly[0] || []);
 
+  // Two ways a step gets completed, and the sheet decides which.
+  //
+  // Where the sheet derives the actual date itself — typically
+  // =if(H8,H8,if(J8,$A$1,"")), which freezes a timestamp the moment a checkbox
+  // is ticked — writing our own timestamp would replace that formula and leave
+  // the checkbox and the date disagreeing forever after. So the app ticks the
+  // checkbox and lets the sheet fill the date, exactly as a person would.
+  const completeCol = fmsColumns.letterAt(cols.complete);
   const actualCol = fmsColumns.letterAt(cols.actual);
-  if (!actualCol) return res.status(400).json({ error: 'Actual column not configured for this step' });
+  if (!completeCol && !actualCol) {
+    return res.status(400).json({ error: 'Neither an Actual column nor a completion checkbox is configured for this step' });
+  }
 
-  const data = [{ range: `${tabName}!${actualCol}${rowNumber}`, values: [[istSheetSerialNow()]] }];
+  const data = completeCol
+    ? [{ range: `${tabName}!${completeCol}${rowNumber}`, values: [[true]] }]
+    : [{ range: `${tabName}!${actualCol}${rowNumber}`, values: [[istSheetSerialNow()]] }];
 
   const delayCol = fmsColumns.letterAt(cols.delay);
   if (delayReason && delayCol) {
@@ -618,7 +672,13 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
   // The row just changed — drop any cached read of this sheet.
   google.invalidateSheet(spreadsheetId);
 
-  res.json({ success: true });
+  res.json({
+    success: true,
+    // Which mechanism was used, so the screen can say "ticked Status" rather
+    // than implying a date was written.
+    completedBy: completeCol ? 'checkbox' : 'timestamp',
+    column: completeCol || actualCol,
+  });
 }));
 
 module.exports = router;

@@ -207,6 +207,7 @@ const TABLES = [
     show_cols TEXT,
     delay_reason_col VARCHAR(10) DEFAULT '',
     doer_name_col VARCHAR(10) DEFAULT '',
+    complete_col VARCHAR(10) DEFAULT '',
     header_map TEXT
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
@@ -323,6 +324,10 @@ const COLUMNS = [
   // The header name each mapped column carried when the FMS was saved. Columns
   // move when someone inserts one in the sheet; the letter does not follow, the
   // name does. See services/fmsColumns.js.
+  // Some sheets complete a step by ticking a checkbox and derive the actual
+  // date from it themselves. Writing a timestamp into that derived column would
+  // replace its formula, so the tick is what the app performs instead.
+  ['fms_steps', 'complete_col', `VARCHAR(10) DEFAULT '' AFTER doer_name_col`],
   ['fms_steps', 'header_map', `TEXT AFTER doer_name_col`],
   ['fms_extra_rows', 'col_letter', `VARCHAR(10) DEFAULT '' AFTER row_label`],
   ['fms_extra_rows', 'field_type', `VARCHAR(20) DEFAULT 'text' AFTER col_letter`],

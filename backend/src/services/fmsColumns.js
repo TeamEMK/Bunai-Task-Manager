@@ -37,7 +37,7 @@ function headerIndex(headers) {
 }
 
 // The roles a step maps, in the order they sit in the sheet.
-const ROLES = ['plan', 'actual', 'doer', 'delay'];
+const ROLES = ['plan', 'actual', 'doer', 'delay', 'complete'];
 
 // Reads the JSON blob a step stores. Absent on rows saved before this existed.
 function parseHeaderMap(step) {
@@ -72,6 +72,7 @@ function buildHeaderMap(step, extraRows, headers) {
     actual: entry(step.actual_col),
     doer: entry(step.doer_name_col),
     delay: entry(step.delay_reason_col),
+    complete: entry(step.complete_col),
   };
 }
 
@@ -133,6 +134,7 @@ function resolveStep(step, extraRows = [], headers = []) {
     actual: colToIdx(step.actual_col),
     doer: step.doer_name_col ? colToIdx(step.doer_name_col) : -1,
     delay: step.delay_reason_col ? colToIdx(step.delay_reason_col) : -1,
+    complete: step.complete_col ? colToIdx(step.complete_col) : -1,
   };
   if (!map) {
     const extras = {};
@@ -174,7 +176,7 @@ function resolveStep(step, extraRows = [], headers = []) {
   }
 
   // ── 2) Resolve each role inside that band ──
-  const out = { plan: -1, actual: -1, doer: -1, delay: -1, extras: {}, show: [], unresolved, mapped: true };
+  const out = { plan: -1, actual: -1, doer: -1, delay: -1, complete: -1, extras: {}, show: [], unresolved, mapped: true };
 
   // Resolves one header name to a position. The band is the guard rail: once we
   // know which band this step occupies, a name that only matches OUTSIDE it is
@@ -206,6 +208,7 @@ function resolveStep(step, extraRows = [], headers = []) {
   out.actual = pick('actual', map.actual);
   out.doer = pick('doer', map.doer);
   out.delay = pick('delay', map.delay);
+  out.complete = pick('complete', map.complete);
 
   for (const row of extraRows) {
     const fallback = row.col_letter ? colToIdx(row.col_letter) : -1;

@@ -120,6 +120,32 @@ function bandsFrom(columns) {
 
 // columns: the array from sheetIntrospect.readColumnMeta().
 // Returns { steps, leadingColumns, skipped, planColumnCount }.
+// The rows above the header often describe each step group, and the sheet
+// labels them in its own first column: "What" the step is, "Who" does it.
+// Reading those labels beats guessing which row is which.
+const WHAT_RE = /^(what|step|steps|activity|task|process|stage)\b/i;
+const WHO_RE = /^(who|doer|doers|responsible|owner|by\s*whom|person)\b/i;
+
+// The label a row carries in the columns before the first step — "What", "Who".
+function rowLabel(row, firstPlanIndex) {
+  for (let i = 0; i < firstPlanIndex; i++) {
+    const v = String(row?.[i] ?? '').trim();
+    if (v) return v;
+  }
+  return '';
+}
+
+// Splits the label rows by what the sheet calls them. Returns the values that
+// line up with each plan column, per kind.
+function labelledRows(labelRows, planIndexes) {
+  const first = planIndexes[0] ?? 0;
+  const pick = (re) => {
+    const row = (labelRows || []).find(r => re.test(rowLabel(r, first)));
+    return row ? planIndexes.map(i => String(row[i] ?? '').trim()) : null;
+  };
+  return { what: pick(WHAT_RE), who: pick(WHO_RE) };
+}
+
 // Picks the row above the header that actually names the steps. A sheet often
 // carries a banner row ("Step1", "Step2") and a descriptive one ("Fabric
 // Sourced"); both line up with the plan columns, and the descriptive one is the
@@ -141,7 +167,12 @@ function stepLabelsFrom(labelRows, planIndexes) {
 function detectSteps(columns, { labelRows = [] } = {}) {
   const cols = Array.isArray(columns) ? columns : [];
   const bands = bandsFrom(cols);
-  const labels = stepLabelsFrom(labelRows, bands.map(b => cols[b.start]?.index).filter(i => i != null));
+  const planIndexes = bands.map(b => cols[b.start]?.index).filter(i => i != null);
+  // The sheet's own row labels first — "What" names the step, "Who" does it —
+  // then the scoring heuristic for sheets that carry no such labels.
+  const named = labelledRows(labelRows, planIndexes);
+  const labels = named.what || stepLabelsFrom(labelRows, planIndexes);
+  const doerLabels = named.who || [];
 
   // Columns before the first step are the row's identity (SO number, party,
   // style). They are context, never a step's input.
@@ -165,20 +196,32 @@ function detectSteps(columns, { labelRows = [] } = {}) {
     if (delayRaw && delayRaw.isFormula) {
       warnings.push({ col: delayRaw.col, name: delayRaw.name, reason: 'computed by the sheet — left unmapped so its formula is not overwritten' });
     }
-    // The same danger applies to the column the app stamps on completion.
+    // The column the app stamps on completion is the same hazard. When the
+    // sheet derives it from a checkbox, ticking that checkbox is what completing
+    // the step means here — so that becomes the write target and the derived
+    // column is left to the formula that owns it.
+    const checkbox = inBand.find(c => c.validation?.type === 'boolean');
+    let completeCol = null;
     if (actualCol?.isFormula) {
-      const checkbox = inBand.find(c => c.validation?.type === 'boolean');
-      warnings.push({
-        col: actualCol.col, name: actualCol.name,
-        reason: checkbox
-          ? `filled by a formula — this step looks like it completes by ticking "${checkbox.name}" (${checkbox.col}), not by writing here`
-          : 'filled by a formula — marking the step done would replace that formula',
-      });
+      if (checkbox) {
+        completeCol = checkbox;
+        warnings.push({
+          col: checkbox.col, name: checkbox.name,
+          kind: 'info',
+          reason: `this step completes by ticking it — "${actualCol.name}" (${actualCol.col}) is filled by the sheet, so the app ticks here instead of writing there`,
+        });
+      } else {
+        warnings.push({
+          col: actualCol.col, name: actualCol.name,
+          reason: 'filled by a formula, and there is no checkbox to tick — marking the step done would replace that formula',
+        });
+      }
     }
 
     const extraRows = [];
     for (const c of inBand) {
       if (c === planCol || c === actualCol || c === doerCol || c === delayCol) continue;
+      if (c === completeCol) continue;              // it is the step's switch, not an input
       if (classify(c.name) !== 'other') continue;    // a stray second plan/actual
       const reason = exclusionReason(c);
       if (reason) { skipped.push({ col: c.col, name: c.name || `COL ${c.col}`, reason, step: i + 1 }); continue; }
@@ -209,10 +252,16 @@ function detectSteps(columns, { labelRows = [] } = {}) {
       actualCol: actualCol?.col || '',
       actualHeader: actualCol?.name || '',
       doerNameCol: doerCol?.col || '',
+      completeCol: completeCol?.col || '',
+      completeHeader: completeCol?.name || '',
       doerNameHeader: doerCol?.name || '',
       delayReasonCol: delayCol?.col || '',
       delayReasonHeader: delayCol?.name || '',
       warnings,
+      // Who the sheet says does this step. The Doer COLUMN is often empty —
+      // it is where the app stamps a name on completion — while the "Who" row
+      // above the header is where the plan actually lives.
+      doerLabel: doerLabels[i] || '',
       extraInput: extraRows.length ? 'yes' : 'no',
       extraRows,
       // Left empty on purpose: blank means "show every column", and narrowing
@@ -227,6 +276,7 @@ function detectSteps(columns, { labelRows = [] } = {}) {
 
 module.exports = {
   detectSteps, classify, fieldTypeFor, stepNameFrom, exclusionReason, bandsFrom, stepLabelsFrom,
+  labelledRows, rowLabel,
   headerRowScore, guessHeaderRow,
   DOER_RE, DELAY_RE, PLAN_RE, ACTUAL_RE,
 };
