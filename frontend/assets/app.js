@@ -4636,6 +4636,8 @@ function fmsStepFromDetection(d) {
     completeCol: d.completeCol || '',
     _detected: true,
     _doerUnmatched: d.doerUnmatched || [],
+    _doerSheetNames: d.doerSheetNames || [],
+    _doerMatchedNames: (d.doerMatches || []).map(m => m.sheetName),
   };
 }
 
@@ -4721,6 +4723,17 @@ function buildStepBoxHTML(idx) {
       <input type="checkbox" ${(s.doers||[]).map(d=>parseInt(d)).includes(parseInt(u.id))?'checked':''}/> ${u.name}
     </div>`).join('');
 
+  // The sheet named somebody this step could not be assigned to — two people
+  // share the name, or nobody in the app is called that. Naming them here beats
+  // a silent blank: the admin can see who was meant and pick them in one click.
+  const doerLeftover = (s._doerSheetNames || []).filter(n => !(s._doerMatchedNames || []).includes(n));
+  const doerHintHTML = doerLeftover.length ? `
+    <div style="margin-top:5px;font-size:11px;color:var(--faint);line-height:1.5">
+      Sheet says <b style="color:#92400e">${doerLeftover.map(dtEscape).join(', ')}</b> —
+      ${(s.doers||[]).length ? 'not matched to a user' : 'no matching user, so nobody was assigned'}
+    </div>` : '';
+
+
   // Build header options for selects — MUST be declared BEFORE extraRowsHTML
   const headers = fmsSheetHeaders || [];
 
@@ -4763,6 +4776,7 @@ function buildStepBoxHTML(idx) {
           </div>
           <div class="multi-select-dropdown" id="fmsDoerDrop_${idx}">${userOptions}</div>
         </div>
+        ${doerHintHTML}
       </div>
       <div class="form-group" style="margin:0">
         <label>Plan <span style="color:var(--faint);font-weight:400;font-size:11px">(Plan ${idx+1})</span></label>
