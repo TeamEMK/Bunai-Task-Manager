@@ -4557,23 +4557,36 @@ async function proceedToStepsConfig() {
   // a silent one would, which is why the server leaves unclear fields empty.
   fmsSheetHeaders = [];
   let detection = null;
+  let readError = null;
   try {
     detection = await api('/api/fms/detect-steps', 'POST', {
       sheetId: fmsData.sheetId,
       sheetName: fmsData.sheetName,
       headerRow: fmsData.headerRow
     });
-    fmsSheetHeaders = detection.headers || [];
+    // api() resolves with the body even on a 4xx, so an error field is the
+    // failure — not just a thrown exception.
+    if (detection && detection.error) { readError = detection; detection = null; }
+    else fmsSheetHeaders = (detection && detection.headers) || [];
   } catch(e) {
+    readError = { error: e.message || 'Request failed' };
+  }
+
+  if (!detection) {
     // Fall back to headers alone; the admin then fills the steps by hand as before.
     try {
       const hRes = await api('/api/fms/fetch-headers', 'POST', {
         sheetId: fmsData.sheetId, sheetName: fmsData.sheetName, headerRow: fmsData.headerRow
       });
-      fmsSheetHeaders = hRes.headers || [];
-      showToast('⚠️ Could not auto-detect steps — headers loaded, fill the steps manually','error');
+      if (hRes && !hRes.error && (hRes.headers || []).length) {
+        fmsSheetHeaders = hRes.headers;
+        readError = null;
+        showToast('⚠️ Could not auto-detect steps — headers loaded, fill the steps manually','error');
+      } else if (hRes && hRes.error && !readError) {
+        readError = hRes;
+      }
     } catch(e2) {
-      showToast('⚠️ Sheet could not be read — using text inputs','error');
+      if (!readError) readError = { error: e2.message || 'Sheet could not be read' };
     }
   }
 
@@ -4596,7 +4609,7 @@ async function proceedToStepsConfig() {
 
   // Re-render steps with headers
   container.innerHTML = '';
-  renderFMSDetectionNote(detection);
+  renderFMSDetectionNote(detection, readError);
   fmsSteps.forEach((_, i) => appendFMSStepBox(i, 'fmsStepsContainer'));
 }
 
@@ -4627,9 +4640,28 @@ function fmsStepFromDetection(d) {
 // What the detector filled in, and — just as importantly — what it left out.
 // A column dropped without a word is how a doer ends up typing into a cell that
 // a formula overwrites an hour later.
-function renderFMSDetectionNote(detection) {
+function renderFMSDetectionNote(detection, readError) {
   const box = document.getElementById('fmsDetectNote');
   if (!box) return;
+
+  // A sheet that cannot be read used to fail into a toast that disappeared,
+  // leaving blank fields and no explanation. The reason stays on screen now.
+  if (readError) {
+    box.style.background = '#fef2f2';
+    box.style.borderColor = '#fecaca';
+    box.style.color = '#991b1b';
+    box.innerHTML = `<b>The sheet could not be read.</b><div style="margin-top:6px">${dtEscape(readError.error || 'Unknown error')}</div>`
+      + (readError.serviceAccount
+        ? `<div style="margin-top:6px">Share the sheet with <b>${dtEscape(readError.serviceAccount)}</b> (Viewer is enough), then reopen this screen.</div>`
+        : '')
+      + `<div style="margin-top:6px;color:#7f1d1d">Until then the columns below are plain text boxes — you can still fill them in by hand.</div>`;
+    box.style.display = 'block';
+    return;
+  }
+  box.style.background = '#f0fdf4';
+  box.style.borderColor = '#bbf7d0';
+  box.style.color = '#166534';
+
   if (!detection || !detection.steps || !detection.steps.length) {
     box.style.display = 'none';
     box.innerHTML = '';

@@ -147,6 +147,14 @@ async function uploadToDrive(buffer, originalName, mimeType, prefix = 'FILE') {
 const uploadPODocToDrive = (buffer, originalName, mimeType) =>
   uploadToDrive(buffer, originalName, mimeType, 'PO');
 
+// Which identity the server signs its Sheets calls as. A sheet has to be shared
+// with THIS address; on a deployment the credentials come from an environment
+// variable, so it is rarely the one whose name is on the file.
+function serviceAccountEmail() {
+  try { return loadCredentials().client_email || null; }
+  catch (_) { return null; }
+}
+
 // Pre-warm auth on startup so the first sheet-backed request does not pay for
 // the token exchange.
 function prewarm() {
@@ -159,6 +167,6 @@ module.exports = {
   getSheetsClient, getReadClient, getWriteClient, READ_SCOPE, WRITE_SCOPE,
   readValues, invalidateSheet,
   listTabs, resolveTabNameByGid, findTabByTitle, forgetTabs,
-  getDriveClient, uploadToDrive, uploadPODocToDrive,
+  getDriveClient, uploadToDrive, uploadPODocToDrive, serviceAccountEmail,
   prewarm,
 };

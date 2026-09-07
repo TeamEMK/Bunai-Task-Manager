@@ -183,6 +183,31 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
   const { sheetId, sheetName, headerRow } = req.body;
   if (!sheetId) return res.status(400).json({ error: 'sheetId required' });
 
+  // Sheet failures are the common case here — wrong tab name, or the file never
+  // shared with the identity this server actually signs as. The generic handler
+  // turns those into a bare "Sheet not found", which leaves the admin staring
+  // at an empty screen with nothing to act on. So they are answered properly.
+  try {
+    return await runDetection(req, res);
+  } catch (err) {
+    const status = err.code === 403 || err.code === 404 ? 400 : 500;
+    const account = google.serviceAccountEmail();
+    const hint = err.code === 403
+      ? `This server reads sheets as ${account || 'its service account'}. Share the sheet with that address (Viewer is enough).`
+      : err.code === 404
+        ? 'Check the Sheet ID and that the tab name matches exactly, including spaces.'
+        : '';
+    console.error('  ❌ detect-steps:', err.code || '', err.message);
+    return res.status(status).json({
+      error: `${err.message}${hint ? ' — ' + hint : ''}`,
+      serviceAccount: account,
+      googleCode: err.code || null,
+    });
+  }
+}));
+
+async function runDetection(req, res) {
+  const { sheetId, sheetName, headerRow } = req.body;
   const askedRow = Math.max(1, parseInt(headerRow, 10) || 1);
   let usedRow = askedRow;
   let meta = await sheetIntrospect.readColumnMeta(sheetId, sheetName, usedRow);
@@ -257,7 +282,7 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
     warnings: detected.steps.flatMap((st, i) => (st.warnings || []).map(w => ({ ...w, step: i + 1 }))),
     detectedSteps: detected.steps.length,
   });
-}));
+}
 
 router.get('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const sheet = await db.one('SELECT * FROM fms_sheets WHERE id=?', [req.params.id]);
