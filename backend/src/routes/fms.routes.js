@@ -251,15 +251,31 @@ async function runDetection(req, res) {
     } catch (_) { columnNames.set(col, []); }
   }));
 
+  // One cell often holds several people — "Ashok/Mamaji", "Paridhi & Rahees".
+  const splitNames = (text) => String(text || '')
+    .split(/[\/,&+]|\band\b/i)
+    .map(n => n.trim())
+    .filter(Boolean);
+
   for (const step of detected.steps) {
-    if (!step.doerNameCol) continue;
-    const names = columnNames.get(step.doerNameCol) || [];
+    // Two places name the doer, and on a planning sheet only the second is
+    // filled: the Doer COLUMN is where the app stamps a name when the step is
+    // completed, while the "Who" row above the header is where the plan says
+    // who it belongs to. Both are considered.
+    const candidates = [
+      ...(columnNames.get(step.doerNameCol) || []),
+      ...splitNames(step.doerLabel),
+    ];
     const matched = [];
     const unmatched = [];
-    for (const n of names) {
-      const u = byName.get(n.toLowerCase());
+    const seen = new Set();
+    for (const n of candidates) {
+      const key = n.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const u = byName.get(key);
       if (u) matched.push({ id: u.id, name: u.name, sheetName: n });
-      else unmatched.push(n);          // ambiguous or unknown — left unassigned
+      else unmatched.push(n);          // unknown or ambiguous — left unassigned
     }
     step.doers = matched.map(m => m.id);
     step.doerMatches = matched;

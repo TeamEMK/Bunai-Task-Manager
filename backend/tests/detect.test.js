@@ -1,7 +1,7 @@
 // Fixture tests for the FMS step detector — no network, no database.
 const path = require('path');
 const ROOT = require('path').join(__dirname, '..', 'src', 'services') + require('path').sep;
-const { detectSteps, classify, fieldTypeFor, stepNameFrom, stepLabelsFrom, guessHeaderRow } = require(ROOT + 'fmsDetect.js');
+const { detectSteps, classify, fieldTypeFor, stepNameFrom, stepLabelsFrom, guessHeaderRow, labelledRows, rowLabel } = require(ROOT + 'fmsDetect.js');
 
 let pass = 0, fail = 0;
 const eq = (got, want, label) => {
@@ -182,6 +182,37 @@ eq(guessHeaderRow([['Planned', 'Actual', 'Doer']]), 1, 'a sheet with no banner')
 // than picking a row of prose.
 eq(guessHeaderRow([['Name', 'Qty'], ['a', 'b']]), 0, 'declines when there is no pair');
 eq(guessHeaderRow([]), 0, 'empty sheet');
+
+
+section('labelledRows — the sheet labels its own rows');
+// A planning sheet describes each step group above the header, and says in its
+// own first column which row is which: "What" the step is, "Who" does it.
+// The Doer COLUMN in the grid is usually empty — that is where the app stamps a
+// name on completion, not where the plan lives.
+const planning = [
+  ['', '', '', '', '', '', 'Step1', '', '', '', '', 'Step2'],
+  ['What', 'Sample Requirement', '', '', '', '', 'Fabric Sourced', '', '', '', '', 'Fabric Dyed'],
+  ['Who', 'Ashok Ji', '', '', '', '', 'Ashok/Mamaji', '', '', '', '', 'Rahees'],
+  ['When', 'Anytime', '', '', '', '', '7 days', '', '', '', '', '7 days'],
+];
+eq(labelledRows(planning, [6, 11]),
+  { what: ['Fabric Sourced', 'Fabric Dyed'], who: ['Ashok/Mamaji', 'Rahees'] },
+  'What and Who rows found by their own labels');
+eq(labelledRows([['Notes', 'x']], [6]), { what: null, who: null }, 'no labelled rows');
+eq(rowLabel(['', '', 'Who', '', 'Ashok'], 4), 'Who', 'the label is the first filled cell before the steps');
+
+section('detectSteps — doer comes from the Who row');
+reset();
+const planCols = [
+  col('Entry Date'), col('Style'), col('Item'), col('Category'), col('Qty'), col('Remark'),
+  col('Planned'), col('Actual'), col('Time Delay'), col('Status', { validation: { type: 'boolean' } }), col('Doer'),
+  col('Planned'), col('Actual'), col('Time Delay'), col('Status', { validation: { type: 'boolean' } }), col('Doer'),
+];
+const planned = detectSteps(planCols, { labelRows: planning });
+eq(planned.steps.map(s => s.stepName), ['Fabric Sourced', 'Fabric Dyed'], 'names from the What row');
+eq(planned.steps.map(s => s.doerLabel), ['Ashok/Mamaji', 'Rahees'], 'doer label from the Who row');
+// The column is still mapped — it is where the name gets written on completion.
+eq(planned.steps.map(s => s.doerNameCol), ['K', 'P'], 'the Doer column is still the write target');
 
 console.log(`\n${fail ? '❌' : '✅'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
