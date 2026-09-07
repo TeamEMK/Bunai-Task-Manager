@@ -92,12 +92,27 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
 // current stock. Same optional ?from&to window as /sales.
 router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const sku = String(req.query.sku || '').trim();
-    if (!sku) return res.status(400).json({ error: 'No SKU given' });
+    // One SKU or several. A clubbed row on the Stock page is a product, not a
+    // SKU, so its orders are all its sizes' orders put together — asking for them
+    // one at a time would show the buyer of a large the same order twice.
+    const list = String(req.query.skus || req.query.sku || '')
+      .split(',').map(s => s.trim()).filter(Boolean).slice(0, 60);
+    if (!list.length) return res.status(400).json({ error: 'No SKU given' });
+    const inSku = `i.sku IN (${list.map(() => '?').join(',')})`;
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
     const ranged = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to);
-    const dc = ranged ? 'AND o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)' : '';
+    // The Stock page states its window in days ("Sold 45d"), so a click there
+    // should open exactly the orders that number counts. Validated to a bare int,
+    // like every other INTERVAL in this codebase.
+    // Zero means no window at all, which is how the Sales page asks. Clamping
+    // up to 1 the way soldDays does would turn "all time" into "since
+    // yesterday" and report every product as never sold.
+    const askedDays = parseInt(req.query.days, 10);
+    const days = Number.isFinite(askedDays) && askedDays > 0 ? Math.min(365, askedDays) : 0;
+    const dc = ranged
+      ? 'AND o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)'
+      : (days ? `AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${days} DAY)` : '');
     const A = ranged ? [from, to] : [];
 
     const [summary, orders] = await Promise.all([
@@ -105,17 +120,21 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
         `SELECT MAX(i.sku_name) name, ROUND(SUM(i.order_qty)) qty,
                 ROUND(SUM(i.order_qty * i.unit_price)) value, COUNT(DISTINCT o.order_id) orders
            FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
-          WHERE i.sku = ? AND LOWER(i.status) <> 'cancelled' ${dc}`, [sku, ...A]),
+          WHERE ${inSku} AND LOWER(i.status) <> 'cancelled' ${dc}`, [...list, ...A]),
       db.rows(
         `SELECT DISTINCT o.order_id, o.ext_order_no, o.order_date, o.payment_method, o.status,
                 o.order_amount, o.channel_name, o.ship_city, o.ship_state, o.customer_name, o.customer_phone
            FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
-          WHERE i.sku = ? ${dc}
-          ORDER BY o.order_date DESC LIMIT 200`, [sku, ...A]),
+          WHERE ${inSku} ${dc}
+          ORDER BY o.order_date DESC LIMIT 200`, [...list, ...A]),
     ]);
     let stock = null;
-    try { const s = await db.one('SELECT ROUND(SUM(qty)) qty FROM vin_inventory WHERE sku = ?', [sku]); stock = s ? s.qty : null; } catch (_) {}
-    res.json({ sku, summary, stock, orders });
+    try {
+      const s = await db.one(
+        `SELECT ROUND(SUM(qty)) qty FROM vin_inventory WHERE sku IN (${list.map(() => '?').join(',')})`, list);
+      stock = s ? s.qty : null;
+    } catch (_) {}
+    res.json({ sku: list[0], skus: list, days: days || null, summary, stock, orders });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
     res.status(500).json({ error: e.message });

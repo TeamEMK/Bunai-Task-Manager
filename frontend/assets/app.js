@@ -606,6 +606,10 @@ async function loadStock() {
     // "SKU" is a key that exists nowhere in Vinculum — so send its members.
     window._stockSkus = [...new Set(d.rows.flatMap(r => r.skus || [r.sku]))];
     const clubbed = (d.groupBy || 'sku') !== 'sku';
+    // Orders live behind an admin-only endpoint, and Stock is not an admin-only
+    // page — so the rows only become clickable for someone who could read them.
+    const canOrders = !!(ME && ME.role === 'admin');
+    window._stockRows = d.rows;
     const skuHdr = document.getElementById('stockSkuHeader');
     if (skuHdr) skuHdr.textContent = clubbed ? (d.groupBy === 'design' ? 'Design' : 'Style') : 'SKU';
     body.innerHTML = d.rows.length ? d.rows.map((r, i) => {
@@ -616,7 +620,7 @@ async function loadStock() {
       const reorder = sold > 0 && qty < sold;
       const colour = qty <= 0 ? '#dc2626' : qty <= 5 ? '#d97706' : 'var(--foreground)';
       const soldCol = reorder ? '#dc2626' : 'var(--muted-foreground)';
-      return `<tr>
+      return `<tr${canOrders ? ` onclick="stockOrders(${i})" style="cursor:pointer" title="See the orders behind this row"` : ''}>
         <td style="color:var(--faint);font-variant-numeric:tabular-nums">${i + 1}</td>
         <td style="white-space:nowrap;font-family:var(--font-mono);font-size:12px">${dtEscape(r.sku)}${r.skuCount > 1
           ? ` <span style="font-family:var(--font-sans);font-size:10.5px;color:var(--faint)" title="${dtEscape((r.skus || []).join(', '))}">+${r.skuCount - 1}</span>`
@@ -636,6 +640,47 @@ async function loadStock() {
   } catch (e) {
     body.innerHTML = `<tr><td colspan="6" class="empty">Could not load stock — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
   }
+}
+
+// A row on the Stock page → the orders behind it. A clubbed row is a product
+// rather than a SKU, so its members are asked for together: querying them one at
+// a time would list the same order once per size the customer bought. The window
+// matches the "Sold (Nd)" column the row is already showing, so the count in the
+// row and the orders in the popup are the same set of facts.
+async function stockOrders(i) {
+  const r = (window._stockRows || [])[i];
+  if (!r) return;
+  const skus = (r.skus && r.skus.length) ? r.skus : [r.sku];
+  const soldSel = document.getElementById('stockSoldDays');
+  const days = soldSel ? soldSel.value : '';
+  const label = skus.length > 1 ? `${r.sku} · ${skus.length} SKUs` : r.sku;
+
+  document.getElementById('salesDetailTitle').textContent = label;
+  document.getElementById('salesDetailSummary').textContent = 'Loading…';
+  document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  const pager = document.getElementById('salesDetailPager');
+  if (pager) pager.textContent = '';
+  document.getElementById('salesDetailModal').classList.add('open');
+
+  const params = new URLSearchParams({ skus: skus.join(',') });
+  if (days) params.set('days', days);
+  const d = await api('/api/sales/sku?' + params.toString());
+  if (d.error) {
+    document.getElementById('salesDetailSummary').textContent = 'Could not load orders — ' + dtEscape(d.error);
+    document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">—</td></tr>';
+    return;
+  }
+  const s = d.summary || {};
+  const orders = d.orders || [];
+  document.getElementById('salesDetailTitle').textContent = label + (r.description ? ' — ' + r.description : '');
+  document.getElementById('salesDetailSummary').textContent =
+    `${Number(s.qty || 0).toLocaleString('en-IN')} units sold${days ? ' in the last ' + days + ' days' : ''}`
+    + ` · ${inr(s.value)} · current stock ${d.stock != null ? Number(d.stock).toLocaleString('en-IN') : '—'}`
+    + ` · ${Number(s.orders || 0)} orders`;
+  // The orders query is capped; saying so beats a list that quietly stops.
+  if (pager && orders.length >= 200) pager.textContent = 'Showing the 200 most recent of ' + Number(s.orders || 0) + ' orders';
+  else if (pager && skus.length > 1) pager.textContent = skus.join(', ');
+  salesRenderOrders(orders, 'salesDetailBody');
 }
 
 // Live check — asks Vinculum for the current stock of the SKUs on screen
