@@ -4577,6 +4577,15 @@ async function proceedToStepsConfig() {
     }
   }
 
+  // The server may have found the headers on a different row than the one that
+  // was typed. Carry that back into the form: it is saved with the FMS, and
+  // every later read of this sheet depends on it being right.
+  if (detection && detection.headerRow) {
+    fmsData.headerRow = detection.headerRow;
+    const hrInput = document.getElementById('fmsHeaderRow');
+    if (hrInput) hrInput.value = detection.headerRow;
+  }
+
   if (detection && detection.steps && detection.steps.length) {
     fmsSteps = detection.steps.map(fmsStepFromDetection);
     fmsData.totalSteps = fmsSteps.length;
@@ -4631,6 +4640,18 @@ function renderFMSDetectionNote(detection) {
   const parts = [
     `<b>${detection.steps.length} step${detection.steps.length === 1 ? '' : 's'}</b> read from the sheet — check each one before saving.`,
   ];
+  if (detection.headerRowAdjusted) {
+    parts.push(`<div style="margin-top:6px">Headers were found on <b>row ${detection.headerRow}</b>, not the row you entered — the form has been updated to match.</div>`);
+  }
+  const warnings = detection.warnings || [];
+  if (warnings.length) {
+    // Columns that were mapped or skipped for a reason worth seeing: a formula
+    // the app would otherwise overwrite.
+    const seen = new Set();
+    const lines = warnings.filter(w => { const k = w.name + w.reason; if (seen.has(k)) return false; seen.add(k); return true; });
+    parts.push(`<div style="margin-top:6px;color:#92400e">` +
+      lines.map(w => `<div>⚠ <b>${dtEscape(w.name)}</b> — ${dtEscape(w.reason)}</div>`).join('') + `</div>`);
+  }
   if (skipped.length) {
     parts.push(`<div style="margin-top:6px">Left out (the sheet fills these itself): ` +
       skipped.map(k => `<span style="background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 6px;margin-right:4px;display:inline-block">${dtEscape(k.name)} <span style="color:var(--faint)">${dtEscape(k.reason)}</span></span>`).join('') + `</div>`);

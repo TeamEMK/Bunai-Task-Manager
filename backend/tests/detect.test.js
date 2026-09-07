@@ -1,7 +1,7 @@
 // Fixture tests for the FMS step detector — no network, no database.
 const path = require('path');
 const ROOT = require('path').join(__dirname, '..', 'src', 'services') + require('path').sep;
-const { detectSteps, classify, fieldTypeFor, stepNameFrom } = require(ROOT + 'fmsDetect.js');
+const { detectSteps, classify, fieldTypeFor, stepNameFrom, stepLabelsFrom, guessHeaderRow } = require(ROOT + 'fmsDetect.js');
 
 let pass = 0, fail = 0;
 const eq = (got, want, label) => {
@@ -114,6 +114,74 @@ reset();
 const generic = detectSteps([col('Plan 1'), col('Actual 1'), col('Plan 2'), col('Actual 2')]);
 eq(generic.steps.map(s => s.stepName), ['Step 1', 'Step 2'], 'placeholder names, not wrong names');
 eq(generic.steps.map(s => [s.planCol, s.actualCol]), [['A', 'B'], ['C', 'D']], 'pairs still resolve');
+
+
+// ── the shape a real Bunai FMS sheet actually has ────
+// Found by running this against "Required Data-Bunai": five columns per step,
+// the dates computed by formula, and completion driven by a checkbox.
+section('detectSteps — computed columns must not become write targets');
+reset();
+const live = [
+  col('Entry Date'), col('Style / Design No'), col('Item Description'),
+  col('Category'), col('Quantity'), col('Remark'),
+  col('Planned', { isFormula: true, formulaCells: 8 }),
+  col('Actual', { isFormula: true, formulaCells: 8 }),
+  col('Time Delay', { isFormula: true, formulaCells: 8 }),
+  col('Status', { validation: { type: 'boolean' } }),
+  col('Doer'),
+  col('Planned', { isFormula: true, formulaCells: 8 }),
+  col('Actual', { isFormula: true, formulaCells: 8 }),
+  col('Time Delay', { isFormula: true, formulaCells: 8 }),
+  col('Status', { validation: { type: 'boolean' } }),
+  col('Doer'),
+];
+// Row 1 banners the groups, row 2 names them. The names are what matter.
+const labelRows = [
+  ['', '', '', '', '', '', 'Step1', '', '', '', '', 'Step2'],
+  ['What', '', '', '', '', '', 'Fabric Sourced', '', '', '', '', 'Fabric Dyed'],
+];
+const liveOut = detectSteps(live, { labelRows });
+
+eq(liveOut.steps.length, 2, 'a step per Planned column');
+eq(liveOut.steps.map(s => s.stepName), ['Fabric Sourced', 'Fabric Dyed'],
+  'step names come from the sheet, not from "Step 1"');
+eq(liveOut.steps.map(s => [s.planCol, s.actualCol, s.doerNameCol]), [['G', 'H', 'K'], ['L', 'M', 'P']],
+  'plan / actual / doer paired within each band');
+// "Time Delay" is derived from the two dates. Writing a reason there would
+// destroy the formula, so it is refused however well the name matches.
+eq(liveOut.steps.map(s => s.delayReasonCol), ['', ''], 'a computed column is never the delay target');
+eq(liveOut.steps[0].warnings.map(w => w.col), ['I', 'H'], 'both hazards reported');
+eq(/ticking "Status" \(J\)/.test(liveOut.steps[0].warnings[1].reason), true,
+  'says the step completes by ticking the checkbox, not by writing to Actual');
+eq(liveOut.leadingColumns.length, 6, 'the identity columns stay out of the steps');
+
+section('stepLabelsFrom');
+eq(stepLabelsFrom([['', 'Step1', '', 'Step2'], ['', 'Cutting', '', 'Stitching']], [1, 3]),
+  ['Cutting', 'Stitching'], 'a descriptive row beats a "Step N" banner');
+eq(stepLabelsFrom([['', 'Step1', '', 'Step2']], [1, 3]), ['Step1', 'Step2'],
+  'a banner row is still returned when it is all there is');
+eq(stepLabelsFrom([], [1, 3]), [], 'nothing above the header row');
+
+
+section('guessHeaderRow');
+// The banner block a real sheet opens with, then the actual header row.
+const banner = [
+  ['07/09/2026 14:37', '0.208', '9', '19'],
+  ['What', 'Sample Requirement'],
+  ['Who', 'Ashok Ji'],
+  [],
+  ['When', 'Anytime'],
+  ['prerequisites'],
+  ['Entry Date', 'Style', 'Item', 'Category', 'Qty', 'Remark',
+   'Planned', 'Actual', 'Time Delay', 'Status', 'Doer',
+   'Planned', 'Actual', 'Time Delay', 'Status', 'Doer'],
+];
+eq(guessHeaderRow(banner), 7, 'finds the row carrying the plan/actual pairs');
+eq(guessHeaderRow([['Planned', 'Actual', 'Doer']]), 1, 'a sheet with no banner');
+// Without a pair there is nothing to be confident about, so it declines rather
+// than picking a row of prose.
+eq(guessHeaderRow([['Name', 'Qty'], ['a', 'b']]), 0, 'declines when there is no pair');
+eq(guessHeaderRow([]), 0, 'empty sheet');
 
 console.log(`\n${fail ? '❌' : '✅'}  ${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
