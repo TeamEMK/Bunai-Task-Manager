@@ -135,11 +135,20 @@ async function readColumnMeta(sheetIdOrUrl, tabName, headerRow = 1, { sampleRows
     col.validation = options ? { type: 'list', options } : null;
   }));
 
+  // Anything above the header row. Sheets often carry a banner row naming each
+  // step group there, which is the only place the step's real name appears.
+  let labelRows = [];
+  if (firstRow > 1) {
+    try { labelRows = await google.readValues(spreadsheetId, `${tab}!1:${firstRow - 1}`); }
+    catch (_) { labelRows = []; }
+  }
+
   return {
     spreadsheetId,
     tab,
     headerRow: firstRow,
     columns,
+    labelRows,
     headers: columns.filter(c => c.name).map(c => ({ name: c.name, col: c.col, index: c.index })),
   };
 }

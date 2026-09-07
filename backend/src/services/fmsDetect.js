@@ -79,6 +79,34 @@ function exclusionReason(column) {
   return null;
 }
 
+
+// How much a row looks like the header row of an FMS grid: the plan/actual
+// pairs are what make it one. Used to find that row when the number the admin
+// typed turns out to be a banner row instead.
+function headerRowScore(row) {
+  let plan = 0, actual = 0, named = 0;
+  for (const cell of row || []) {
+    const name = String(cell ?? '').trim();
+    if (!name) continue;
+    named++;
+    const kind = classify(name);
+    if (kind === 'plan') plan++;
+    else if (kind === 'actual') actual++;
+  }
+  // Pairs are the signal. A row full of prose scores nothing.
+  return Math.min(plan, actual) * 10 + (plan + actual) + Math.min(named, 5) * 0.1;
+}
+
+// Given the first rows of a tab, the 1-based row most likely to be the header.
+function guessHeaderRow(rows) {
+  let best = { row: 0, score: 0 };
+  (rows || []).forEach((row, i) => {
+    const score = headerRowScore(row);
+    if (score > best.score) best = { row: i + 1, score };
+  });
+  return best.score >= 10 ? best.row : 0;    // needs at least one plan/actual pair
+}
+
 // Splits the columns into per-step bands. A step begins at every plan column;
 // its band runs to the column before the next plan column.
 function bandsFrom(columns) {
@@ -92,9 +120,28 @@ function bandsFrom(columns) {
 
 // columns: the array from sheetIntrospect.readColumnMeta().
 // Returns { steps, leadingColumns, skipped, planColumnCount }.
-function detectSteps(columns) {
+// Picks the row above the header that actually names the steps. A sheet often
+// carries a banner row ("Step1", "Step2") and a descriptive one ("Fabric
+// Sourced"); both line up with the plan columns, and the descriptive one is the
+// one worth having.
+function stepLabelsFrom(labelRows, planIndexes) {
+  let best = null;
+  for (const row of labelRows || []) {
+    const values = planIndexes.map(i => String(row?.[i] ?? '').trim());
+    const named = values.filter(Boolean).length;
+    if (!named) continue;
+    // "Step 3" is a position, not a name — it tells nobody what the step is.
+    const generic = values.filter(v => /^step\s*\d+$/i.test(v)).length;
+    const score = named * 10 - generic * 9;
+    if (!best || score > best.score) best = { score, values };
+  }
+  return best ? best.values : [];
+}
+
+function detectSteps(columns, { labelRows = [] } = {}) {
   const cols = Array.isArray(columns) ? columns : [];
   const bands = bandsFrom(cols);
+  const labels = stepLabelsFrom(labelRows, bands.map(b => cols[b.start]?.index).filter(i => i != null));
 
   // Columns before the first step are the row's identity (SO number, party,
   // style). They are context, never a step's input.
@@ -109,7 +156,25 @@ function detectSteps(columns) {
     const find = (kind) => inBand.find(c => classify(c.name) === kind) || null;
     const actualCol = find('actual');
     const doerCol = find('doer');
-    const delayCol = find('delay');
+    // The delay reason is WRITTEN, so a computed column can never be the target:
+    // a sheet that derives "Time Delay" from the two dates would lose that
+    // formula the first time somebody recorded a reason.
+    const delayRaw = find('delay');
+    const delayCol = (delayRaw && !delayRaw.isFormula) ? delayRaw : null;
+    const warnings = [];
+    if (delayRaw && delayRaw.isFormula) {
+      warnings.push({ col: delayRaw.col, name: delayRaw.name, reason: 'computed by the sheet — left unmapped so its formula is not overwritten' });
+    }
+    // The same danger applies to the column the app stamps on completion.
+    if (actualCol?.isFormula) {
+      const checkbox = inBand.find(c => c.validation?.type === 'boolean');
+      warnings.push({
+        col: actualCol.col, name: actualCol.name,
+        reason: checkbox
+          ? `filled by a formula — this step looks like it completes by ticking "${checkbox.name}" (${checkbox.col}), not by writing here`
+          : 'filled by a formula — marking the step done would replace that formula',
+      });
+    }
 
     const extraRows = [];
     for (const c of inBand) {
@@ -134,7 +199,10 @@ function detectSteps(columns) {
 
     return {
       stepOrder: i + 1,
-      stepName: stepNameFrom(planCol?.name, actualCol?.name) || `Step ${i + 1}`,
+      // The sheet's own name for the step wins; the header text is the
+      // fallback, and a placeholder only when neither says anything.
+      stepName: (labels[i] && !/^step\s*\d+$/i.test(labels[i]) ? labels[i] : '')
+        || stepNameFrom(planCol?.name, actualCol?.name) || `Step ${i + 1}`,
       // Blank whenever the evidence was not there; the screen shows an empty select.
       planCol: planCol?.col || '',
       planHeader: planCol?.name || '',
@@ -144,6 +212,7 @@ function detectSteps(columns) {
       doerNameHeader: doerCol?.name || '',
       delayReasonCol: delayCol?.col || '',
       delayReasonHeader: delayCol?.name || '',
+      warnings,
       extraInput: extraRows.length ? 'yes' : 'no',
       extraRows,
       // Left empty on purpose: blank means "show every column", and narrowing
@@ -157,6 +226,7 @@ function detectSteps(columns) {
 }
 
 module.exports = {
-  detectSteps, classify, fieldTypeFor, stepNameFrom, exclusionReason, bandsFrom,
+  detectSteps, classify, fieldTypeFor, stepNameFrom, exclusionReason, bandsFrom, stepLabelsFrom,
+  headerRowScore, guessHeaderRow,
   DOER_RE, DELAY_RE, PLAN_RE, ACTUAL_RE,
 };

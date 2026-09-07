@@ -183,8 +183,25 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
   const { sheetId, sheetName, headerRow } = req.body;
   if (!sheetId) return res.status(400).json({ error: 'sheetId required' });
 
-  const meta = await sheetIntrospect.readColumnMeta(sheetId, sheetName, headerRow);
-  const detected = fmsDetect.detectSteps(meta.columns);
+  const askedRow = Math.max(1, parseInt(headerRow, 10) || 1);
+  let usedRow = askedRow;
+  let meta = await sheetIntrospect.readColumnMeta(sheetId, sheetName, usedRow);
+  let detected = fmsDetect.detectSteps(meta.columns, { labelRows: meta.labelRows });
+
+  // A sheet often opens with a banner block — a timestamp, a legend, the step
+  // names — and the real header row sits below it. Rather than showing an empty
+  // screen and leaving the admin to guess the number, find the row that carries
+  // the plan/actual pairs and use that, saying so in the response.
+  if (!detected.steps.length) {
+    const firstRows = await google.readValues(
+      extractSpreadsheetId(sheetId), `${sheetName || 'Sheet1'}!1:20`);
+    const guess = fmsDetect.guessHeaderRow(firstRows);
+    if (guess && guess !== usedRow) {
+      usedRow = guess;
+      meta = await sheetIntrospect.readColumnMeta(sheetId, sheetName, usedRow);
+      detected = fmsDetect.detectSteps(meta.columns, { labelRows: meta.labelRows });
+    }
+  }
 
   // ── Doers, matched against the app's user list ──
   // Read each distinct doer column in full rather than trusting the sample: a
@@ -203,7 +220,7 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
   await Promise.all(doerCols.map(async (col) => {
     try {
       const vals = await google.readValues(meta.spreadsheetId, `${meta.tab}!${col}:${col}`);
-      const skip = (parseInt(headerRow, 10) || 1);
+      const skip = usedRow;
       columnNames.set(col, [...new Set(
         vals.slice(skip).map(r => String(r[0] ?? '').trim()).filter(Boolean))]);
     } catch (_) { columnNames.set(col, []); }
@@ -230,7 +247,14 @@ router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (re
     leadingColumns: detected.leadingColumns,
     // Columns deliberately left out, with the reason, so nothing disappears
     // without the admin being told.
+    // The row the columns were actually read from, and whether that differs
+    // from what was typed — the screen updates its field to match.
+    headerRow: usedRow,
+    headerRowAdjusted: usedRow !== askedRow,
     skipped: detected.skipped,
+    // Columns that were mapped but come with a caveat — a formula the app would
+    // overwrite, say. Shown, never acted on silently.
+    warnings: detected.steps.flatMap((st, i) => (st.warnings || []).map(w => ({ ...w, step: i + 1 }))),
     detectedSteps: detected.steps.length,
   });
 }));
