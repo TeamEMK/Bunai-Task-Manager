@@ -623,7 +623,7 @@ async function loadStock() {
       return `<tr${canOrders ? ` onclick="stockOrders(${i})" style="cursor:pointer" title="See the orders behind this row"` : ''}>
         <td style="color:var(--faint);font-variant-numeric:tabular-nums">${i + 1}</td>
         <td style="white-space:nowrap;font-family:var(--font-mono);font-size:12px">${dtEscape(r.sku)}${r.skuCount > 1
-          ? ` <span style="font-family:var(--font-sans);font-size:10.5px;color:var(--faint)" title="${dtEscape((r.skus || []).join(', '))}">+${r.skuCount - 1}</span>`
+          ? ` <span style="font-family:var(--font-sans);font-size:10.5px;color:var(--faint)" title="${dtEscape((r.skus || []).join(', '))}">${r.skuCount} SKUs</span>`
           : ''}</td>
         <td>${dtEscape(r.description || '—')}${clubbed && r.nameCount > 1
           ? ` <span style="font-size:10.5px;color:var(--faint)">· ${r.nameCount} names</span>`
@@ -660,10 +660,14 @@ async function stockOrders(i) {
   document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
   const pager = document.getElementById('salesDetailPager');
   if (pager) pager.textContent = '';
+  const breakdown = document.getElementById('salesDetailBreakdown');
+  if (breakdown) breakdown.innerHTML = '';
   document.getElementById('salesDetailModal').classList.add('open');
 
   const params = new URLSearchParams({ skus: skus.join(',') });
   if (days) params.set('days', days);
+  // The row is one warehouse; the popup must count the same stock the row does.
+  if (r.warehouse) params.set('warehouse', r.warehouse);
   const d = await api('/api/sales/sku?' + params.toString());
   if (d.error) {
     document.getElementById('salesDetailSummary').textContent = 'Could not load orders — ' + dtEscape(d.error);
@@ -675,12 +679,35 @@ async function stockOrders(i) {
   document.getElementById('salesDetailTitle').textContent = label + (r.description ? ' — ' + r.description : '');
   document.getElementById('salesDetailSummary').textContent =
     `${Number(s.qty || 0).toLocaleString('en-IN')} units sold${days ? ' in the last ' + days + ' days' : ''}`
-    + ` · ${inr(s.value)} · current stock ${d.stock != null ? Number(d.stock).toLocaleString('en-IN') : '—'}`
-    + ` · ${Number(s.orders || 0)} orders`;
+    + ` · ${inr(s.value)} · ${d.stock != null ? Number(d.stock).toLocaleString('en-IN') : '—'} in stock`
+    + `${r.warehouse ? ' at ' + r.warehouse : ''} · ${Number(s.orders || 0)} orders`;
+  // What the row clubbed, spelled out. A product can sit on stock and sell
+  // nothing, and then the orders table below is empty — this is the part that
+  // still answers "what are those SKUs?", which is what the row's badge promised.
+  if (breakdown && (d.members || []).length > 1) {
+    breakdown.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div style="display:flex;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);background:var(--muted, #f8fafc);padding:7px 12px">
+        <div style="flex:1">SKU</div>
+        <div style="width:90px;text-align:right">Stock</div>
+        <div style="width:90px;text-align:right">Sold</div>
+        <div style="width:90px;text-align:right">Orders</div>
+      </div>
+      ${d.members.map(m => `<div style="display:flex;padding:6px 12px;font-size:12.5px;border-top:1px solid var(--border)">
+        <div style="flex:1;font-family:var(--font-mono);font-size:12px">${dtEscape(m.sku)}</div>
+        <div style="width:90px;text-align:right;font-variant-numeric:tabular-nums;color:${Number(m.stock) > 0 ? 'var(--foreground)' : '#dc2626'}">${m.stock == null ? '—' : Number(m.stock).toLocaleString('en-IN')}</div>
+        <div style="width:90px;text-align:right;font-variant-numeric:tabular-nums">${m.qty ? Number(m.qty).toLocaleString('en-IN') : '—'}</div>
+        <div style="width:90px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted-foreground)">${m.orders || '—'}</div>
+      </div>`).join('')}
+    </div>`;
+  }
+
   // The orders query is capped; saying so beats a list that quietly stops.
   if (pager && orders.length >= 200) pager.textContent = 'Showing the 200 most recent of ' + Number(s.orders || 0) + ' orders';
-  else if (pager && skus.length > 1) pager.textContent = skus.join(', ');
   salesRenderOrders(orders, 'salesDetailBody');
+  if (!orders.length) {
+    document.getElementById('salesDetailBody').innerHTML =
+      `<tr><td colspan="9" class="empty">No orders${days ? ' in the last ' + days + ' days' : ''} for ${skus.length > 1 ? 'these ' + skus.length + ' SKUs' : 'this SKU'}${Number(d.stock) > 0 ? ' — but ' + Number(d.stock).toLocaleString('en-IN') + ' units are in stock' : ''}.</td></tr>`;
+  }
 }
 
 // Live check — asks Vinculum for the current stock of the SKUs on screen
@@ -2912,6 +2939,11 @@ async function salesSkuDetail(sku) {
   if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
   document.getElementById('salesDetailTitle').textContent = sku;
   document.getElementById('salesDetailSummary').textContent = 'Loading…';
+  // Shared modal — clear anything the Stock page's version left behind.
+  const bd = document.getElementById('salesDetailBreakdown');
+  if (bd) bd.innerHTML = '';
+  const pg = document.getElementById('salesDetailPager');
+  if (pg) pg.textContent = '';
   document.getElementById('salesDetailBody').innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
   document.getElementById('salesDetailModal').classList.add('open');
   const d = await api('/api/sales/sku?' + params.toString());
