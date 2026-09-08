@@ -1147,17 +1147,22 @@
 </div>
 
 <div class="modal-overlay" id="salesDetailModal">
-  <div class="modal" style="width:860px;max-width:94vw">
-    <h3 id="salesDetailTitle">Orders</h3>
-    <div id="salesDetailSummary" style="margin:-4px 0 12px;font-size:13px;color:var(--muted-foreground)"></div>
-    <div id="salesDetailBreakdown" style="margin:0 0 12px"></div>
-    <div class="table-container" style="max-height:60vh;overflow:auto">
+  <!-- A flex column: the heading, the summary and the per-SKU breakdown keep their
+       own height, and the orders list takes whatever is left. Before this the modal
+       scrolled as well as the table inside it, so a product with several sizes gave
+       two nested scrollbars and pushed its own Close button off the screen.
+       min-height:0 is what lets the list shrink instead of overflowing. -->
+  <div class="modal" style="width:1060px;max-width:94vw;display:flex;flex-direction:column;max-height:92vh;overflow:hidden">
+    <h3 id="salesDetailTitle" style="flex:none">Orders</h3>
+    <div id="salesDetailSummary" style="flex:none;margin:-4px 0 12px;font-size:13px;color:var(--muted-foreground)"></div>
+    <div id="salesDetailBreakdown" style="flex:none;margin:0 0 12px;max-height:34vh;overflow:auto"></div>
+    <div class="table-container" style="flex:1 1 auto;min-height:0;overflow:auto">
       <table>
         <thead><tr><th>Order</th><th>Customer</th><th>Phone</th><th>Date</th><th>Channel</th><th>Payment</th><th>Status</th><th style="text-align:right">Amount</th><th>Ship To</th></tr></thead>
         <tbody id="salesDetailBody"></tbody>
       </table>
     </div>
-    <div class="modal-footer" style="justify-content:space-between;align-items:center">
+    <div class="modal-footer" style="flex:none;justify-content:space-between;align-items:center">
       <div id="salesDetailPager" style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted-foreground)"></div>
       <button class="btn btn-outline" onclick="closeModal('salesDetailModal')">Close</button>
     </div>
