@@ -2940,10 +2940,19 @@ const DRP_PRESETS = [
   { key: '45', label: 'Last 45 days', range: () => [drpAddDays(drpMidnight(), -44), drpMidnight()] },
   { key: '90', label: 'Last 90 days', range: () => [drpAddDays(drpMidnight(), -89), drpMidnight()] },
   { sep: true },
-  { key: 'mtd', label: 'This month', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
+  // These run from the start of the period to TODAY, not across the whole of it.
+  // "This month" read as the entire month, which is a different question, so they
+  // say what they mean — and every row carries its resolved dates as a tooltip.
+  { key: 'wtd', label: 'Week to date', range: () => { const t = drpMidnight(); const back = (t.getDay() + 6) % 7; return [drpAddDays(t, -back), t]; } },
+  { key: 'mtd', label: 'Month to date', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
+  { key: 'qtd', label: 'Quarter to date', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), Math.floor(t.getMonth() / 3) * 3, 1), t]; } },
+  { key: 'ytd', label: 'Year to date', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), 0, 1), t]; } },
+  { sep: true },
+  // Whole periods now past, for comparing against.
+  { key: 'lastweek', label: 'Last week', range: () => { const t = drpMidnight(); const mon = drpAddDays(t, -((t.getDay() + 6) % 7)); return [drpAddDays(mon, -7), drpAddDays(mon, -1)]; } },
   { key: 'lastmonth', label: 'Last month', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; } },
-  { key: 'qtd', label: 'This quarter', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), Math.floor(t.getMonth() / 3) * 3, 1), t]; } },
-  { key: 'ytd', label: 'This year', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), 0, 1), t]; } },
+  { key: 'lastquarter', label: 'Last quarter', range: () => { const t = drpMidnight(); const q = Math.floor(t.getMonth() / 3) * 3; return [new Date(t.getFullYear(), q - 3, 1), new Date(t.getFullYear(), q, 0)]; } },
+  { key: 'lastyear', label: 'Last year', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear() - 1, 0, 1), new Date(t.getFullYear() - 1, 11, 31)]; } },
   { sep: true },
   { key: 'all', label: 'All time', range: () => [null, null] },
 ];
@@ -3105,6 +3114,16 @@ function drpSyncLabel(prefix) {
   el.textContent = drpRangeLabel(s.from, s.to);
 }
 
+// What a named period actually works out to today, shown on hover. "Month to
+// date" is only unambiguous once you can see it means 1 Sep - 14 Sep.
+function drpPresetHint(p) {
+  try {
+    const [a, b] = p.range();
+    if (!a || !b) return 'Every order on record';
+    return drpSameDay(a, b) ? drpLong(a) : `${drpLong(a)} → ${drpLong(b)}`;
+  } catch (_) { return ''; }
+}
+
 function drpRender(prefix) {
   const s = DRP[prefix];
   const panel = document.getElementById(prefix + 'DrpPanel');
@@ -3115,7 +3134,7 @@ function drpRender(prefix) {
 
   const presets = DRP_PRESETS.map(p => p.sep
     ? '<div class="drp-sep"></div>'
-    : `<button type="button" class="drp-preset ${s.key === p.key ? 'active' : ''}" onclick="drpApplyPreset('${prefix}','${p.key}')">${p.label}</button>`
+    : `<button type="button" class="drp-preset ${s.key === p.key ? 'active' : ''}" title="${drpPresetHint(p)}" onclick="drpApplyPreset('${prefix}','${p.key}')">${p.label}</button>`
   ).join('');
 
   const month = (first, canNavBack, canNavFwd) => {
