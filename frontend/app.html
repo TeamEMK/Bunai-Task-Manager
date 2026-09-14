@@ -429,6 +429,12 @@
       <input type="hidden" id="salesRange" value="45"/>
       <input type="hidden" id="salesFrom"/>
       <input type="hidden" id="salesTo"/>
+      <!-- Gross or net. The client's own words for the two: returns included,
+           returns excluded. -->
+      <select id="salesNet" onchange="loadSales()" title="Net takes returns off the revenue, the units and each product">
+        <option value="0">Returns included (gross)</option>
+        <option value="1">Returns excluded (net)</option>
+      </select>
       <button class="btn btn-sm" id="salesSyncGhBtn" onclick="runVinSync('sales')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)" style="margin-left:auto">↻ Sync from Vinculum</button>
       <button class="btn btn-sm" onclick="loadSales()">↻ Refresh</button>
       <span id="salesSpan" style="font-size:12px;color:var(--faint)"></span>
@@ -436,7 +442,8 @@
 
     <div id="salesNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
 
-    <div id="salesTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+    <div id="salesTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:8px"></div>
+    <div id="salesReturnsNote" style="display:none;font-size:12px;color:var(--faint);margin:0 2px 16px"></div>
 
     <div id="salesTrend" style="margin-bottom:16px"></div>
 

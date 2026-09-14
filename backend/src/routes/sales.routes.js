@@ -23,41 +23,61 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
     const dcO = ranged ? '(o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY))' : '1=1';
     const A = ranged ? [from, to] : [];   // date args, prepended to each query
 
-    const [totals, byChannel, byStatus, byPayment, daily, topSkus, topStates, recent, span, units] =
+    // Gross or net. The client wants both: revenue as it was sold, and revenue
+    // after what came back. Netting is only safe because a returned order is
+    // still counted as revenue — every order behind a return is "delivered" or
+    // "Shipped complete", never cancelled — so the money really is in the gross
+    // figure waiting to be taken out. Checked against the data, not assumed.
+    const net = req.query.net === '1';
+
+    // Returns belong to the order they came from, so they land in the window the
+    // ORDER was placed in, not the one the return was recorded in. That keeps a
+    // month's sales and that month's returns talking about the same orders.
+    const RET = `LEFT JOIN (SELECT eretail_order_no oid, SUM(return_amount) amt, COUNT(*) n
+                              FROM vin_returns WHERE eretail_order_no <> ''
+                             GROUP BY eretail_order_no) r ON r.oid = o.order_id`;
+    // The one expression every revenue figure on the page goes through.
+    const REV = net ? '(o.order_amount - COALESCE(r.amt,0))' : 'o.order_amount';
+    const LIVE_O = "LOWER(o.status) <> 'cancelled'";
+
+    const [totals, byChannel, byStatus, byPayment, daily, topSkus, topStates, recent, span, units,
+           returned, skuReturns, unlinked] =
       await Promise.all([
         db.one(
           `SELECT COUNT(*) orders,
-                  SUM(CASE WHEN ${LIVE} THEN 1 ELSE 0 END) live_orders,
-                  SUM(CASE WHEN LOWER(status)='cancelled' THEN 1 ELSE 0 END) cancelled,
-                  ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue,
-                  ROUND(AVG(CASE WHEN ${LIVE} THEN order_amount END)) aov
-             FROM vin_orders WHERE ${dc}`, A),
+                  SUM(CASE WHEN ${LIVE_O} THEN 1 ELSE 0 END) live_orders,
+                  SUM(CASE WHEN LOWER(o.status)='cancelled' THEN 1 ELSE 0 END) cancelled,
+                  ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue,
+                  ROUND(AVG(CASE WHEN ${LIVE_O} THEN ${REV} END)) aov
+             FROM vin_orders o ${RET} WHERE ${dcO}`, A),
         db.rows(
-          `SELECT COALESCE(NULLIF(channel_name,''),'Other') channel, COUNT(*) n,
-                  ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders WHERE ${dc} GROUP BY channel ORDER BY n DESC`, A),
+          `SELECT COALESCE(NULLIF(o.channel_name,''),'Other') channel, COUNT(*) n,
+                  ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
+             FROM vin_orders o ${RET} WHERE ${dcO} GROUP BY channel ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(status,''),'(blank)') status, COUNT(*) n
              FROM vin_orders WHERE ${dc} GROUP BY status ORDER BY n DESC`, A),
         db.rows(
-          `SELECT COALESCE(NULLIF(payment_method,''),'(blank)') payment, COUNT(*) n,
-                  ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders WHERE ${dc} GROUP BY payment ORDER BY n DESC`, A),
+          `SELECT COALESCE(NULLIF(o.payment_method,''),'(blank)') payment, COUNT(*) n,
+                  ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
+             FROM vin_orders o ${RET} WHERE ${dcO} GROUP BY payment ORDER BY n DESC`, A),
         db.rows(
-          `SELECT DATE(order_date) d, COUNT(*) n,
-                  ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders WHERE order_date IS NOT NULL AND ${dc}
-            GROUP BY DATE(order_date) ORDER BY d`, A),
+          `SELECT DATE(o.order_date) d, COUNT(*) n,
+                  ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
+             FROM vin_orders o ${RET} WHERE o.order_date IS NOT NULL AND ${dcO}
+            GROUP BY DATE(o.order_date) ORDER BY d`, A),
+        // Deliberately more than the fifteen shown: netting reorders the list, so
+        // trimming first would rank by gross and then relabel it net.
         db.rows(
           `SELECT i.sku, COALESCE(NULLIF(MAX(i.sku_name),''), i.sku) sku_name,
                   ROUND(SUM(i.order_qty)) qty, ROUND(SUM(i.order_qty * i.unit_price)) value
              FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
             WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'
-            GROUP BY i.sku ORDER BY qty DESC LIMIT 15`, A),
+            GROUP BY i.sku ORDER BY qty DESC LIMIT 80`, A),
         db.rows(
-          `SELECT COALESCE(NULLIF(ship_state,''),'(unknown)') state, COUNT(*) n,
-                  ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
-             FROM vin_orders WHERE ${dc} GROUP BY state ORDER BY n DESC LIMIT 12`, A),
+          `SELECT COALESCE(NULLIF(o.ship_state,''),'(unknown)') state, COUNT(*) n,
+                  ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
+             FROM vin_orders o ${RET} WHERE ${dcO} GROUP BY state ORDER BY n DESC LIMIT 12`, A),
         db.rows(
           `SELECT order_id, ext_order_no, order_date, payment_method, status, order_amount,
                   channel_name, ship_city, ship_state, customer_name, customer_phone
@@ -69,7 +89,48 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
           `SELECT ROUND(SUM(i.order_qty)) units
              FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
             WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'`, A),
+        // What netting takes out, reported whichever mode is on — a net figure
+        // nobody can reconcile against the gross one is not worth showing.
+        db.one(
+          `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount,
+                  ROUND(SUM(CASE WHEN rr.return_type='RTO' THEN rr.return_amount ELSE 0 END)) rto,
+                  ROUND(SUM(CASE WHEN rr.return_type<>'RTO' THEN rr.return_amount ELSE 0 END)) delivered
+             FROM vin_returns rr JOIN vin_orders o ON o.order_id = rr.eretail_order_no
+            WHERE ${dcO} AND ${LIVE_O}`, A).catch(() => null),
+        db.rows(
+          `SELECT ri.sku, ROUND(SUM(ri.line_amount)) amount, ROUND(SUM(ri.return_qty)) qty
+             FROM vin_return_items ri
+             JOIN vin_returns rr ON rr.return_no = ri.return_no
+             JOIN vin_orders o ON o.order_id = rr.eretail_order_no
+            WHERE ${dcO} AND ${LIVE_O} GROUP BY ri.sku`, A).catch(() => []),
+        // Returns whose order is not on file cannot be put in any window. They
+        // are named rather than quietly dropped, so the totals can be argued with.
+        db.one(
+          `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount
+             FROM vin_returns rr LEFT JOIN vin_orders o ON o.order_id = rr.eretail_order_no
+            WHERE o.order_id IS NULL`).catch(() => null),
       ]);
+
+    // Products: take the returns off each one, then rank. Units and value both
+    // move, so a size that mostly comes back stops looking like a best seller.
+    const retBySku = new Map((skuReturns || []).map(r => [r.sku, r]));
+    let products = (topSkus || []).map((s) => {
+      const back = retBySku.get(s.sku);
+      const rq = back ? Number(back.qty) || 0 : 0;
+      const ra = back ? Number(back.amount) || 0 : 0;
+      return {
+        ...s,
+        qty: net ? Math.max(0, Number(s.qty) - rq) : Number(s.qty),
+        value: net ? Math.max(0, Number(s.value) - ra) : Number(s.value),
+        returnedQty: rq,
+        returnedValue: ra,
+      };
+    });
+    products.sort((a, b) => b.qty - a.qty);
+    products = products.slice(0, 15);
+
+    const returnedUnits = (skuReturns || []).reduce((a, r) => a + (Number(r.qty) || 0), 0);
+    const grossUnits = Number(units?.units) || 0;
 
     // Freshness is about the sync, not the chosen window — always global.
     const lastSync = await db.one(
@@ -78,8 +139,17 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
 
     res.json({
       range: ranged ? { from, to } : null,
-      totals: { ...totals, units: units?.units || 0 },
-      byChannel, byStatus, byPayment, daily, topSkus, topStates, recent, span, lastSync,
+      net,
+      totals: { ...totals, units: net ? Math.max(0, grossUnits - returnedUnits) : grossUnits },
+      returns: {
+        orders: Number(returned?.n) || 0,
+        amount: Number(returned?.amount) || 0,
+        rto: Number(returned?.rto) || 0,
+        delivered: Number(returned?.delivered) || 0,
+        units: returnedUnits,
+        unlinked: { orders: Number(unlinked?.n) || 0, amount: Number(unlinked?.amount) || 0 },
+      },
+      byChannel, byStatus, byPayment, daily, topSkus: products, topStates, recent, span, lastSync,
     });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
