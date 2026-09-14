@@ -1003,3 +1003,56 @@ tbody tr:last-child td{border-bottom:none;}
   .cp-header{flex-direction:column;align-items:stretch;}
   .cm-detail-inner{flex-direction:column;gap:14px;}
 }
+
+/* ── Date range picker ─────────────────────────────────
+   One button that opens a panel: presets down the left, two months and an
+   explicit from/to on the right. Replaces a <select> plus two date inputs,
+   which could not say "last month" and showed a range as two separate boxes. */
+.drp{position:relative;display:inline-block;}
+.drp-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid var(--border);border-radius:9px;background:var(--card);font-size:13px;font-family:var(--font-sans);font-weight:600;color:var(--foreground);cursor:pointer;transition:border-color .15s,box-shadow .15s;white-space:nowrap;}
+.drp-btn:hover{border-color:var(--brand-deep);}
+.drp.open .drp-btn{border-color:var(--brand-deep);box-shadow:0 0 0 3px rgba(26,86,219,.12);}
+.drp-btn .drp-caret{color:var(--faint);font-size:10px;transition:transform .15s;}
+.drp.open .drp-btn .drp-caret{transform:rotate(180deg);}
+
+.drp-panel{position:absolute;top:calc(100% + 6px);left:0;z-index:1200;display:none;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 44px rgba(0,0,0,.16);overflow:hidden;}
+.drp.open .drp-panel{display:flex;}
+.drp-side{flex:none;width:168px;border-right:1px solid var(--border);padding:8px;display:flex;flex-direction:column;gap:1px;max-height:420px;overflow-y:auto;}
+.drp-preset{text-align:left;padding:7px 11px;border:none;border-radius:8px;background:transparent;font-size:13px;font-family:var(--font-sans);color:var(--foreground);cursor:pointer;white-space:nowrap;}
+.drp-preset:hover{background:var(--muted);}
+.drp-preset.active{background:var(--muted);font-weight:700;}
+.drp-sep{height:1px;background:var(--border);margin:6px 4px;}
+
+.drp-main{flex:1 1 auto;min-width:0;padding:14px 16px 12px;display:flex;flex-direction:column;}
+.drp-inputs{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.drp-inputs input{flex:1 1 0;min-width:0;padding:8px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:var(--font-sans);color:var(--foreground);background:var(--card);outline:none;}
+.drp-inputs input:focus{border-color:var(--brand-deep);}
+.drp-inputs .drp-arrow{color:var(--faint);flex:none;}
+
+.drp-months{display:flex;gap:22px;}
+.drp-cal{width:238px;}
+.drp-cal-head{display:flex;align-items:center;justify-content:space-between;height:28px;margin-bottom:6px;}
+.drp-cal-title{font-size:13px;font-weight:700;color:var(--foreground);}
+.drp-nav{border:none;background:transparent;color:var(--muted-foreground);font-size:15px;cursor:pointer;padding:2px 7px;border-radius:6px;line-height:1;}
+.drp-nav:hover{background:var(--muted);color:var(--foreground);}
+.drp-nav:disabled{opacity:.3;cursor:default;background:transparent;}
+.drp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;}
+.drp-dow{font-size:11px;font-weight:600;color:var(--muted-foreground);text-align:center;padding:4px 0;}
+.drp-day{height:31px;border:none;background:transparent;font-size:12.5px;font-family:var(--font-sans);color:var(--foreground);cursor:pointer;border-radius:7px;font-variant-numeric:tabular-nums;}
+.drp-day:hover:not(:disabled){background:var(--muted);}
+.drp-day.blank{visibility:hidden;cursor:default;}
+.drp-day:disabled{color:var(--faint);cursor:default;}
+.drp-day.in-range{background:#eff6ff;border-radius:0;}
+.drp-day.edge{background:var(--foreground);color:#fff;font-weight:700;border-radius:7px;}
+.drp-day.edge-start.has-range{border-radius:7px 0 0 7px;}
+.drp-day.edge-end.has-range{border-radius:0 7px 7px 0;}
+
+.drp-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+.drp-hint{font-size:11.5px;color:var(--faint);}
+
+@media (max-width:760px){
+  .drp-panel{position:fixed;left:8px;right:8px;top:auto;flex-direction:column;max-height:86vh;overflow-y:auto;}
+  .drp-side{width:auto;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;flex-wrap:wrap;max-height:none;}
+  .drp-months{flex-direction:column;gap:14px;}
+  .drp-cal{width:100%;}
+}

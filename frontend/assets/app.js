@@ -2887,6 +2887,297 @@ async function saveProfile() {
 // the daily-task form; it outlived that feature and is used all over the app.
 function dtEscape(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+
+// ══════════════════════════════════════════════════════
+// DATE RANGE PICKER
+// One button that opens a panel: named periods down the left, two months and an
+// explicit from → to on the right, Cancel and Apply at the bottom.
+//
+// It replaced a <select> plus two bare date inputs. That could only offer a
+// fixed set of day counts — no "last month", no "this quarter" — and it applied
+// on every keystroke of a half-typed date, so picking a range reloaded the page
+// two or three times on the way.
+//
+// It does not own the state. The hidden salesRange / salesFrom / salesTo inputs
+// stay exactly as they were, and this writes into them on Apply, so everything
+// that reads them — loadSales, the SKU popup, the Stock page — is untouched.
+// ══════════════════════════════════════════════════════
+const DRP = {};
+
+const drpYmd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const drpParse = (s) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').trim());
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+};
+const drpMonths = ['January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December'];
+const drpLong = (d) => `${d.getDate()} ${drpMonths[d.getMonth()]} ${d.getFullYear()}`;
+const drpShort = (d) => `${d.getDate()} ${drpMonths[d.getMonth()].slice(0, 3)}`;
+
+// Say the month and year once when both ends share them — "5 – 15 Aug 2026"
+// rather than "5 Aug 2026 – 15 Aug 2026", which is most of a button's width
+// spent repeating itself.
+function drpRangeLabel(a, b) {
+  const year = b.getFullYear();
+  if (drpSameDay(a, b)) return `${a.getDate()} ${drpMonths[a.getMonth()].slice(0, 3)} ${year}`;
+  if (a.getFullYear() === year && a.getMonth() === b.getMonth()) {
+    return `${a.getDate()} – ${b.getDate()} ${drpMonths[b.getMonth()].slice(0, 3)} ${year}`;
+  }
+  if (a.getFullYear() === year) return `${drpShort(a)} – ${drpShort(b)} ${year}`;
+  return `${drpShort(a)} ${a.getFullYear()} – ${drpShort(b)} ${year}`;
+}
+const drpMidnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const drpAddDays = (d, n) => { const c = new Date(d); c.setDate(c.getDate() + n); return c; };
+const drpSameDay = (a, b) => a && b && drpYmd(a) === drpYmd(b);
+
+// Each entry answers "what does this period mean today?" — null means all time.
+const DRP_PRESETS = [
+  { key: 'today', label: 'Today', range: () => [drpMidnight(), drpMidnight()] },
+  { key: 'yesterday', label: 'Yesterday', range: () => { const y = drpAddDays(drpMidnight(), -1); return [y, y]; } },
+  { sep: true },
+  { key: '7', label: 'Last 7 days', range: () => [drpAddDays(drpMidnight(), -6), drpMidnight()] },
+  { key: '30', label: 'Last 30 days', range: () => [drpAddDays(drpMidnight(), -29), drpMidnight()] },
+  { key: '45', label: 'Last 45 days', range: () => [drpAddDays(drpMidnight(), -44), drpMidnight()] },
+  { key: '90', label: 'Last 90 days', range: () => [drpAddDays(drpMidnight(), -89), drpMidnight()] },
+  { sep: true },
+  { key: 'mtd', label: 'This month', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
+  { key: 'lastmonth', label: 'Last month', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; } },
+  { key: 'qtd', label: 'This quarter', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), Math.floor(t.getMonth() / 3) * 3, 1), t]; } },
+  { key: 'ytd', label: 'This year', range: () => { const t = drpMidnight(); return [new Date(t.getFullYear(), 0, 1), t]; } },
+  { sep: true },
+  { key: 'all', label: 'All time', range: () => [null, null] },
+];
+
+// The picker for one page. `onApply` is that page's own loader.
+function drpInit(prefix, onApply) {
+  const host = document.getElementById(prefix + 'Drp');
+  if (!host) return;
+  const from = drpParse((document.getElementById(prefix + 'From') || {}).value);
+  const to = drpParse((document.getElementById(prefix + 'To') || {}).value);
+  const stored = (document.getElementById(prefix + 'Range') || {}).value || '45';
+  DRP[prefix] = {
+    onApply,
+    key: stored,
+    from, to,
+    // While a range is being picked, `from` is set and `to` is not — the next
+    // click closes it. `anchor` remembers which end was clicked first so a
+    // backwards second click still produces a sane range.
+    anchor: null,
+    view: (to || drpMidnight()),
+  };
+  // Nothing chosen yet on first load: take the stored preset at its word.
+  if (!from && !to && stored !== 'all' && stored !== 'custom') drpApplyPreset(prefix, stored, false);
+  drpSyncLabel(prefix);
+  drpRender(prefix);
+
+  document.addEventListener('click', (e) => {
+    if (!host.classList.contains('open')) return;
+    // The panel re-renders on every pick, so by the time this runs the day button
+    // that was clicked has already been thrown away — contains() would call it an
+    // outside click and shut the panel halfway through choosing a range. The
+    // event path still holds the nodes as they were when the click happened.
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (path.includes(host) || host.contains(e.target)) return;
+    drpClose(prefix);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && host.classList.contains('open')) drpClose(prefix);
+  });
+}
+
+function drpToggle(prefix) {
+  const host = document.getElementById(prefix + 'Drp');
+  const s = DRP[prefix];
+  if (!host || !s) return;
+  const opening = !host.classList.contains('open');
+  // Opening starts from what is actually applied, not from a half-finished pick
+  // left behind last time.
+  if (opening) {
+    s.from = drpParse(document.getElementById(prefix + 'From').value);
+    s.to = drpParse(document.getElementById(prefix + 'To').value);
+    s.key = document.getElementById(prefix + 'Range').value;
+    s.anchor = null;
+    s.view = s.to || drpMidnight();
+    drpRender(prefix);
+  }
+  host.classList.toggle('open', opening);
+}
+
+function drpClose(prefix) {
+  const host = document.getElementById(prefix + 'Drp');
+  if (host) host.classList.remove('open');
+}
+
+// Choosing a named period fills the dates; `apply` false means "set up the
+// state without reloading", which is what first load needs.
+function drpApplyPreset(prefix, key, apply = true) {
+  const s = DRP[prefix];
+  const p = DRP_PRESETS.find(x => x.key === key);
+  if (!s || !p) return;
+  const [a, b] = p.range();
+  s.key = key; s.from = a; s.to = b; s.anchor = null;
+  s.view = b || drpMidnight();
+  if (apply) drpCommit(prefix);
+  else { drpWrite(prefix); drpSyncLabel(prefix); drpRender(prefix); }
+}
+
+// Clicking a day. The first click opens a range, the second closes it.
+function drpPick(prefix, ymd) {
+  const s = DRP[prefix];
+  const d = drpParse(ymd);
+  if (!s || !d) return;
+  if (!s.anchor) { s.anchor = d; s.from = d; s.to = d; }
+  else {
+    // A second click before the first simply turns the range around.
+    s.from = d < s.anchor ? d : s.anchor;
+    s.to = d < s.anchor ? s.anchor : d;
+    s.anchor = null;
+  }
+  s.key = 'custom';
+  drpRender(prefix);
+}
+
+// Typing into either box. Only a complete, real date counts — a half-typed one
+// must not move the calendar or reload anything.
+function drpTyped(prefix, which, text) {
+  const s = DRP[prefix];
+  if (!s) return;
+  const d = drpParseLoose(text);
+  if (!d) return;
+  if (which === 'from') { s.from = d; if (s.to && s.to < d) s.to = d; }
+  else { s.to = d; if (s.from && s.from > d) s.from = d; }
+  s.key = 'custom'; s.anchor = null; s.view = s.to || d;
+  drpRender(prefix);
+}
+
+// Accepts what the boxes show ("14 September 2026") and the shapes people type
+// instead — 14/09/2026, 14-09-2026, 2026-09-14.
+function drpParseLoose(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(t);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  m = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/.exec(t);
+  if (m) {
+    const mi = drpMonths.findIndex(x => x.toLowerCase().startsWith(m[2].toLowerCase().slice(0, 3)));
+    if (mi >= 0) return new Date(+m[3], mi, +m[1]);
+  }
+  return null;
+}
+
+function drpNav(prefix, delta) {
+  const s = DRP[prefix];
+  if (!s) return;
+  s.view = new Date(s.view.getFullYear(), s.view.getMonth() + delta, 1);
+  drpRender(prefix);
+}
+
+// Apply → write the dates where the rest of the app reads them, then reload.
+function drpCommit(prefix) {
+  const s = DRP[prefix];
+  if (!s) return;
+  if (s.anchor) { s.to = s.anchor; s.anchor = null; }   // one click, then Apply
+  drpWrite(prefix);
+  drpSyncLabel(prefix);
+  drpClose(prefix);
+  if (typeof s.onApply === 'function') s.onApply();
+}
+
+function drpWrite(prefix) {
+  const s = DRP[prefix];
+  const f = document.getElementById(prefix + 'From');
+  const t = document.getElementById(prefix + 'To');
+  const r = document.getElementById(prefix + 'Range');
+  if (f) f.value = s.from ? drpYmd(s.from) : '';
+  if (t) t.value = s.to ? drpYmd(s.to) : '';
+  if (r) r.value = s.key;
+}
+
+function drpSyncLabel(prefix) {
+  const s = DRP[prefix];
+  const el = document.getElementById(prefix + 'DrpLabel');
+  if (!s || !el) return;
+  const named = DRP_PRESETS.find(p => p.key === s.key);
+  if (named) { el.textContent = named.label; return; }
+  if (!s.from || !s.to) { el.textContent = 'All time'; return; }
+  el.textContent = drpRangeLabel(s.from, s.to);
+}
+
+function drpRender(prefix) {
+  const s = DRP[prefix];
+  const panel = document.getElementById(prefix + 'DrpPanel');
+  if (!s || !panel) return;
+  const today = drpMidnight();
+  const right = new Date(s.view.getFullYear(), s.view.getMonth(), 1);
+  const left = new Date(right.getFullYear(), right.getMonth() - 1, 1);
+
+  const presets = DRP_PRESETS.map(p => p.sep
+    ? '<div class="drp-sep"></div>'
+    : `<button type="button" class="drp-preset ${s.key === p.key ? 'active' : ''}" onclick="drpApplyPreset('${prefix}','${p.key}')">${p.label}</button>`
+  ).join('');
+
+  const month = (first, canNavBack, canNavFwd) => {
+    const y = first.getFullYear(), m = first.getMonth();
+    const lead = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<button type="button" class="drp-day blank" disabled></button>');
+    for (let d = 1; d <= days; d++) {
+      const date = new Date(y, m, d);
+      const ymd = drpYmd(date);
+      const future = date > today;
+      const isStart = drpSameDay(date, s.from);
+      const isEnd = drpSameDay(date, s.to);
+      const inside = s.from && s.to && date > s.from && date < s.to;
+      const spans = s.from && s.to && !drpSameDay(s.from, s.to);
+      const cls = ['drp-day'];
+      if (inside) cls.push('in-range');
+      if (isStart || isEnd) cls.push('edge');
+      if (isStart && spans) cls.push('edge-start', 'has-range');
+      if (isEnd && spans) cls.push('edge-end', 'has-range');
+      cells.push(`<button type="button" class="${cls.join(' ')}" ${future ? 'disabled' : ''} onclick="drpPick('${prefix}','${ymd}')">${d}</button>`);
+    }
+    const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      .map(x => `<div class="drp-dow">${x}</div>`).join('');
+    return `<div class="drp-cal">
+      <div class="drp-cal-head">
+        ${canNavBack ? `<button type="button" class="drp-nav" onclick="drpNav('${prefix}',-1)">‹</button>` : '<span></span>'}
+        <span class="drp-cal-title">${drpMonths[m]} ${y}</span>
+        ${canNavFwd !== null ? `<button type="button" class="drp-nav" onclick="drpNav('${prefix}',1)" ${canNavFwd ? '' : 'disabled'}>›</button>` : '<span></span>'}
+      </div>
+      <div class="drp-grid">${dow}${cells.join('')}</div>
+    </div>`;
+  };
+
+  // The right month never runs past the current one — there is no data ahead.
+  const canFwd = !(right.getFullYear() === today.getFullYear() && right.getMonth() === today.getMonth());
+
+  panel.innerHTML = `
+    <div class="drp-side">${presets}</div>
+    <div class="drp-main">
+      <div class="drp-inputs">
+        <input type="text" id="${prefix}DrpFrom" value="${s.from ? drpLong(s.from) : ''}" placeholder="Start date"
+          onchange="drpTyped('${prefix}','from',this.value)"/>
+        <span class="drp-arrow">→</span>
+        <input type="text" id="${prefix}DrpTo" value="${s.to ? drpLong(s.to) : ''}" placeholder="End date"
+          onchange="drpTyped('${prefix}','to',this.value)"/>
+      </div>
+      <div class="drp-months">
+        ${month(left, true, null)}
+        ${month(right, false, canFwd)}
+      </div>
+      <div class="drp-foot">
+        <span class="drp-hint">${s.from && s.to ? '' : 'All time — every order on record'}</span>
+        <span style="display:flex;gap:8px">
+          <button type="button" class="btn btn-outline btn-sm" onclick="drpClose('${prefix}')">Cancel</button>
+          <button type="button" class="btn btn-sm" onclick="drpCommit('${prefix}')">Apply</button>
+        </span>
+      </div>
+    </div>`;
+}
+
 // ══════════════════════════════════════════════════════
 // SALES — order analytics from Vin eRetail order exports (admin only).
 // Reads /api/sales, which reads the imported vin_orders table. Export-driven,
@@ -3100,19 +3391,16 @@ function salesSetRange(days) {
   document.getElementById('salesFrom').value = salesYmd(from);
   document.getElementById('salesTo').value = salesYmd(to);
 }
-function salesPreset(v) {
-  const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
-  if (v === 'all') { fromI.value = ''; toI.value = ''; }
-  else if (v !== 'custom') salesSetRange(Number(v));
-  loadSales();
-}
-function salesCustom() { document.getElementById('salesRange').value = 'custom'; loadSales(); }
+// salesPreset / salesCustom / returnsPreset / returnsCustom used to back the old
+// <select> and the two bare date boxes. The picker replaced all four; see drpInit.
 
 async function loadSales() {
+  // The picker fills the hidden range inputs on first build, so this has to run
+  // before they are read. Initialising here rather than on boot keeps it to the
+  // pages that actually have one.
+  if (!DRP.sales) drpInit('sales', loadSales);
   const rangeSel = document.getElementById('salesRange');
   const fromI = document.getElementById('salesFrom'), toI = document.getElementById('salesTo');
-  // First open: default to the 45-day preset.
-  if (rangeSel && rangeSel.value === '45' && !fromI.value && !toI.value) salesSetRange(45);
 
   const tilesEl = document.getElementById('salesTiles');
   const trendEl = document.getElementById('salesTrend');
@@ -3336,8 +3624,7 @@ function returnsNotice(kind, msg) {
   el.style.display = 'block'; el.style.color = c; el.style.background = bg; el.style.border = '1px solid ' + bd; el.textContent = msg;
 }
 function returnsSetRange(days) { const to = new Date(), from = new Date(to.getTime() - days * 86400000); document.getElementById('returnsFrom').value = salesYmd(from); document.getElementById('returnsTo').value = salesYmd(to); }
-function returnsPreset(v) { const f = document.getElementById('returnsFrom'), t = document.getElementById('returnsTo'); if (v === 'all') { f.value = ''; t.value = ''; } else if (v !== 'custom') returnsSetRange(Number(v)); loadReturns(); }
-function returnsCustom() { document.getElementById('returnsRange').value = 'custom'; loadReturns(); }
+
 
 function returnsTile(label, value, sub, tone, filter) {
   const col = tone === 'warn' ? '#dc2626' : tone === 'good' ? '#16a34a' : 'var(--foreground)';
@@ -3492,9 +3779,9 @@ function returnsTopSkus(rows) {
 }
 
 async function loadReturns() {
+  if (!DRP.returns) drpInit('returns', loadReturns);
   const rangeSel = document.getElementById('returnsRange');
   const fromI = document.getElementById('returnsFrom'), toI = document.getElementById('returnsTo');
-  if (rangeSel && rangeSel.value === '45' && !fromI.value && !toI.value) returnsSetRange(45);
   const tiles = document.getElementById('returnsTiles'), trend = document.getElementById('returnsTrend'),
     bd = document.getElementById('returnsBreakdown'), top = document.getElementById('returnsTopSkus'),
     span = document.getElementById('returnsSpan');
