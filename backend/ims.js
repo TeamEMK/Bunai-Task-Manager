@@ -118,13 +118,38 @@ async function fetchSheet(spreadsheetId, sheetName) {
     const padded = rows.map(r => { const o = r.slice(); while (o.length < mc) o.push(''); return o; });
     return { rows: padded, lastRow: padded.length, lastCol: mc };
   }
+  // An unset IMS_SS_ID reaches Google as an empty id, and Google answers
+  // "Requested entity was not found" - which reads as a deleted or unshared
+  // spreadsheet and sends you hunting through Drive for a file that was never
+  // named. Say what is actually wrong instead.
+  if (!String(spreadsheetId || '').trim()) {
+    throw new Error('IMS_SS_ID is not set, so there is no spreadsheet to read. '
+      + 'Put the IMS spreadsheet id in the .env file (the long code in the sheet '
+      + 'URL between /d/ and /edit) and restart the server.');
+  }
   const api = await sheets();
-  const res = await api.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${sheetName.replace(/'/g, "''")}'`,
-    valueRenderOption: 'UNFORMATTED_VALUE',
-    dateTimeRenderOption: 'SERIAL_NUMBER',
-  });
+  let res;
+  try {
+    res = await api.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${sheetName.replace(/'/g, "''")}'`,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'SERIAL_NUMBER',
+    });
+  } catch (e) {
+    // The other way this fails is a real id this server is not allowed to open.
+    // Name the account the sheet has to be shared with, rather than passing on
+    // Google's word for it, which sounds like the file is gone.
+    const msg = String((e && e.message) || e);
+    if (/not found|permission|forbidden/i.test(msg)) {
+      let who = '';
+      try { who = require('./src/services/google').serviceAccountEmail() || ''; } catch (_) {}
+      throw new Error(`Could not open the sheet "${sheetName}" in the IMS spreadsheet (${msg}). `
+        + `Check the id in IMS_SS_ID, and share that spreadsheet as Viewer with `
+        + (who || 'the service account this server signs in as') + '.');
+    }
+    throw e;
+  }
   const raw = res.data.values || [];
   let maxCols = 0;
   for (const r of raw) if (r.length > maxCols) maxCols = r.length;
