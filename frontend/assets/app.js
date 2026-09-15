@@ -3432,6 +3432,8 @@ async function loadSales() {
 
   const params = new URLSearchParams();
   if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  const netSel = document.getElementById('salesNet');
+  if (netSel && netSel.value === '1') params.set('net', '1');
   const d = await api('/api/sales' + (params.toString() ? '?' + params : ''));
   if (d.notConfigured) {
     salesNotice('busy', 'No orders synced on this server yet — run the Vin order sync to populate this page.');
@@ -3442,12 +3444,34 @@ async function loadSales() {
 
   const t = d.totals || {};
   const cancelPct = t.orders ? Math.round(t.cancelled / t.orders * 100) : 0;
+  const ret = d.returns || {};
+  // The returns tile is shown in both modes on purpose: in net mode it explains
+  // what came off, and in gross mode it warns that it has not.
+  const retPct = Number(t.revenue) ? Math.round(Number(ret.amount) / (Number(t.revenue) + (d.net ? Number(ret.amount) : 0)) * 100) : 0;
   tilesEl.innerHTML =
-    salesKpi('Revenue', inr(t.revenue), 'delivered + shipped, excl. cancelled', 'good', 'live') +
+    salesKpi(d.net ? 'Net revenue' : 'Revenue', inr(t.revenue),
+      d.net ? 'returns taken off' : 'returns still included', 'good', 'live') +
     salesKpi('Orders', Number(t.orders || 0).toLocaleString('en-IN'), `${Number(t.live_orders || 0).toLocaleString('en-IN')} live`, null, 'all') +
-    salesKpi('Units sold', Number(t.units || 0).toLocaleString('en-IN'), null, null, 'live') +
-    salesKpi('Avg order', inr(t.aov), null, null, 'live') +
+    salesKpi(d.net ? 'Net units' : 'Units sold', Number(t.units || 0).toLocaleString('en-IN'), null, null, 'live') +
+    salesKpi(d.net ? 'Avg net order' : 'Avg order', inr(t.aov), null, null, 'live') +
+    salesKpi('Returned', inr(ret.amount), `${Number(ret.orders || 0).toLocaleString('en-IN')} orders · ${retPct}% of gross`, 'warn') +
     salesKpi('Cancelled', Number(t.cancelled || 0).toLocaleString('en-IN'), cancelPct + '% of orders', 'warn', 'cancelled');
+
+  // Returns whose order is not on file belong to no window, so they are in
+  // neither figure. Saying so is the difference between a number that can be
+  // reconciled and one that cannot. It sits under the tiles rather than in the
+  // notice bar, which the sync freshness line owns and would overwrite.
+  const noteEl = document.getElementById('salesReturnsNote');
+  if (noteEl) {
+    const unl = (ret.unlinked && ret.unlinked.orders)
+      ? `${Number(ret.unlinked.orders).toLocaleString('en-IN')} returns worth ${inr(ret.unlinked.amount)} match no order on file, so they are in neither figure.`
+      : '';
+    const how = d.net
+      ? 'Net takes each return off the order it came from, so it lands in the window that order was placed in.'
+      : 'Revenue here still includes orders that were later returned — switch to net to take them off.';
+    noteEl.innerHTML = dtEscape(how) + (unl ? ' ' + dtEscape(unl) : '');
+    noteEl.style.display = '';
+  }
 
   trendEl.innerHTML = salesTrendChart(d.daily);
 
