@@ -851,7 +851,12 @@
   }
 
   function getStockClass(stock, maxLevel) {
-    if (maxLevel<=0) return stock===0 ? 'stock-zero' : 'stock-green';
+    // No max level now means the SKU sold nothing in the window, so there is no
+    // rate to set a target from. Stock sitting against no demand is excess - it
+    // used to be coloured green, which called several hundred lines of dead
+    // stock healthy. Back when a planner typed the max level in, every SKU had
+    // one and this branch barely fired.
+    if (maxLevel<=0) return stock===0 ? 'stock-zero' : 'stock-blue';
     if (stock===0) return 'stock-zero';
     const p = stock/maxLevel;
     if (p<=0.33) return 'stock-red';

@@ -57,6 +57,21 @@ async function ensureTables() {
       KEY idx_vin_inv_wh (warehouse)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+  // One row per SKU per DAY. vin_inventory only ever holds the latest figure,
+  // so "what was the stock last Tuesday" had no answer anywhere; the IMS wants
+  // exactly that. Written once per sync, keyed by day so a second sync on the
+  // same day corrects the day rather than duplicating it. It cannot be
+  // backfilled - history starts the first time this runs.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vin_inventory_daily (
+      day       DATE NOT NULL,
+      sku       VARCHAR(120) NOT NULL,
+      warehouse VARCHAR(40)  NOT NULL,
+      qty       DECIMAL(12,3) NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, sku, warehouse),
+      KEY idx_vin_invd_sku (sku, day)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS vin_sync_log (
       id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -184,6 +199,14 @@ async function syncInventory({ log = console.log, force = false } = {}) {
     const [zeroed] = await pool.query(
       `UPDATE vin_inventory SET qty = 0, synced_at = CURRENT_TIMESTAMP
         WHERE qty > 0 AND synced_at < ?`, [started]);
+
+    // Keep today's figures as history before the next sync overwrites them.
+    // Done after the zeroing above, so a sold-out SKU is recorded as the zero
+    // it now is rather than the quantity it had this morning.
+    await pool.query(
+      `INSERT INTO vin_inventory_daily (day, sku, warehouse, qty)
+       SELECT CURDATE(), sku, warehouse, qty FROM vin_inventory
+       ON DUPLICATE KEY UPDATE qty = VALUES(qty)`);
 
     await pool.query(
       'UPDATE vin_sync_log SET ended_at = NOW(), rows_seen = ?, ok = 1 WHERE id = ?',
