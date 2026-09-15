@@ -250,7 +250,9 @@ async function getSalesRankData(fromStr, toStr) {
     for (const s of sold) {
       const style = skuGroup.styleKey(s.sku);
       if (!sizesByStyle.has(style)) sizesByStyle.set(style, []);
-      sizesByStyle.get(style).push({ sku: s.sku, size: skuGroup.splitSize(s.sku).size || '-', qty: num(s.qty) });
+      // The size pills read `count`; `qty` is kept because other callers use it.
+      const q = num(s.qty);
+      sizesByStyle.get(style).push({ sku: s.sku, size: skuGroup.splitSize(s.sku).size || '-', count: q, qty: q });
     }
 
     const items = sold.map((s) => {
@@ -314,6 +316,18 @@ async function getTopProductsData(fromStr, toStr) {
     if (!rank.success) return rank;
     const skuGroup = require('./skuGroup');
 
+    // The three top-product tabs read this shape closely: each product carries
+    // its SKUs as objects, and each of those has to have its own order point.
+    // Sending bare SKU strings left `sku.orderPoint` undefined, every comparison
+    // came out NaN, and all three tabs reported nothing to order at all.
+    //
+    // Order point is what the screen itself defines it as — safety stock plus
+    // average daily sale times lead time. There is no separate safety stock or
+    // lead time in this data, so the cover period plays the part of the lead
+    // time and safety stock is zero, which makes the order point exactly the
+    // max level the rest of the IMS uses. One number, named twice.
+    const base = new Map((await skuBase()).map(r => [r.sku, r]));
+
     const byStyle = new Map();
     for (const it of rank.items) {
       const key = skuGroup.styleKey(it.sku);
@@ -321,24 +335,59 @@ async function getTopProductsData(fromStr, toStr) {
         byStyle.set(key, {
           sku: key,
           productName: skuGroup.cleanName(it.productName) || key,
-          totalSales: 0, value: 0, todayStock: 0, toBeOrder: 0, maxLevel: 0,
-          skus: [], sizes: [],
+          totalSales: 0, value: 0,
+          totalStock: 0, totalMaxLevel: 0, totalOrderPoint: 0,
+          totalAvgDailySales: 0, totalToBeOrder: 0,
+          orderedDone: 0, orderedPending: 0,
+          skus: [],
         });
       }
+      const b = base.get(it.sku);
+      const stock = b ? b.todayStock : num(it.todayStock);
+      const maxLevel = b ? b.maxLevel : num(it.maxLevel);
+      const avgDaily = b ? b.avgDaily : 0;
+      const toBeOrder = Math.max(0, maxLevel - stock);
+
       const g = byStyle.get(key);
       g.totalSales += num(it.totalSales);
       g.value += num(it.value);
-      g.todayStock += num(it.todayStock);
-      g.toBeOrder += num(it.toBeOrder);
-      g.maxLevel += num(it.maxLevel);
-      g.skus.push(it.sku);
-      g.sizes.push({ sku: it.sku, size: skuGroup.splitSize(it.sku).size || '-', qty: num(it.totalSales), stock: num(it.todayStock) });
+      g.totalStock += stock;
+      g.totalMaxLevel += maxLevel;
+      g.totalOrderPoint += maxLevel;
+      g.totalAvgDailySales += avgDaily;
+      g.totalToBeOrder += toBeOrder;
+      g.skus.push({
+        sku: it.sku,
+        size: skuGroup.splitSize(it.sku).size || '-',
+        todayStock: stock,
+        safetyStock: 0,
+        leadTime: COVER_DAYS,
+        avgDailySales: avgDaily,
+        orderPoint: maxLevel,
+        maxLevel,
+        toBeOrder,
+        totalSales: num(it.totalSales),
+      });
     }
-    const products = [...byStyle.values()]
-      .map(g => ({ ...g, skuCount: g.skus.length, pct: g.maxLevel > 0 ? Math.round(g.todayStock / g.maxLevel * 100) : null }))
-      .sort((a, b) => b.totalSales - a.totalSales);
 
-    return { success: true, products };
+    const products = [...byStyle.values()].map((g) => ({
+      ...g,
+      totalAvgDailySales: Math.round(g.totalAvgDailySales * 100) / 100,
+      // Nothing here tracks a purchase order that has been placed but not
+      // received, so the raw need and the adjusted need are the same number.
+      rawTotalToBeOrder: g.totalToBeOrder,
+      anyBelowOrderPoint: g.skus.some(s => s.orderPoint > 0 && s.todayStock < s.orderPoint),
+      anyNearMaxAlert: g.skus.some(s => s.maxLevel > 0 && s.todayStock > s.maxLevel),
+      skuCount: g.skus.length,
+      // Kept under their old names for the parts of the screen that still read
+      // a product-level stock or shortfall.
+      todayStock: g.totalStock,
+      maxLevel: g.totalMaxLevel,
+      toBeOrder: g.totalToBeOrder,
+      pct: g.totalMaxLevel > 0 ? Math.round(g.totalStock / g.totalMaxLevel * 100) : null,
+    })).sort((a, b) => b.totalSales - a.totalSales);
+
+    return { success: true, products, basis: { windowDays: AVG_WINDOW_DAYS, coverDays: COVER_DAYS } };
   } catch (e) { return { success: false, error: e.message }; }
 }
 
