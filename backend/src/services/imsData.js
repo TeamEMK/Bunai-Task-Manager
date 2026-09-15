@@ -235,10 +235,19 @@ async function getToBeOrderData() {
 async function getSalesRankData(fromStr, toStr) {
   try {
     const ranged = /^\d{4}-\d{2}-\d{2}$/.test(String(fromStr || '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(toStr || ''));
+    // Without an explicit range this counted back from today while every other
+    // part of the IMS counts back from the last order on file. With the sync 20
+    // days behind that quietly dropped 65 SKUs and 642 units from this tab
+    // alone, so Sales Rank and To Be Order meant different things by "the last
+    // 45 days" while both called it that.
+    const clock = ranged ? null : await dataClock();
     const where = ranged
+      // An explicit range is taken literally, both ends included.
       ? 'o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)'
-      : `o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${AVG_WINDOW_DAYS} DAY)`;
-    const args = ranged ? [fromStr, toStr] : [];
+      // The default is the window ending at the last order, matching skuBase.
+      : `o.order_date > DATE_SUB(?, INTERVAL ${AVG_WINDOW_DAYS} DAY)
+         AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)`;
+    const args = ranged ? [fromStr, toStr] : [clock.anchor, clock.anchor];
 
     const sold = await db.rows(
       `SELECT it.sku,
