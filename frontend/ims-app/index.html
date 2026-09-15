@@ -577,12 +577,16 @@
     <div class="filters">
       <div class="filter-group">
         <span class="filter-label">Buffer (units below OP)</span>
-        <input type="number" class="filter-input buffer-input" id="treBuffer" value="20" min="0" max="9999" onchange="renderTopReorder()" oninput="renderTopReorder()">
+        <input type="number" class="filter-input buffer-input" id="treBuffer" value="0" min="0" max="9999" onchange="renderTopReorder()" oninput="renderTopReorder()">
       </div>
       <div class="quick-btns">
-        <button class="quick-btn" onclick="setTreBuffer(0,this)">0</button>
+        <!-- Defaults were set when a planner typed max levels in and they ran to
+             hundreds of units. Order points are now earned from the selling rate
+             and come out in tens, so a buffer of 20 put the bar below zero and
+             the tab reported nothing to order however short the shelf was. -->
+        <button class="quick-btn active" id="tre-q0" onclick="setTreBuffer(0,this)">0</button>
         <button class="quick-btn" onclick="setTreBuffer(10,this)">10</button>
-        <button class="quick-btn active" id="tre-q20" onclick="setTreBuffer(20,this)">20</button>
+        <button class="quick-btn" id="tre-q20" onclick="setTreBuffer(20,this)">20</button>
         <button class="quick-btn" onclick="setTreBuffer(50,this)">50</button>
         <button class="quick-btn" onclick="setTreBuffer(100,this)">100</button>
       </div>
@@ -659,13 +663,13 @@
     <div class="filters">
       <div class="filter-group">
         <span class="filter-label">Product Total ≥</span>
-        <input type="number" class="filter-input threshold-input" id="tbsThreshold" value="20" min="1" max="9999" onchange="renderTopSkuToBeOrder()" oninput="renderTopSkuToBeOrder()">
+        <input type="number" class="filter-input threshold-input" id="tbsThreshold" value="5" min="1" max="9999" onchange="renderTopSkuToBeOrder()" oninput="renderTopSkuToBeOrder()">
       </div>
       <div class="quick-btns">
         <button class="quick-btn" onclick="setTbsThreshold(1,this)">1+</button>
-        <button class="quick-btn" onclick="setTbsThreshold(5,this)">5+</button>
+        <button class="quick-btn active" id="tbs-q5" onclick="setTbsThreshold(5,this)">5+</button>
         <button class="quick-btn" onclick="setTbsThreshold(10,this)">10+</button>
-        <button class="quick-btn active" id="tbs-q20" onclick="setTbsThreshold(20,this)">20+</button>
+        <button class="quick-btn" id="tbs-q20" onclick="setTbsThreshold(20,this)">20+</button>
         <button class="quick-btn" onclick="setTbsThreshold(50,this)">50+</button>
         <button class="quick-btn" onclick="setTbsThreshold(100,this)">100+</button>
       </div>
