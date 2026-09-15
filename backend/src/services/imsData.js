@@ -135,7 +135,17 @@ async function getDashboardData(fromStr, toStr) {
     const from = /^\d{4}-\d{2}-\d{2}$/.test(String(fromStr || '')) ? fromStr : today;
     const to   = /^\d{4}-\d{2}-\d{2}$/.test(String(toStr || '')) ? toStr : today;
 
-    const base = await skuBase({ clock });
+    // 7D / 14D / 30D / 90D used to change nothing but which history columns were
+    // asked for, so every one of them produced identical counters and the
+    // control looked broken. The length of the chosen range is now the window
+    // the selling rate is measured over, which is what picking it implies.
+    //
+    // The length, not the literal dates: orders stop at the last sync, so a
+    // range running past it would measure days on which nothing could have been
+    // bought. Seven days means the seven up to the last order on file.
+    const spanDays = Math.max(1, Math.min(365,
+      Math.round((new Date(to) - new Date(from)) / 86400000) + 1));
+    const base = await skuBase({ clock, windowDays: spanDays });
     const byS = new Map(base.map(r => [r.sku, r]));
 
     const hist = await db.rows(
@@ -187,7 +197,7 @@ async function getDashboardData(fromStr, toStr) {
       note: hist.length ? null
         : `No stock history yet for ${from} to ${to}, so the figures below are today's live stock (${today}). History is recorded from each Vinculum sync and cannot be filled in backwards, so these dates will populate as the days pass.`,
       basis: {
-        windowDays: AVG_WINDOW_DAYS, coverDays: COVER_DAYS,
+        windowDays: spanDays, coverDays: COVER_DAYS,
         measuredTo: clock.anchor, staleDays: clock.staleDays,
         staleNote: clock.staleDays > 2
           ? `Orders were last synced ${clock.staleDays} days ago, so selling rates are measured to ${clock.anchor} rather than today.`
