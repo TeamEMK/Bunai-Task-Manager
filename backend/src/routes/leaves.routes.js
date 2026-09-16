@@ -67,7 +67,13 @@ router.get('/leaves', requireAuth, asyncRoute(async (req, res) => {
       where += ` AND lr.approver_id IN (${placeholders(hodIds)}) AND lr.user_id<>?`;
       params.push(...hodIds, uid);
     } else {
-      where += ' AND lr.approver_id=? AND lr.user_id<>?'; params.push(uid, uid);
+      // You do not approve your own leave — except in the one case where the
+      // system had nobody else to give it to. A sole admin was assigned their
+      // own request and then filtered out of seeing it, so it sat pending with
+      // no one on earth able to decide it. They are the top of the chain; let
+      // them act on that one rather than strand it.
+      where += ' AND lr.approver_id=? AND (lr.user_id<>? OR lr.approver_id=lr.user_id)';
+      params.push(uid, uid);
     }
   } else if (scope === 'team') {
     if (role === 'admin') {
@@ -121,7 +127,17 @@ router.get('/leaves/my-approvers', requireAuth, asyncRoute(async (req, res) => {
   const me = await db.one(
     `SELECT department, ${ORG_ROLE} AS user_role FROM users WHERE id=?`, [req.session.userId]);
   if (!me) return res.json({ names: '' });
-  if (me.user_role === 'admin') return res.json({ names: 'Another Admin' });
+  if (me.user_role === 'admin') {
+    // Naming the actual person beats the phrase "Another Admin", which was
+    // printed whether or not another admin existed — so a sole admin was told
+    // their request was going to somebody else when it was going to them.
+    const others = await db.rows(
+      `SELECT name FROM users WHERE ${ORG_ROLE}='admin' AND id<>? ORDER BY name`, [req.session.userId]);
+    return res.json({
+      names: others.length ? others.map(a => a.name).join(', ') : 'you — there is no other admin',
+      selfApproves: others.length === 0,
+    });
+  }
   if (me.user_role === 'hod' || me.user_role === 'pc') return res.json({ names: 'Admin' });
   if (me.department) {
     const hods = await db.rows(
@@ -145,8 +161,9 @@ router.get('/leaves/pending-count', requireAuth, asyncRoute(async (req, res) => 
       [...hodIds, uid]);
     return res.json({ count: r.cnt || 0 });
   }
+  // Same rule as the list above, or the badge and the page disagree.
   const r = await db.one(
-    "SELECT COUNT(*) AS cnt FROM leave_requests WHERE approver_id=? AND status='pending' AND user_id<>?",
+    "SELECT COUNT(*) AS cnt FROM leave_requests WHERE approver_id=? AND status='pending' AND (user_id<>? OR approver_id=user_id)",
     [uid, uid]);
   res.json({ count: r.cnt || 0 });
 }));
