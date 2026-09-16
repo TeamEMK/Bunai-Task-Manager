@@ -690,6 +690,10 @@ tbody tr:last-child td{border-bottom:none;}
 .lv-selected-hours input{width:60px;padding:5px 8px;border:1.5px solid #d1fae5;border-radius:6px;font-size:12px;outline:none;font-family:inherit;text-align:center;}
 .lv-selected-hours input:focus{border-color:#10b981;}
 .lv-selected-hours-label{font-size:11px;color:#065f46;font-weight:600;}
+/* A time field has to show "04:30 PM" and the browser's own clock button. The
+   60px above is sized for a number like "8", which left it showing "--:" and
+   nothing else. */
+.lv-selected-time input{width:auto;min-width:132px;text-align:left;padding:7px 10px;font-size:13px;font-variant-numeric:tabular-nums;}
 .lv-selected-remove{background:transparent;border:none;color:#dc2626;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;}
 .lv-selected-remove:hover{background:#fee2e2;}
 

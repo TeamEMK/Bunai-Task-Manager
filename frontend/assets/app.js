@@ -7489,8 +7489,8 @@ function lvRenderSelectedList(){
     list.innerHTML = sortedE.map(k => `
       <div class="lv-selected-row">
         <span class="lv-selected-date">📅 ${fmtDate(k)}</span>
-        <div class="lv-selected-hours">
-          <input type="time" value="${LEAVE_SELECTED.get(k) || ''}"
+        <div class="lv-selected-hours lv-selected-time">
+          <input type="time" step="300" value="${LEAVE_SELECTED.get(k) || ''}"
             oninput="lvUpdateHours('${k}', this.value)"/>
         </div>
         <button type="button" class="lv-selected-remove" onclick="lvToggleDate('${k}')">✕</button>
