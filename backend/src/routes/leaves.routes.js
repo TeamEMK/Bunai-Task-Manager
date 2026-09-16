@@ -143,6 +143,23 @@ router.get('/leaves', requireAuth, asyncRoute(async (req, res) => {
     }
     delete r.dates_json;
   }
+
+  // A request is assigned to one person, but where approvers share a queue any
+  // of them can decide it. Printing only the assigned name made the list say
+  // "Approver: Ajay Gupta" while the form above it said "Ajay Gupta or Amita
+  // Gupta" — both true, and together confusing. Rows sitting with one of the
+  // shared approvers now carry the whole set; anything assigned outside it
+  // keeps its own single name.
+  try {
+    const pool = await db.rows(
+      'SELECT id, name FROM users WHERE is_leave_approver=1 ORDER BY id');
+    if (pool.length > 1) {
+      const ids = new Set(pool.map(p => p.id));
+      const label = pool.map(p => p.name).join(' or ');
+      for (const r of rows) if (ids.has(r.approver_id)) r.approver_names = label;
+    }
+  } catch (_) { /* the column may not exist yet on an old database */ }
+
   res.json(rows);
 }));
 

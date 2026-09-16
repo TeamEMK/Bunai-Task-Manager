@@ -7340,7 +7340,11 @@ function renderLeaves(){
           <div class="lv-item-meta">
             <b>Applied:</b> ${dtEscape((r.created_at||'').slice(0,16))}
             ${r.status === 'pending'
-              ? (r.dept_hod_names ? ` · <b>Approver:</b> ${dtEscape(r.dept_hod_names)}` : (r.approver_name ? ` · <b>Approver:</b> ${dtEscape(r.approver_name)}` : ''))
+              ? (r.approver_names
+                  ? ` · <b>Approver:</b> ${dtEscape(r.approver_names)}`
+                  : r.dept_hod_names
+                    ? ` · <b>Approver:</b> ${dtEscape(r.dept_hod_names)}`
+                    : (r.approver_name ? ` · <b>Approver:</b> ${dtEscape(r.approver_name)}` : ''))
               : (r.approver_name ? ` · <b>Decided by:</b> ${dtEscape(r.approver_name)}` : '')}
             ${r.decided_at ? ` · <b>Decided:</b> ${dtEscape(r.decided_at.slice(0,16))}` : ''}
             ${r.approver_note ? ` · <b>Note:</b> ${dtEscape(r.approver_note)}` : ''}
@@ -7707,7 +7711,7 @@ async function loadLeaveApprovals(){
               <td style="font-size:12px;max-width:240px">${dtEscape(r.reason)}</td>
               <!-- With two people approving, the queue is shared - this says which of
                    them a given request is actually sitting with. -->
-              <td style="font-size:12px;white-space:nowrap">${dtEscape(r.approver_name || '—')}</td>
+              <td style="font-size:12px">${dtEscape(r.approver_names || r.approver_name || '—')}</td>
               <td style="color:var(--muted-foreground);font-size:11px">${dtEscape((r.created_at||'').slice(0,16))}</td>
               <td style="white-space:nowrap">
                 <button class="action-btn done" onclick="openLeaveDecision(${r.id},'approve')">Approve</button>
