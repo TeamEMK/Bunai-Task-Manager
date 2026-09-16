@@ -7224,11 +7224,23 @@ const LEAVE_TYPE_LABEL = {
   full_day: 'Full Day Leave',
   half_day: 'Half Day Leave',
   work_from_home: 'Work From Home',
-  extra_working: 'Extra Working'
+  extra_working: 'Extra Working',
+  early_leaving: 'Leaving Early'
 };
 const LEAVE_TYPE_ICON = {
-  full_day: '🛌', half_day: '⏱', work_from_home: '🏠', extra_working: '⚡'
+  full_day: '🛌', half_day: '⏱', work_from_home: '🏠', extra_working: '⚡', early_leaving: '🕒'
 };
+// 14:30 reads as 2:30 PM on screen. Stored as 24-hour so it sorts and compares
+// without ceremony; shown as 12-hour because that is how the office says it.
+function lvTime12(t){
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '').trim());
+  if (!m) return String(t || '');
+  let h = Number(m[1]);
+  const ampm = h < 12 ? 'AM' : 'PM';
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ampm}`;
+}
+
 let LEAVE_DATA = [];
 let LEAVE_TAB = 'mine';
 let LEAVE_STATUS = '';
@@ -7303,9 +7315,11 @@ function renderLeaves(){
         ? r.dates : [{ date: r.from_date }];
       const dateLine = dates.map(d => {
         const dStr = fmtDate(d.date);
-        return r.leave_type === 'extra_working' && d.hours
-          ? `${dStr}<span class="lv-hours-pill">${d.hours}h</span>`
-          : dStr;
+        if (r.leave_type === 'extra_working' && d.hours) return `${dStr}<span class="lv-hours-pill">${d.hours}h</span>`;
+        // The leaving time is the whole point of the request, so it travels with
+        // the date rather than being buried in the reason.
+        if (r.leave_type === 'early_leaving' && d.time) return `${dStr}<span class="lv-hours-pill">leaves ${lvTime12(d.time)}</span>`;
+        return dStr;
       }).join(' · ');
       const countLabel = dates.length > 1
         ? `<span style="color:var(--faint);font-weight:500"> · ${dates.length} day${dates.length===1?'':'s'}</span>`
@@ -7460,9 +7474,27 @@ function lvRenderSelectedList(){
   const list = document.getElementById('lvSelectedList');
   const label = document.getElementById('lvSelectedLabel');
   const isExtra = LEAVE_PICKED_TYPE === 'extra_working';
+  const isEarly = LEAVE_PICKED_TYPE === 'early_leaving';
 
   if (!LEAVE_SELECTED.size) {
     box.style.display = 'none';
+    return;
+  }
+  // Leaving early asks for the time per date, the same way extra working asks
+  // for hours — one value against each date the request covers.
+  if (isEarly) {
+    box.style.display = 'block';
+    label.textContent = 'Leaving Time';
+    const sortedE = [...LEAVE_SELECTED.keys()].sort();
+    list.innerHTML = sortedE.map(k => `
+      <div class="lv-selected-row">
+        <span class="lv-selected-date">📅 ${fmtDate(k)}</span>
+        <div class="lv-selected-hours lv-selected-time">
+          <input type="time" step="300" value="${LEAVE_SELECTED.get(k) || ''}"
+            oninput="lvUpdateHours('${k}', this.value)"/>
+        </div>
+        <button type="button" class="lv-selected-remove" onclick="lvToggleDate('${k}')">✕</button>
+      </div>`).join('');
     return;
   }
   if (!isExtra) {
@@ -7514,6 +7546,7 @@ async function saveLeave(){
   if (!reason) return showErr('Reason is required');
 
   const isExtra = LEAVE_PICKED_TYPE === 'extra_working';
+  const isEarly = LEAVE_PICKED_TYPE === 'early_leaving';
   const dates = [];
   for (const key of [...LEAVE_SELECTED.keys()].sort()) {
     const item = { date: key };
@@ -7521,6 +7554,11 @@ async function saveLeave(){
       const h = parseFloat(LEAVE_SELECTED.get(key));
       if (!h || h <= 0) return showErr(`Enter hours for ${fmtDate(key)}`);
       item.hours = h;
+    }
+    if (isEarly) {
+      const t = String(LEAVE_SELECTED.get(key) || '').trim();
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(t)) return showErr(`Enter the leaving time for ${fmtDate(key)}`);
+      item.time = t;
     }
     dates.push(item);
   }
@@ -7551,11 +7589,13 @@ function openLeaveDecision(id, action){
   document.getElementById('lvDecisionTitle').textContent =
     action === 'approve' ? 'Approve Leave' : 'Reject Leave';
   const dates = Array.isArray(lr.dates) && lr.dates.length ? lr.dates : [{date: lr.from_date}];
-  const datesHtml = dates.map(d =>
-    lr.leave_type === 'extra_working' && d.hours
-      ? `${fmtDate(d.date)} <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:5px;font-size:10px;font-weight:700;margin-left:3px">${d.hours}h</span>`
-      : fmtDate(d.date)
-  ).join(' · ');
+  const datesHtml = dates.map(d => {
+    const pill = (txt) => ` <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:5px;font-size:10px;font-weight:700;margin-left:3px">${txt}</span>`;
+    if (lr.leave_type === 'extra_working' && d.hours) return fmtDate(d.date) + pill(`${d.hours}h`);
+    // The approver is being asked to agree to a time, so show them the time.
+    if (lr.leave_type === 'early_leaving' && d.time) return fmtDate(d.date) + pill(`leaves ${lvTime12(d.time)}`);
+    return fmtDate(d.date);
+  }).join(' · ');
   document.getElementById('lvDecisionInfo').innerHTML = `
     <div><b>Employee:</b> ${dtEscape(lr.user_name)}</div>
     <div><b>Type:</b> ${LEAVE_TYPE_LABEL[lr.leave_type]||lr.leave_type}</div>
@@ -7622,11 +7662,11 @@ async function loadLeaveApprovals(){
         <tbody>
           ${rows.map(r => {
             const dates = Array.isArray(r.dates) && r.dates.length ? r.dates : [{date: r.from_date}];
-            const datesHtml = dates.map(d =>
-              r.leave_type === 'extra_working' && d.hours
-                ? `${fmtDate(d.date)}<span class="lv-hours-pill">${d.hours}h</span>`
-                : fmtDate(d.date)
-            ).join(' · ');
+            const datesHtml = dates.map(d => {
+              if (r.leave_type === 'extra_working' && d.hours) return `${fmtDate(d.date)}<span class="lv-hours-pill">${d.hours}h</span>`;
+              if (r.leave_type === 'early_leaving' && d.time) return `${fmtDate(d.date)}<span class="lv-hours-pill">leaves ${lvTime12(d.time)}</span>`;
+              return fmtDate(d.date);
+            }).join(' · ');
             return `<tr>
               <td><b>${dtEscape(r.user_name)}</b>${r.user_department ? `<br><span style="color:var(--faint);font-size:11px">${dtEscape(r.user_department)}</span>` : ''}</td>
               <td><span class="lv-type-pill lv-type-${r.leave_type}">${LEAVE_TYPE_ICON[r.leave_type]||''} ${LEAVE_TYPE_LABEL[r.leave_type]||r.leave_type}</span></td>
