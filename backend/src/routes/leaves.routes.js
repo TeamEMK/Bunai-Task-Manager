@@ -43,17 +43,31 @@ async function resolveLeaveApprover(userId) {
       `SELECT id FROM users WHERE ${ORG_ROLE}='admin' AND id<>? ORDER BY id ASC LIMIT 1`, [me.id]);
     return other ? other.id : me.id;
   }
+  // Nobody approves their own leave. Every lookup below excludes the applicant,
+  // because each of them can otherwise land on them: an HOD is the HOD of their
+  // own department, and the last admin standing is the admin applying. Sona
+  // Nazwani ended up listed as her own approver this way.
+  const notMe = ' AND id<>?';
+
   if (me.user_role === 'hod' || me.user_role === 'pc') {
-    const adm = await db.one(`SELECT id FROM users WHERE ${ORG_ROLE}='admin' ORDER BY id ASC LIMIT 1`);
-    return adm?.id || null;
+    const adm = await db.one(
+      `SELECT id FROM users WHERE ${ORG_ROLE}='admin'${notMe} ORDER BY id ASC LIMIT 1`, [me.id]);
+    if (adm) return adm.id;
   }
   if (me.department) {
     const hod = await db.one(
-      `SELECT id FROM users WHERE ${ORG_ROLE}='hod' AND department=? ORDER BY id ASC LIMIT 1`, [me.department]);
+      `SELECT id FROM users WHERE ${ORG_ROLE}='hod' AND department=?${notMe} ORDER BY id ASC LIMIT 1`,
+      [me.department, me.id]);
     if (hod) return hod.id;
   }
-  const adm = await db.one(`SELECT id FROM users WHERE ${ORG_ROLE}='admin' ORDER BY id ASC LIMIT 1`);
-  return adm?.id || null;
+  const adm = await db.one(
+    `SELECT id FROM users WHERE ${ORG_ROLE}='admin'${notMe} ORDER BY id ASC LIMIT 1`, [me.id]);
+  if (adm) return adm.id;
+
+  // Only now, with genuinely nobody else in the system, does it come back to
+  // them — and the approvals list makes that one case visible so it is not
+  // stranded.
+  return me.id;
 }
 
 // scope=mine      → my own requests (default)
