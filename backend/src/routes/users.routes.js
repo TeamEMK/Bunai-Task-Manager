@@ -39,13 +39,14 @@ router.get('/users', requireAuth, asyncRoute(async (req, res) => {
     `SELECT id,name,email,notification_email,role,
             COALESCE(user_role, role) AS user_role,
             phone,department,week_off,extra_off,
-            COALESCE(exclude_from_reminder,0) AS exclude_from_reminder
+            COALESCE(exclude_from_reminder,0) AS exclude_from_reminder,
+            COALESCE(is_leave_approver,0) AS is_leave_approver
        FROM users ORDER BY role DESC,name ASC`));
 }));
 
 router.post('/users', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const { name, email, notification_email, password, role, user_role, phone,
-          department, week_off, extra_off, exclude_from_reminder } = req.body;
+          department, week_off, extra_off, exclude_from_reminder, is_leave_approver } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'All fields required' });
 
   const existing = await db.one('SELECT id FROM users WHERE email=?', [email]);
@@ -53,11 +54,11 @@ router.post('/users', requireAuth, requireAdmin, asyncRoute(async (req, res) => 
 
   const appRole = pickRole(role, 'user');
   await db.query(
-    `INSERT INTO users (name,email,notification_email,password,role,user_role,phone,department,week_off,extra_off,exclude_from_reminder)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO users (name,email,notification_email,password,role,user_role,phone,department,week_off,extra_off,exclude_from_reminder,is_leave_approver)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [name, email, notification_email || '', await passwords.hash(password), appRole,
      pickRole(user_role, appRole), phone || null, department || '', week_off || '',
-     extra_off || '', exclude_from_reminder ? 1 : 0]);
+     extra_off || '', exclude_from_reminder ? 1 : 0, is_leave_approver ? 1 : 0]);
   res.json({ success: true });
 }));
 
@@ -67,17 +68,17 @@ router.put('/users/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) 
   const appRole = pickRole(role, 'user');
   const common = [name, email, notification_email || '', appRole, pickRole(user_role, appRole)];
   const tail = [phone || null, department || '', week_off || '', extra_off || '',
-                exclude_from_reminder ? 1 : 0, req.params.id];
+                exclude_from_reminder ? 1 : 0, is_leave_approver ? 1 : 0, req.params.id];
 
   if (password) {
     await db.query(
       `UPDATE users SET name=?,email=?,notification_email=?,role=?,user_role=?,password=?,
-              phone=?,department=?,week_off=?,extra_off=?,exclude_from_reminder=? WHERE id=?`,
+              phone=?,department=?,week_off=?,extra_off=?,exclude_from_reminder=?,is_leave_approver=? WHERE id=?`,
       [...common, await passwords.hash(password), ...tail]);
   } else {
     await db.query(
       `UPDATE users SET name=?,email=?,notification_email=?,role=?,user_role=?,
-              phone=?,department=?,week_off=?,extra_off=?,exclude_from_reminder=? WHERE id=?`,
+              phone=?,department=?,week_off=?,extra_off=?,exclude_from_reminder=?,is_leave_approver=? WHERE id=?`,
       [...common, ...tail]);
   }
   res.json({ success: true });

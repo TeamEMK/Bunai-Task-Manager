@@ -2467,6 +2467,9 @@ function openAddUser() {
   ['editUserId','uName','uEmail','uPhone','uDepartment','uPassword'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('uRole').value='user';
   document.getElementById('uUserRole').value='user';
+  // Checkboxes are not cleared by the value reset above, so a new user would
+  // inherit the tick from whoever was edited last.
+  document.getElementById('uLeaveApprover').checked=false;
   document.getElementById('pwdOptional').style.display='none';
   document.getElementById('userErr').style.display='none';
   document.getElementById('userSuccess').style.display='none';
@@ -2485,6 +2488,7 @@ function openEditUser(id) {
   document.getElementById('uPassword').value='';
   document.getElementById('uRole').value=u.role||'user';
   document.getElementById('uUserRole').value=u.user_role||u.role||'user';
+  document.getElementById('uLeaveApprover').checked=Number(u.is_leave_approver)===1;
   document.getElementById('pwdOptional').style.display='inline';
   document.getElementById('userErr').style.display='none';
   document.getElementById('userSuccess').style.display='none';
@@ -2502,9 +2506,10 @@ async function saveUser() {
   const password=document.getElementById('uPassword').value;
   const role=document.getElementById('uRole').value;
   const user_role=document.getElementById('uUserRole').value;
+  const is_leave_approver=document.getElementById('uLeaveApprover').checked?1:0;
   if (!name||!email) { err.textContent='Name and email required'; err.style.display='block'; return; }
   if (!id&&!password) { err.textContent='Password required for new user'; err.style.display='block'; return; }
-  const body={name,email,role,user_role,phone,department};
+  const body={name,email,role,user_role,phone,department,is_leave_approver};
   if (password) body.password=password;
   const r = id ? await api(`/api/users/${id}`,'PUT',body) : await api('/api/users','POST',body);
   if (r.error) { err.textContent=r.error; err.style.display='block'; return; }
