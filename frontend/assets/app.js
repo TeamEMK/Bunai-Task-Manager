@@ -7690,7 +7690,7 @@ async function loadLeaveApprovals(){
     wrap.innerHTML = stale + `
       <table>
         <thead><tr>
-          <th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Applied</th><th>Action</th>
+          <th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Approver</th><th>Applied</th><th>Action</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => {
@@ -7705,6 +7705,9 @@ async function loadLeaveApprovals(){
               <td><span class="lv-type-pill lv-type-${r.leave_type}">${LEAVE_TYPE_ICON[r.leave_type]||''} ${LEAVE_TYPE_LABEL[r.leave_type]||r.leave_type}</span></td>
               <td style="font-size:12px;line-height:1.5">${datesHtml}<br><span style="color:var(--faint);font-size:11px">${dates.length} day${dates.length===1?'':'s'}</span></td>
               <td style="font-size:12px;max-width:240px">${dtEscape(r.reason)}</td>
+              <!-- With two people approving, the queue is shared - this says which of
+                   them a given request is actually sitting with. -->
+              <td style="font-size:12px;white-space:nowrap">${dtEscape(r.approver_name || '—')}</td>
               <td style="color:var(--muted-foreground);font-size:11px">${dtEscape((r.created_at||'').slice(0,16))}</td>
               <td style="white-space:nowrap">
                 <button class="action-btn done" onclick="openLeaveDecision(${r.id},'approve')">Approve</button>
