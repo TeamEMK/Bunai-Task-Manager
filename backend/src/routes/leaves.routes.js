@@ -17,7 +17,22 @@ const router = express.Router();
 // keeps the intent visible.
 const ORG_ROLE = 'COALESCE(user_role, role)';
 
+// The people explicitly marked as leave approvers, if anybody is. When this
+// list is not empty it decides everything: the department-HOD chain below is
+// skipped, because "send every leave to these two" is the whole point of
+// setting it. Empty list → the original chain, so nothing changes until
+// somebody is actually flagged.
+const leaveApproverIds = () =>
+  db.rows('SELECT id FROM users WHERE is_leave_approver=1 ORDER BY id').then(r => r.map(x => x.id));
+
 async function resolveLeaveApprover(userId) {
+  const designated = await leaveApproverIds().catch(() => []);
+  if (designated.length) {
+    // An approver applying for their own leave goes to one of the others; only
+    // when they are the sole approver does it come back to them.
+    return designated.find(id => id !== userId) ?? designated[0];
+  }
+
   const me = await db.one(
     `SELECT id, ${ORG_ROLE} AS user_role, department FROM users WHERE id=?`, [userId]);
   if (!me) return null;
@@ -57,7 +72,16 @@ router.get('/leaves', requireAuth, asyncRoute(async (req, res) => {
     where += ' AND lr.user_id=?'; params.push(uid);
   } else if (scope === 'approvals') {
     const me = await db.one(`SELECT department, ${ORG_ROLE} AS user_role FROM users WHERE id=?`, [uid]);
-    if (me?.user_role === 'hod' && me?.department) {
+    const designated = await leaveApproverIds().catch(() => []);
+    if (designated.includes(uid)) {
+      // The designated approvers cover for each other, the same way the HODs of
+      // one department do below: either can clear the queue, whoever gets there
+      // first. Still not your own — unless you are the only approver, in which
+      // case nobody else could ever decide it.
+      where += ` AND lr.approver_id IN (${placeholders(designated)})`
+             + ' AND (lr.user_id<>? OR lr.approver_id=lr.user_id)';
+      params.push(...designated, uid);
+    } else if (me?.user_role === 'hod' && me?.department) {
       // An HOD covers for the other HODs of their department.
       const hods = await db.rows(
         `SELECT id FROM users WHERE ${ORG_ROLE}='hod' AND department=?`, [me.department]);
@@ -127,6 +151,20 @@ router.get('/leaves/my-approvers', requireAuth, asyncRoute(async (req, res) => {
   const me = await db.one(
     `SELECT department, ${ORG_ROLE} AS user_role FROM users WHERE id=?`, [req.session.userId]);
   if (!me) return res.json({ names: '' });
+
+  // Once approvers are named, they are the answer for everybody — including
+  // themselves, who are sent to whichever of the others is not them.
+  const designated = await db.rows(
+    'SELECT id, name FROM users WHERE is_leave_approver=1 ORDER BY id').catch(() => []);
+  if (designated.length) {
+    const others = designated.filter(a => a.id !== req.session.userId);
+    const shown = others.length ? others : designated;
+    return res.json({
+      names: shown.map(a => a.name).join(' or '),
+      selfApproves: !others.length,
+    });
+  }
+
   if (me.user_role === 'admin') {
     // Naming the actual person beats the phrase "Another Admin", which was
     // printed whether or not another admin existed — so a sole admin was told
@@ -150,6 +188,15 @@ router.get('/leaves/my-approvers', requireAuth, asyncRoute(async (req, res) => {
 router.get('/leaves/pending-count', requireAuth, asyncRoute(async (req, res) => {
   const uid = req.session.userId;
   const me = await db.one(`SELECT department, ${ORG_ROLE} AS user_role FROM users WHERE id=?`, [uid]);
+
+  const designated = await leaveApproverIds().catch(() => []);
+  if (designated.includes(uid)) {
+    const r = await db.one(
+      `SELECT COUNT(*) AS cnt FROM leave_requests
+        WHERE approver_id IN (${placeholders(designated)}) AND status='pending'
+          AND (user_id<>? OR approver_id=user_id)`, [...designated, uid]);
+    return res.json({ count: r.cnt || 0 });
+  }
 
   if (me?.user_role === 'hod' && me?.department) {
     const hods = await db.rows(`SELECT id FROM users WHERE ${ORG_ROLE}='hod' AND department=?`, [me.department]);

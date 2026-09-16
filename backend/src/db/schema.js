@@ -276,6 +276,12 @@ const COLUMNS = [
   // (e.g. an IT person may have app role 'admin' but user role 'user',
   // so their leave still goes to their HOD).
   ['users', 'user_role', `ENUM('admin','hod','pc','user') DEFAULT NULL AFTER role`],
+
+  // Who leave requests go to. Before this the approver was "the department HOD,
+  // else the lowest-id admin", which on a five-admin account meant one person
+  // received everyone's leave whether or not that was anybody's intention.
+  // Flagging people here makes the choice explicit and lets two share it.
+  ['users', 'is_leave_approver', `TINYINT(1) NOT NULL DEFAULT 0 AFTER user_role`],
   ['users', 'department', `VARCHAR(255) DEFAULT '' AFTER phone`],
   ['users', 'week_off', `VARCHAR(50) DEFAULT '' AFTER department`],
   // No DEFAULT: MySQL rejects a default on TEXT/BLOB (error 1101), which made
