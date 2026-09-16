@@ -9,7 +9,7 @@
 const bcrypt = require('bcryptjs');
 const { db, ready } = require('./pool');
 const config = require('../config');
-const { TABLES, COLUMNS, INDEXES, BACKFILLS } = require('./schema');
+const { TABLES, COLUMNS, WIDENINGS, INDEXES, BACKFILLS } = require('./schema');
 
 // "Already exists" is the normal case on a re-run and stays quiet. Anything
 // else is a real schema bug — a fully silent catch is what let a bad TEXT
@@ -27,13 +27,17 @@ async function loadCatalog() {
     const [tRows] = await db.query(
       `SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()`);
     const [cRows] = await db.query(
-      `SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()`);
+      `SELECT TABLE_NAME AS t, COLUMN_NAME AS c, COLUMN_TYPE AS ty
+         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()`);
     const [iRows] = await db.query(
       `SELECT DISTINCT TABLE_NAME AS t, INDEX_NAME AS i FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()`);
     const lower = v => String(v).toLowerCase();
     return {
       tables: new Set(tRows.map(r => lower(r.t))),
       columns: new Set(cRows.map(r => `${lower(r.t)}.${lower(r.c)}`)),
+      // The declared type of each column, so a definition that CHANGED can be
+      // told apart from one that is already right. Same query, no extra trip.
+      types: new Map(cRows.map(r => [`${lower(r.t)}.${lower(r.c)}`, lower(r.ty || '')])),
       indexes: new Set(iRows.map(r => `${lower(r.t)}.${lower(r.i)}`)),
     };
   } catch (e) {
@@ -87,6 +91,23 @@ async function runMigrations({ verbose = true } = {}) {
     altered++;
   }
 
+  // ── 2b) Definitions that changed ─────────────────────
+  // Adding a column can be fired blindly; changing one cannot, so each entry
+  // says what must already be in the live definition for it to count as done.
+  // Without the catalog there is nothing to compare against, and a MODIFY on
+  // every boot would rewrite the table each time, so these are skipped.
+  let widened = 0;
+  for (const [table, column, definition, marker] of (WIDENINGS || [])) {
+    if (!hasTable(table) || !catalog) continue;
+    const key = `${table.toLowerCase()}.${column.toLowerCase()}`;
+    const current = catalog.types.get(key);
+    if (current === undefined) continue;                   // column not there yet
+    if (current.includes(String(marker).toLowerCase())) continue;   // already widened
+    const ok = await exec(`ALTER TABLE ${table} MODIFY COLUMN ${column} ${definition}`,
+      `${table}.${column} widened for '${marker}'`);
+    if (ok) { catalog.types.set(key, current + ' ' + String(marker).toLowerCase()); widened++; }
+  }
+
   // ── 3) Indexes ───────────────────────────────────────
   let indexed = 0;
   for (const [table, name, cols, opts] of INDEXES) {
@@ -118,7 +139,7 @@ async function runMigrations({ verbose = true } = {}) {
   }
 
   if (verbose) {
-    console.log(`  ✅ DB migrations checked (${created} tables, ${altered} columns, ${indexed} indexes applied)`);
+    console.log(`  ✅ DB migrations checked (${created} tables, ${altered} columns, ${widened} widened, ${indexed} indexes applied)`);
   }
   note(`✅ schema up to date — ${created} tables, ${altered} columns, ${indexed} indexes applied`);
   return log;

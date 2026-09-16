@@ -253,7 +253,7 @@ const TABLES = [
   ['leave_requests', `CREATE TABLE leave_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
-    leave_type ENUM('full_day','half_day','work_from_home','extra_working') NOT NULL,
+    leave_type ENUM('full_day','half_day','work_from_home','extra_working','early_leaving') NOT NULL,
     from_date DATE NOT NULL,
     to_date DATE NOT NULL,
     dates_json TEXT DEFAULT NULL,
@@ -482,6 +482,19 @@ const INDEXES = [
 ];
 
 // Data fixes that must run after the columns exist. Cheap and idempotent.
+// Columns whose DEFINITION changed after they shipped — widening an ENUM, say.
+// Adding a column is safe to fire blindly; changing one is not, so each entry
+// carries the text that must already be in the live definition for it to be
+// considered done. [table, column, new definition, marker]
+const WIDENINGS = [
+  // 'early_leaving' joined the list when short-notice early departures started
+  // being requested through the app rather than over WhatsApp. Adding a value to
+  // the end of an ENUM leaves every existing row exactly as it was.
+  ['leave_requests', 'leave_type',
+   `ENUM('full_day','half_day','work_from_home','extra_working','early_leaving') NOT NULL`,
+   'early_leaving'],
+];
+
 const BACKFILLS = [
   [`UPDATE users SET user_role=role WHERE user_role IS NULL`, 'backfill user_role from role'],
   // Older rows stored the approver inside assigned_by — recover it where approval was required.
@@ -499,4 +512,4 @@ const BACKFILLS = [
    'mute pre-launch tasks for overdue reminders'],
 ];
 
-module.exports = { TABLES, COLUMNS, INDEXES, BACKFILLS };
+module.exports = { TABLES, COLUMNS, WIDENINGS, INDEXES, BACKFILLS };

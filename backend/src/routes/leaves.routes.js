@@ -151,7 +151,12 @@ router.get('/leaves/pending-count', requireAuth, asyncRoute(async (req, res) => 
   res.json({ count: r.cnt || 0 });
 }));
 
-const LEAVE_TYPES = ['full_day', 'half_day', 'work_from_home', 'extra_working'];
+const LEAVE_TYPES = ['full_day', 'half_day', 'work_from_home', 'extra_working', 'early_leaving'];
+
+// Two types carry a figure per date rather than just the date: extra_working
+// says how many hours were put in, early_leaving says what time the person is
+// leaving at. Both ride along in dates_json.
+const HH_MM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 router.post('/leaves', requireAuth, asyncRoute(async (req, res) => {
   const { leave_type, dates, reason } = req.body;
@@ -172,6 +177,13 @@ router.post('/leaves', requireAuth, asyncRoute(async (req, res) => {
       const h = Number(d && d.hours);
       if (!h || h <= 0 || h > 24) return res.status(400).json({ error: `Hours required (1-24) for ${date}` });
       item.hours = h;
+    }
+    if (leave_type === 'early_leaving') {
+      // The time they will leave at, not how early — that is what the approver
+      // needs to know, and it does not depend on knowing anyone's shift.
+      const t = String((d && d.time) || '').trim();
+      if (!HH_MM.test(t)) return res.status(400).json({ error: `Leaving time required (HH:MM) for ${date}` });
+      item.time = t;
     }
     cleanDates.push(item);
   }
