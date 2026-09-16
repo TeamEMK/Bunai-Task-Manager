@@ -64,7 +64,7 @@ router.post('/users', requireAuth, requireAdmin, asyncRoute(async (req, res) => 
 
 router.put('/users/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const { name, email, notification_email, role, user_role, password, phone,
-          department, week_off, extra_off, exclude_from_reminder } = req.body;
+          department, week_off, extra_off, exclude_from_reminder, is_leave_approver } = req.body;
   const appRole = pickRole(role, 'user');
   const common = [name, email, notification_email || '', appRole, pickRole(user_role, appRole)];
   const tail = [phone || null, department || '', week_off || '', extra_off || '',
