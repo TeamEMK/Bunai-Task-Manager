@@ -7,7 +7,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { placeholders } = require('../utils/collections');
 
@@ -262,6 +262,52 @@ router.post('/leaves', requireAuth, asyncRoute(async (req, res) => {
      JSON.stringify(cleanDates), reason.trim(), approverId]);
 
   res.json({ id: r.insertId, status: 'pending', approver_id: approverId });
+}));
+
+// Hand every still-pending request to whoever approves leave now.
+//
+// Changing the approvers only steers NEW requests; anything already waiting
+// keeps the person it was created with, which is right in general — you do not
+// want a decision quietly moving under someone mid-review — but wrong the day
+// you deliberately hand the job over. This moves them, on purpose, when an
+// admin asks.
+//
+// Only pending ones, and only those whose current approver is no longer one of
+// the approvers: a request already sitting with the right person is left alone.
+// How many are still with an old approver. The screen only offers to move them
+// when there is something to move, so the button is never a mystery.
+router.get('/leaves/stale-approvals', requireAuth, asyncRoute(async (req, res) => {
+  const designated = await leaveApproverIds().catch(() => []);
+  if (!designated.length) return res.json({ count: 0, approvers: [] });
+  const r = await db.one(
+    `SELECT COUNT(*) AS cnt FROM leave_requests
+      WHERE status='pending' AND approver_id NOT IN (${placeholders(designated)})`, designated);
+  const names = await db.rows(
+    `SELECT name FROM users WHERE id IN (${placeholders(designated)}) ORDER BY id`, designated);
+  res.json({ count: Number(r?.cnt) || 0, approvers: names.map(n => n.name) });
+}));
+
+router.post('/leaves/reassign-pending', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const designated = await leaveApproverIds().catch(() => []);
+  if (!designated.length) {
+    return res.status(400).json({ error: 'Nobody is marked as a leave approver yet. Tick someone on the Users screen first.' });
+  }
+
+  const stale = await db.rows(
+    `SELECT lr.id, lr.user_id FROM leave_requests lr
+      WHERE lr.status='pending' AND lr.approver_id NOT IN (${placeholders(designated)})`,
+    designated);
+  if (!stale.length) return res.json({ moved: 0, approvers: designated.length });
+
+  // Each one is routed the same way a fresh request would be, so an approver's
+  // own pending leave still lands on somebody else rather than on themselves.
+  let moved = 0;
+  for (const r of stale) {
+    const to = designated.find(id => id !== r.user_id) ?? designated[0];
+    await db.query('UPDATE leave_requests SET approver_id=? WHERE id=? AND status=\'pending\'', [to, r.id]);
+    moved++;
+  }
+  res.json({ moved, approvers: designated.length });
 }));
 
 // Approve / reject — the assigned approver, an admin, or an HOD of the same

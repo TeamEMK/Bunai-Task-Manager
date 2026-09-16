@@ -7640,6 +7640,29 @@ async function deleteLeave(id){
   loadApprovalBadge();
 }
 
+// Builds the "N requests are still with someone else" line, or nothing at all.
+async function lvStaleNotice(){
+  if (!ME || ME.role !== 'admin') return '';
+  try {
+    const s = await api('/api/leaves/stale-approvals');
+    if (!s || !s.count) return '';
+    const who = (s.approvers || []).join(' or ') || 'the current approvers';
+    return `<div style="background:#FFF8E6;border:1px solid #FDE68A;color:#8A5A00;border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="flex:1;min-width:240px"><b>${s.count}</b> pending request${s.count === 1 ? '' : 's'} ${s.count === 1 ? 'is' : 'are'} still with the person who was the approver when ${s.count === 1 ? 'it' : 'they'} ${s.count === 1 ? 'was' : 'were'} applied for. Move ${s.count === 1 ? 'it' : 'them'} to ${dtEscape(who)}?</span>
+      <button class="btn btn-sm" onclick="lvReassignPending(this)">Move to ${dtEscape(who)}</button>
+    </div>`;
+  } catch (_) { return ''; }
+}
+
+async function lvReassignPending(btn){
+  if (btn) { btn.disabled = true; btn.textContent = 'Moving…'; }
+  const r = await api('/api/leaves/reassign-pending', 'POST', {});
+  if (r.error) { showToast('⚠️ ' + r.error); if (btn) { btn.disabled = false; btn.textContent = 'Move'; } return; }
+  showToast(`✅ ${r.moved} request${r.moved === 1 ? '' : 's'} moved`);
+  loadLeaveApprovals();
+  loadApprovalBadge();
+}
+
 async function loadLeaveApprovals(){
   const wrap = document.getElementById('leaveApprovalsContent');
   if (!wrap) return;
@@ -7655,11 +7678,16 @@ async function loadLeaveApprovals(){
       else tabBadge.style.display = 'none';
     }
 
+    // Changing who approves only steers new requests. Anything already waiting
+    // keeps its original approver, so say so and offer to move it rather than
+    // leaving it sitting somewhere nobody is looking.
+    const stale = await lvStaleNotice();
+
     if (!rows.length) {
-      wrap.innerHTML = `<div class="empty" style="padding:36px">✅ No pending leave approvals!</div>`;
+      wrap.innerHTML = stale + `<div class="empty" style="padding:36px">✅ No pending leave approvals!</div>`;
       return;
     }
-    wrap.innerHTML = `
+    wrap.innerHTML = stale + `
       <table>
         <thead><tr>
           <th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Applied</th><th>Action</th>
