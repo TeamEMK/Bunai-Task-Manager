@@ -7366,6 +7366,9 @@ function openHrmCandidate(idx){
   // Editing never emails — only adding, and only then because an invitation is
   // the point of adding somebody.
   document.getElementById('hrmSendWrap').style.display = c ? 'none' : 'flex';
+  // Salary and joining date have no answer yet when the first interview is
+  // being booked — asking for them there is asking somebody to guess.
+  document.getElementById('hrmLaterFields').style.display = c ? 'grid' : 'none';
   document.getElementById('hrmErr').style.display = 'none';
   document.getElementById('hrmModal').classList.add('open');
 }

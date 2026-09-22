@@ -1243,7 +1243,10 @@
       <div class="form-group"><label>Interview time</label>
         <input type="time" id="hrmTime" step="300"/></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <!-- Neither of these exists yet when an interview is first being booked:
+         salary comes out of the conversation, and the joining date is asked for
+         in the Selected dialog. Hidden while adding, shown when editing. -->
+    <div id="hrmLaterFields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group"><label>Salary discussed</label>
         <input type="text" id="hrmSalary" placeholder="Optional"/></div>
       <div class="form-group"><label>Expected joining</label>
