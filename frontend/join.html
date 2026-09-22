@@ -276,7 +276,7 @@
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
 const $ = (id) => document.getElementById(id);
 
-const RELATIONS = ['Father', 'Mother', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Other'];
+const RELATIONS = ['Father', 'Mother', 'Spouse', 'Brother', 'Sister', 'Other'];
 for (const sel of ['guardian1_relation', 'guardian2_relation']) {
   $(sel).innerHTML = '<option value="">Choose…</option>'
     + RELATIONS.map(r => `<option>${r}</option>`).join('');
