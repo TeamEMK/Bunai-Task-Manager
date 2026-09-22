@@ -7419,21 +7419,30 @@ async function hrmWriteCandidate(){
   // written again and nobody was emailed again, so say that rather than
   // reporting a send that never happened.
   if (r.duplicate) { showToast('✅ Already saved a moment ago — nothing was sent twice'); loadHrm(); return; }
-  // The save worked whether or not the letter did, so say both rather than one
-  // cheerful tick that hides a bounced invitation.
-  if (!id && body.sendEmail && body.interview_date) {
-    // Two letters can go out, and they can fail independently — a cheerful tick
-    // that hides a bounced one would be the wrong thing to show.
-    const bits = [];
-    bits.push(r.emailed ? 'invitation sent' : 'invitation FAILED (' + (r.emailError || 'see Sent mail') + ')');
-    if (body.interviewer_email) {
-      bits.push(r.interviewerEmailed ? 'interviewer told'
-        : 'interviewer NOT told (' + (r.interviewerError || 'see Sent mail') + ')');
-    }
-    const allOk = r.emailed && (!body.interviewer_email || r.interviewerEmailed);
-    showToast((allOk ? '✅ Candidate added — ' : '⚠️ Candidate added — ') + bits.join(', '));
-  } else {
-    showToast('✅ Saved');
+  // The letters are sent after this reply, so there is nothing to report yet.
+  // The page says what it has started and checks back on it a moment later.
+  showToast(r.sending ? '✅ Candidate added — sending the letters…' : '✅ Saved');
+  loadHrm();
+  if (r.sending) hrmWatchMail(r.id, r.letters);
+}
+
+// Because the dialog no longer waits for SMTP, a bounced invitation would
+// otherwise be discovered by a candidate who never turned up. So the page asks
+// the log every couple of seconds until every letter it is waiting for has
+// landed, and says how they went. It gives up after twenty seconds rather than
+// polling for the rest of the day — the Sent mail screen is still there.
+async function hrmWatchMail(id, expected){
+  const want = Math.max(1, Number(expected) || 1);
+  for (let i = 0; i < 10; i++) {
+    await new Promise(done => setTimeout(done, 2000));
+    const rows = await api('/api/hrm/candidates/' + id + '/messages');
+    if (!Array.isArray(rows)) return;
+    if (rows.length < want) continue;
+    loadHrm();
+    const failed = rows.filter(m => m.status === 'Failed');
+    if (failed.length) showToast('⚠️ ' + failed.map(m => m.action).join(' & ') + ' failed — see Sent mail');
+    else showToast(rows.length > 1 ? '✅ Both letters sent' : '✅ Letter sent');
+    return;
   }
   loadHrm();
 }
@@ -7515,13 +7524,13 @@ async function hrmWriteStatus(){
   closeModal('hrmStatusModal');
   if (r.duplicate) {
     showToast(`✅ Status set to ${status} — the letter had already gone`);
-  } else if (body.sendEmail && HRM_STATUS_MAILS[status]) {
-    showToast(r.emailed ? `✅ Status set to ${status} and the candidate emailed`
-                        : `⚠️ Status set to ${status}, but the letter failed — ` + (r.emailError || 'see Sent mail'));
+  } else if (r.sending) {
+    showToast(`✅ Status set to ${status} — sending the letter…`);
   } else {
     showToast('✅ Status set to ' + status);
   }
   loadHrm();
+  if (r.sending) hrmWatchMail(id, r.letters);
 }
 
 // ── Sent mail ─────────────────────────────────────────

@@ -146,28 +146,34 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
      candidate.salary, candidate.notes, req.session.userId]);
   candidate.id = r.insertId;
 
+  // The letters go out after the reply, not before it. SMTP takes about six
+  // seconds for the two of them, and holding the dialog open for that made the
+  // app look stuck. The candidate is saved either way, and neither letter is
+  // lost by being sent late: every one of them, sent or failed, lands in
+  // hrm_message_log, which is what the page reads back a moment later.
+  //
   // The invitation goes only when there is a time to invite them to; a record
   // created to be filled in later should not email somebody an empty date.
-  let mail = null;
-  if (b.sendEmail !== false && candidate.interview_date) {
-    mail = await mailCandidate(candidate, 'interview', 'Interview invitation');
-  }
+  const willSend = b.sendEmail !== false && !!candidate.interview_date;
 
   // The interviewer is told separately. Their letter is not the candidate's —
   // it carries the phone number and the notes, which the candidate should not
   // see, and it is worth sending even when the candidate's fails.
-  let intv = null;
-  if (b.sendEmail !== false && candidate.interview_date && looksLikeEmail(candidate.interviewer_email)) {
-    intv = await hrmEmail.sendToInterviewer(candidate).catch(e => ({ ok: false, reason: e.message }));
-    await logEmail({ ...candidate, name: 'Interviewer', email: candidate.interviewer_email },
-      'Interviewer notified', intv);
-  }
+  const tellInterviewer = willSend && looksLikeEmail(candidate.interviewer_email);
 
-  res.json({
-    id: candidate.id,
-    emailed: !!mail?.ok, emailError: mail && !mail.ok ? mail.reason : null,
-    interviewerEmailed: !!intv?.ok, interviewerError: intv && !intv.ok ? intv.reason : null,
-  });
+  // How many letters the page should wait for before it decides they are all in.
+  res.json({ id: candidate.id, sending: willSend, letters: (willSend ? 1 : 0) + (tellInterviewer ? 1 : 0) });
+
+  if (willSend) {
+    (async () => {
+      await mailCandidate(candidate, 'interview', 'Interview invitation');
+      if (tellInterviewer) {
+        const intv = await hrmEmail.sendToInterviewer(candidate).catch(e => ({ ok: false, reason: e.message }));
+        await logEmail({ ...candidate, name: 'Interviewer', email: candidate.interviewer_email },
+          'Interviewer notified', intv);
+      }
+    })().catch(err => console.error('⚠️ Recruitment mail failed after the reply:', err.message));
+  }
 }));
 
 // ── Update ────────────────────────────────────────────
@@ -230,13 +236,26 @@ router.put('/hrm/candidates/:id/status', requireAuth, requireAdmin, asyncRoute(a
         AND created_at > (NOW() - INTERVAL 2 MINUTE) LIMIT 1`,
     [id, action]);
 
-  let mail = null;
   const kind = EMAIL_FOR_STATUS[status];
-  if (kind && b.sendEmail !== false && !justSent) {
-    mail = await mailCandidate(updated, kind, action);
+  const willSend = !!kind && b.sendEmail !== false && !justSent;
+
+  res.json({ success: true, status, duplicate: !!justSent, sending: willSend, letters: willSend ? 1 : 0 });
+
+  if (willSend) {
+    mailCandidate(updated, kind, action)
+      .catch(err => console.error('⚠️ Status letter failed after the reply:', err.message));
   }
-  res.json({ success: true, status, duplicate: !!justSent,
-    emailed: !!mail?.ok || !!justSent, emailError: mail && !mail.ok ? mail.reason : null });
+}));
+
+// What became of one candidate's letters. The dialog closes before they are
+// sent, so the page asks a few seconds later instead of making somebody sit and
+// watch a spinner to find out.
+router.get('/hrm/candidates/:id/messages', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const rows = await db.rows(
+    `SELECT action, email, status, error_detail
+       FROM hrm_message_log WHERE candidate_id = ? ORDER BY id DESC LIMIT 5`,
+    [parseInt(req.params.id, 10)]);
+  res.json(rows);
 }));
 
 // ── Delete ────────────────────────────────────────────
