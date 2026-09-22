@@ -1056,7 +1056,7 @@
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" onclick="openHrmLog()">✉ Sent mail</button>
-        <button class="btn btn-primary" onclick="openHrmCandidate()">+ Add Candidate</button>
+        <button class="btn btn-primary" onclick="openHrmCandidate()">+ Schedule Interview</button>
       </div>
     </div>
 
@@ -1225,7 +1225,7 @@
 <!-- ── Recruitment: add / edit a candidate ── -->
 <div class="modal-overlay" id="hrmModal">
   <div class="modal" style="width:620px;max-width:94vw;max-height:92vh;overflow:auto">
-    <h3 id="hrmModalTitle">Add Candidate</h3>
+    <h3 id="hrmModalTitle">Schedule Interview</h3>
     <div class="alert error" id="hrmErr" style="display:none"></div>
     <input type="hidden" id="hrmEditId"/>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -1244,7 +1244,7 @@
         <input type="time" id="hrmTime" step="300"/></div>
     </div>
     <div class="form-group"><label>Interviewer email
-      <span style="color:var(--faint);font-weight:400;font-size:11px">(they get the details too — phone and notes included)</span></label>
+      <span style="color:var(--faint);font-weight:400;font-size:11px">(they get the candidate's phone and email)</span></label>
       <input type="email" id="hrmIntvEmail" placeholder="name@bunai.com — leave blank to tell nobody"/></div>
     <!-- Neither of these exists yet when an interview is first being booked:
          salary comes out of the conversation, and the joining date is asked for

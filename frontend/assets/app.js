@@ -7322,7 +7322,7 @@ async function loadHrm(){
     }
 
     if (!HRM_ROWS.length) {
-      body.innerHTML = `<tr><td colspan="6" class="empty">No candidates yet — use <b>+ Add Candidate</b>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="empty">No candidates yet — use <b>+ Schedule Interview</b>.</td></tr>`;
       return;
     }
     body.innerHTML = HRM_ROWS.map((c, i) => {
@@ -7355,7 +7355,7 @@ async function loadHrm(){
 // ── Add / edit ────────────────────────────────────────
 function openHrmCandidate(idx){
   const c = (idx === undefined || idx === null) ? null : HRM_ROWS[idx];
-  document.getElementById('hrmModalTitle').textContent = c ? 'Edit Candidate' : 'Add Candidate';
+  document.getElementById('hrmModalTitle').textContent = c ? 'Edit Candidate' : 'Schedule Interview';
   document.getElementById('hrmEditId').value = c ? c.id : '';
   const set = (id, v) => { document.getElementById(id).value = v || ''; };
   set('hrmName', c?.name); set('hrmEmail', c?.email); set('hrmPhone', c?.phone);
