@@ -14,6 +14,13 @@ const email = require('./email');
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+// The shell's own label and footer belong to the task manager. A candidate
+// has never heard of it, and the standing footer tells them not to reply to a
+// letter that asks them to, so every letter here replaces both.
+const TAG = 'RECRUITMENT';
+const FOOTER = 'Sent by the Bunai recruitment team. You can reply to this email.';
+const FOOTER_INTERNAL = 'Sent by Bunai Recruitment.';
+
 // "2026-09-22" → "22 September 2026". A candidate should not have to read a
 // date backwards, and an ISO string in a letter looks like a machine wrote it.
 function longDate(d) {
@@ -84,6 +91,7 @@ function buildInterviewEmail(c) {
     preheader: `Interview invitation${when ? ' — ' + when : ''}`,
     eyebrow: 'INTERVIEW INVITATION', eyebrowColor: '#1a56db',
     headline: 'You are invited to an interview', body,
+    tag: TAG, footer: FOOTER,
   });
   return { subject: `Interview invitation${c.profile_position ? ` — ${c.profile_position}` : ''}`, html, text: stripTags(body) };
 }
@@ -100,6 +108,7 @@ function buildRescheduleEmail(c) {
     preheader: `Interview moved${when ? ' to ' + when : ''}`,
     eyebrow: 'INTERVIEW RESCHEDULED', eyebrowColor: '#d97706',
     headline: 'Your interview has been moved', body,
+    tag: TAG, footer: FOOTER,
   });
   return { subject: 'Your interview has been rescheduled', html, text: stripTags(body) };
 }
@@ -113,6 +122,7 @@ function buildSelectedEmail(c) {
   const html = email.shell({
     preheader: 'You have been selected', eyebrow: 'SELECTED', eyebrowColor: '#059669',
     headline: 'Congratulations — you have been selected', body,
+    tag: TAG, footer: FOOTER,
   });
   return { subject: `Congratulations — you have been selected${c.profile_position ? ` for ${c.profile_position}` : ''}`, html, text: stripTags(body) };
 }
@@ -127,8 +137,47 @@ function buildRejectedEmail(c) {
   const html = email.shell({
     preheader: 'Update on your application', eyebrow: 'APPLICATION UPDATE', eyebrowColor: '#64748b',
     headline: 'Update on your application', body,
+    tag: TAG, footer: FOOTER,
   });
   return { subject: 'Update on your application', html, text: stripTags(body) };
+}
+
+// The interviewer's own letter. Deliberately not the candidate's: it carries
+// the phone number and the internal notes, which is exactly what the person
+// taking the interview needs and exactly what the candidate must not see.
+function buildInterviewerEmail(c) {
+  const when = [longDate(c.reschedule_date || c.interview_date),
+                niceTime(c.reschedule_time || c.interview_time)].filter(Boolean).join(', ');
+  const body = para('Hello,')
+    + para(`An interview has been scheduled with <b>${c.name}</b>${c.profile_position ? ` for the ${c.profile_position} role` : ''}.`)
+    + detail([
+        ['Candidate', c.name],
+        ['Position', c.profile_position],
+        ['Date & time', when],
+        ['Candidate phone', c.phone],
+        ['Candidate email', c.email],
+        ['Notes', c.notes],
+      ])
+    + para('The candidate has been sent the date and time separately.');
+  const html = email.shell({
+    preheader: `Interview with ${c.name}${when ? ' — ' + when : ''}`,
+    eyebrow: 'INTERVIEW SCHEDULED', eyebrowColor: '#1a56db',
+    headline: `Interview scheduled with ${c.name}`, body,
+    tag: TAG, footer: FOOTER_INTERNAL,
+  });
+  return {
+    subject: `Interview scheduled — ${c.name}${c.profile_position ? ` (${c.profile_position})` : ''}`,
+    html, text: stripTags(body),
+  };
+}
+
+// Sent to the interviewer, not the candidate, so it has its own path rather
+// than a `kind` in sendToCandidate — the address it goes to is different.
+async function sendToInterviewer(candidate) {
+  const { subject, html, text } = buildInterviewerEmail(candidate);
+  if (!candidate.interviewer_email) return { ok: false, reason: 'no interviewer email', subject };
+  const r = await email.sendMail(candidate.interviewer_email, subject, { text, html });
+  return { ...r, subject };
 }
 
 const BUILDERS = {
@@ -150,4 +199,4 @@ async function sendToCandidate(kind, candidate) {
   return { ...r, subject };
 }
 
-module.exports = { BUILDERS, sendToCandidate, longDate, niceTime };
+module.exports = { BUILDERS, sendToCandidate, sendToInterviewer, buildInterviewerEmail, longDate, niceTime };

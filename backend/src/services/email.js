@@ -11,11 +11,34 @@
 // most modern CSS, and Gmail strips <style> on forwards. Tables and inline
 // attributes are the only things every client agrees on.
 // ══════════════════════════════════════════════════════
+const fs = require('fs');
+const path = require('path');
 const nodemailer = require('nodemailer');
 const config = require('../config');
 const { formatHumanDate } = require('../utils/dates');
 
 const cfg = config.email;
+
+// ── The brand mark ────────────────────────────────────
+// The logo travels with the message as an inline attachment rather than as a
+// link to mis.bunai.in. Outlook blocks remote images by default and Gmail
+// caches them through a proxy, so a header served over HTTP is a header a good
+// share of readers never see. A cid: image is part of the mail itself and
+// always renders. Read once and kept, because every mail carries the same one.
+const LOGO_CID = 'bunai-logo';
+const LOGO_FILE = path.join(config.publicDir, 'bunai-logo-mail.png');
+let _logo;
+function logoAttachment() {
+  if (_logo === undefined) {
+    try {
+      _logo = { filename: 'bunai.png', content: fs.readFileSync(LOGO_FILE), cid: LOGO_CID, contentDisposition: 'inline' };
+    } catch (err) {
+      console.warn('⚠️ Email logo missing at', LOGO_FILE, '— mails will show the text wordmark instead');
+      _logo = null;
+    }
+  }
+  return _logo;
+}
 
 // Built on first use, then reused: nodemailer pools connections per transport,
 // so making a new one per email would open a fresh TLS handshake every time.
@@ -47,7 +70,13 @@ async function sendMail(to, subject, { text, html }) {
   if (!t) return { ok: false, reason: 'disabled — SMTP_USER/SMTP_PASS not set' };
   if (!to) return { ok: false, reason: 'no recipient address' };
   try {
-    const info = await t.sendMail({ from: cfg.from, to, subject, text, html });
+    // Only attached when the body actually shows it, so a plain-text-only mail
+    // does not arrive carrying a stray picture.
+    const logo = String(html || '').includes(`cid:${LOGO_CID}`) ? logoAttachment() : null;
+    const info = await t.sendMail({
+      from: cfg.from, to, subject, text, html,
+      ...(logo ? { attachments: [logo] } : {}),
+    });
     return { ok: true, messageId: info.messageId, accepted: info.accepted };
   } catch (err) {
     console.error('⚠️ Email send failed:', err.message);
@@ -69,6 +98,7 @@ async function verify() {
 const FONT = `-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif`;
 
 const INK = '#0f172a';      // headings
+const BRAND = '#f8b0b2';    // the pink of the ring in the logo
 const BODY = '#475569';     // paragraphs
 const MUTED = '#94a3b8';    // footer, labels
 const LINE = '#e2e8f0';     // hairlines
@@ -125,18 +155,30 @@ function ctaButton(label) {
 }
 
 // Shared chrome: branded bar, white card, footer. Only `body` changes per mail.
-function shell({ preheader, eyebrow, eyebrowColor, headline, body }) {
+//
+// `tag` and `footer` have defaults because almost every mail here is a task
+// notification. The recruitment letters override both: a candidate reading an
+// interview invitation should not be told it comes from a task manager, nor
+// told not to reply to a letter that asks them to.
+function shell({ preheader, eyebrow, eyebrowColor, headline, body, tag, footer }) {
   return `<!--[if mso]><style>body,table,td{font-family:Arial,sans-serif !important}</style><![endif]-->
 ${preheaderHtml(preheader)}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${CANVAS};margin:0;padding:32px 12px">
   <tr><td align="center">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border:1px solid ${LINE};border-radius:10px;overflow:hidden">
 
-      <tr><td style="background:${INK};padding:18px 32px">
+      <tr><td style="background:${BRAND};height:4px;line-height:4px;font-size:0">&nbsp;</td></tr>
+
+      <tr><td style="background:#ffffff;border-bottom:1px solid ${LINE};padding:14px 32px">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
           <tr>
-            <td style="font-family:${FONT};font-size:16px;font-weight:700;color:#ffffff;letter-spacing:2.5px">BUNAI</td>
-            <td align="right" style="font-family:${FONT};font-size:11px;color:#94a3b8;letter-spacing:.8px">TASK MANAGER</td>
+            <!-- The cell keeps the old wordmark styling so that a client which
+                 refuses the image still shows "Bunai" and not a broken box. -->
+            <td style="font-family:${FONT};font-size:17px;font-weight:700;color:${INK};letter-spacing:2px">
+              <img src="cid:${LOGO_CID}" alt="Bunai" width="70" height="64"
+                   style="display:block;width:70px;height:64px;border:0;outline:none;text-decoration:none">
+            </td>
+            <td align="right" style="font-family:${FONT};font-size:11px;color:${MUTED};letter-spacing:.8px">${esc(tag || 'TASK MANAGER')}</td>
           </tr>
         </table>
       </td></tr>
@@ -150,7 +192,7 @@ ${preheaderHtml(preheader)}
 
       <tr><td style="background:#f8fafc;border-top:1px solid ${LINE};padding:18px 32px">
         <div style="font-family:${FONT};font-size:12px;color:${MUTED};line-height:1.6">
-          This is an automated message from Bunai Task Manager. Please do not reply to this email.
+          ${esc(footer || 'This is an automated message from Bunai Task Manager. Please do not reply to this email.')}
         </div>
       </td></tr>
 
