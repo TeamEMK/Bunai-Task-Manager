@@ -49,15 +49,31 @@ const para = (html) =>
 const esc = (v) => String(v == null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// A map link is the main thing that gets pasted into a note, and a link nobody
+// can tap is no use to somebody reading this on a phone on their way over. Run
+// after escaping, so the only markup in the block is the anchor this adds.
+//
+// Trailing punctuation is pushed back out of the href: a link at the end of a
+// sentence should not carry the full stop into the URL.
+function linkify(escaped) {
+  return escaped.replace(/\b(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi, (url) => {
+    const tail = (url.match(/[.,;:!?)]+$/) || [''])[0];
+    const clean = url.slice(0, url.length - tail.length);
+    const href = /^www\./i.test(clean) ? 'https://' + clean : clean;
+    return `<a href="${href}" target="_blank" style="color:#1a56db;text-decoration:underline">${clean}</a>${tail}`;
+  });
+}
+
 // The note the office typed, shown to the candidate and to nobody else. It is
-// the part of the letter that is actually about them - which floor, what to
-// bring - so it is set apart from the template text a machine wrote.
+// the part of the letter that is actually about them - the address, which
+// floor, the map link - so it is set apart from the template text a machine
+// wrote.
 function note(text) {
   const t = String(text == null ? '' : text).trim();
   if (!t) return '';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 18px">
     <tr><td style="background:#f8fafc;border-left:3px solid #f8b0b2;border-radius:0 6px 6px 0;padding:13px 16px;
-      font-family:${FONT};font-size:14.5px;line-height:1.6;color:#334155">${esc(t).replace(/\r?\n/g, '<br>')}</td></tr></table>`;
+      font-family:${FONT};font-size:14.5px;line-height:1.6;color:#334155">${linkify(esc(t)).replace(/\r?\n/g, '<br>')}</td></tr></table>`;
 }
 
 // A plain-text twin of every letter. Some clients never render the HTML, and a
