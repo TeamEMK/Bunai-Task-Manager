@@ -210,19 +210,19 @@
         </div>
 
         <div class="f">
-          <label>Aadhaar card <span class="req">*</span></label>
+          <label>Aadhaar — front side <span class="req">*</span></label>
           <div class="file" data-for="aadhaar_file">
             <input type="file" id="aadhaar_file" accept=".pdf,image/*">
             <div class="picked"></div>
           </div>
-          <div class="note">One PDF with both sides, or the front here and the back below.</div>
         </div>
         <div class="f">
-          <label>Aadhaar — back <span class="opt">(only if you uploaded a photo above)</span></label>
+          <label>Aadhaar — back side</label>
           <div class="file" data-for="aadhaar_file_2">
             <input type="file" id="aadhaar_file_2" accept=".pdf,image/*">
             <div class="picked"></div>
           </div>
+          <div class="note">Skip this if the file above already has both sides.</div>
         </div>
 
         <div class="row">
@@ -237,14 +237,14 @@
         </div>
 
         <div class="f">
-          <label>PAN card <span class="opt">(optional)</span></label>
+          <label>PAN — front side <span class="opt">(optional)</span></label>
           <div class="file" data-for="pan_file">
             <input type="file" id="pan_file" accept=".pdf,image/*">
             <div class="picked"></div>
           </div>
         </div>
         <div class="f">
-          <label>PAN — back <span class="opt">(optional)</span></label>
+          <label>PAN — back side <span class="opt">(optional)</span></label>
           <div class="file" data-for="pan_file_2">
             <input type="file" id="pan_file_2" accept=".pdf,image/*">
             <div class="picked"></div>
@@ -385,7 +385,7 @@ $('form').addEventListener('submit', async (e) => {
   if (!text.street || !text.city) short.push('your address');
   if (text.pincode.length !== 6) short.push('a 6-digit pincode');
   if (!$('resume_file').files[0]) short.push('your CV');
-  if (!$('aadhaar_file').files[0]) short.push('your Aadhaar card');
+  if (!$('aadhaar_file').files[0]) short.push('the front of your Aadhaar');
   if (short.length) return say('Still needed: ' + short.join(', ') + '.', 'bad');
 
   const mobiles = [text.emp_mobile, text.guardian1_mobile, text.guardian2_mobile];

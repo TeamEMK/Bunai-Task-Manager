@@ -154,7 +154,7 @@ router.post('/joining/:token',
     if (!d.street) missing.push('Address');
     if (!d.city) missing.push('City');
     if (d.pincode.length !== 6) missing.push('Pincode (6 digits)');
-    if (!files.aadhaar_file && !existing?.aadhaar_file) missing.push('Aadhaar card');
+    if (!files.aadhaar_file && !existing?.aadhaar_file) missing.push('Aadhaar (front side)');
     if (!files.resume_file && !existing?.resume_file) missing.push('CV');
     if (missing.length) return res.status(400).json({ error: 'Still needed: ' + missing.join(', ') });
 
