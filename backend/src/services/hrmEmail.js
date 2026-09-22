@@ -44,6 +44,23 @@ function niceTime(t) {
 const para = (html) =>
   `<p style="margin:0 0 14px;font-family:${FONT};font-size:14.5px;line-height:1.65;color:#334155">${html}</p>`;
 
+// Everything below builds HTML out of what somebody typed into a form. A stray
+// < or & in a name or a note would otherwise swallow the rest of the letter.
+const esc = (v) => String(v == null ? '' : v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// The note the office typed goes to the candidate as well as the interviewer -
+// it is usually the part that is actually about them: where to come, who to
+// ask for, what to bring. Set apart from the template text because a person
+// wrote it.
+function note(text) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return '';
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 18px">
+    <tr><td style="background:#f8fafc;border-left:3px solid #f8b0b2;border-radius:0 6px 6px 0;padding:13px 16px;
+      font-family:${FONT};font-size:14.5px;line-height:1.6;color:#334155">${esc(t).replace(/\r?\n/g, '<br>')}</td></tr></table>`;
+}
+
 // A plain-text twin of every letter. Some clients never render the HTML, and a
 // candidate reading the fallback should still get the date and the link.
 //
@@ -56,8 +73,13 @@ function stripTags(html) {
     .replace(/<\/(p|div|h\d)>/gi, '\n\n')
     .replace(/<\/tr>/gi, '\n')
     .replace(/<\/td>\s*<td[^>]*>/gi, ': ')   // label cell, value cell → "Label: value"
+    .replace(/<\/table>/gi, '\n\n')          // the note block, off on its own
     .replace(/<[^>]+>/g, '')
+    // Undo the escaping the HTML needed, or a note with an & in it reaches the
+    // candidate reading the fallback as "&amp;".
     .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&amp;/g, '&')
     .split('\n')
     .map(line => line.replace(/[ \t]+/g, ' ').trim())
     .join('\n')
@@ -87,9 +109,10 @@ function detail(rows) {
 // when, tell us if you cannot make it.
 function buildInterviewEmail(c) {
   const when = [longDate(c.interview_date), niceTime(c.interview_time)].filter(Boolean).join(', ');
-  const body = para(`Dear ${c.name},`)
-    + para(`Thank you for your interest in Bunai. Your interview${c.profile_position ? ` for the role of <b>${c.profile_position}</b>` : ''} has been scheduled. The details are below.`)
-    + detail([['Date & time', when], ['Position', c.profile_position]])
+  const body = para(`Dear ${esc(c.name)},`)
+    + para(`Thank you for your interest in Bunai. Your interview${c.profile_position ? ` for the role of <b>${esc(c.profile_position)}</b>` : ''} has been scheduled. The details are below.`)
+    + detail([['Date & time', when], ['Position', esc(c.profile_position)]])
+    + note(c.notes)
     + para('The interview is held at our office. Please arrive a few minutes early.')
     + para('If you cannot make this time, reply to this email and we will arrange another.')
     + para('We look forward to meeting you.');
@@ -105,10 +128,11 @@ function buildInterviewEmail(c) {
 function buildRescheduleEmail(c) {
   const when = [longDate(c.reschedule_date || c.interview_date), niceTime(c.reschedule_time || c.interview_time)]
     .filter(Boolean).join(', ');
-  const body = para(`Dear ${c.name},`)
+  const body = para(`Dear ${esc(c.name)},`)
     + para('Your interview has been moved. The new time is below; everything else is unchanged.')
-    + detail([['New date & time', when], ['Position', c.profile_position],
-              ['Reason', c.reschedule_reason]])
+    + detail([['New date & time', when], ['Position', esc(c.profile_position)],
+              ['Reason', esc(c.reschedule_reason)]])
+    + note(c.notes)
     + para('Apologies for the change, and thank you for your patience.');
   const html = email.shell({
     preheader: `Interview moved${when ? ' to ' + when : ''}`,
@@ -120,9 +144,9 @@ function buildRescheduleEmail(c) {
 }
 
 function buildSelectedEmail(c) {
-  const body = para(`Dear ${c.name},`)
-    + para(`We are glad to tell you that you have been selected${c.profile_position ? ` for the role of <b>${c.profile_position}</b>` : ''} at Bunai.`)
-    + detail([['Position', c.profile_position], ['Expected joining', longDate(c.joining_date)]])
+  const body = para(`Dear ${esc(c.name)},`)
+    + para(`We are glad to tell you that you have been selected${c.profile_position ? ` for the role of <b>${esc(c.profile_position)}</b>` : ''} at Bunai.`)
+    + detail([['Position', esc(c.profile_position)], ['Expected joining', longDate(c.joining_date)]])
     + para('We will follow up shortly with the next steps. If you have any questions in the meantime, simply reply to this email.')
     + para('Congratulations, and welcome.');
   const html = email.shell({
@@ -136,8 +160,8 @@ function buildSelectedEmail(c) {
 function buildRejectedEmail(c) {
   // Short, and without false comfort. The one thing it must do is close the
   // loop, because the worst outcome for a candidate is never being told.
-  const body = para(`Dear ${c.name},`)
-    + para(`Thank you for taking the time to speak with us${c.profile_position ? ` about the ${c.profile_position} role` : ''}.`)
+  const body = para(`Dear ${esc(c.name)},`)
+    + para(`Thank you for taking the time to speak with us${c.profile_position ? ` about the ${esc(c.profile_position)} role` : ''}.`)
     + para('After careful consideration we have decided not to proceed on this occasion. This is not a reflection of your ability, and we would be glad to hear from you about future openings.')
     + para('We wish you the very best.');
   const html = email.shell({
@@ -155,16 +179,16 @@ function buildInterviewerEmail(c) {
   const when = [longDate(c.reschedule_date || c.interview_date),
                 niceTime(c.reschedule_time || c.interview_time)].filter(Boolean).join(', ');
   const body = para('Hello,')
-    + para(`An interview has been scheduled with <b>${c.name}</b>${c.profile_position ? ` for the ${c.profile_position} role` : ''}.`)
+    + para(`An interview has been scheduled with <b>${esc(c.name)}</b>${c.profile_position ? ` for the ${esc(c.profile_position)} role` : ''}.`)
     + detail([
-        ['Candidate', c.name],
-        ['Position', c.profile_position],
+        ['Candidate', esc(c.name)],
+        ['Position', esc(c.profile_position)],
         ['Date & time', when],
-        ['Candidate phone', c.phone],
-        ['Candidate email', c.email],
-        ['Notes', c.notes],
+        ['Candidate phone', esc(c.phone)],
+        ['Candidate email', esc(c.email)],
+        ['Notes', esc(c.notes)],
       ])
-    + para('The candidate has been sent the date and time separately.');
+    + para('The candidate has been sent the date and time, and the note, as well.');
   const html = email.shell({
     preheader: `Interview with ${c.name}${when ? ' — ' + when : ''}`,
     eyebrow: 'INTERVIEW SCHEDULED', eyebrowColor: '#1a56db',
