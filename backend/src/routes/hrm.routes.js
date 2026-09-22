@@ -121,6 +121,20 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
     notes: clean(b.notes, 5000),
   };
 
+  // A second Save while the first is still sending arrives here as its own
+  // request, and used to become a second candidate and a second set of letters.
+  // The same person, for the same interview, seconds apart is never two
+  // bookings - it is one impatient click. Re-adding somebody weeks later for
+  // another role still works, which is why this is time-boxed rather than a
+  // unique index on the address.
+  const again = await db.one(
+    `SELECT id FROM hrm_candidates
+      WHERE email = ? AND interview_date <=> ?
+        AND created_at > (NOW() - INTERVAL 3 MINUTE)
+      ORDER BY id DESC LIMIT 1`,
+    [candidate.email, candidate.interview_date]);
+  if (again) return res.json({ id: again.id, duplicate: true });
+
   const [r] = await db.query(
     `INSERT INTO hrm_candidates
        (name,email,phone,profile_position,interviewer_email,
@@ -205,12 +219,24 @@ router.put('/hrm/candidates/:id/status', requireAuth, requireAdmin, asyncRoute(a
   await db.query(`UPDATE hrm_candidates SET ${sets} WHERE id=?`, [...Object.values(fields), id]);
 
   const updated = { ...c, ...fields };
+  // The same double click, one screen along. Here the row may legitimately be
+  // saved again - a reschedule that moves twice - so what is guarded is the
+  // letter rather than the update: an identical one sent moments ago is a
+  // repeat, not a second decision.
+  const action = `Status → ${status}`;
+  const justSent = await db.one(
+    `SELECT id FROM hrm_message_log
+      WHERE candidate_id = ? AND action = ? AND status = 'Sent'
+        AND created_at > (NOW() - INTERVAL 2 MINUTE) LIMIT 1`,
+    [id, action]);
+
   let mail = null;
   const kind = EMAIL_FOR_STATUS[status];
-  if (kind && b.sendEmail !== false) {
-    mail = await mailCandidate(updated, kind, `Status → ${status}`);
+  if (kind && b.sendEmail !== false && !justSent) {
+    mail = await mailCandidate(updated, kind, action);
   }
-  res.json({ success: true, status, emailed: !!mail?.ok, emailError: mail && !mail.ok ? mail.reason : null });
+  res.json({ success: true, status, duplicate: !!justSent,
+    emailed: !!mail?.ok || !!justSent, emailError: mail && !mail.ok ? mail.reason : null });
 }));
 
 // ── Delete ────────────────────────────────────────────

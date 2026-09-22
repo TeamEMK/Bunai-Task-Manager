@@ -7374,7 +7374,29 @@ function openHrmCandidate(idx){
   document.getElementById('hrmModal').classList.add('open');
 }
 
-async function saveHrmCandidate(){
+// Saving takes a few seconds, because the dialog stays open until the
+// invitation and the interviewer's copy have actually gone out. While nothing
+// appeared to happen the obvious thing to do was press Save again — and that
+// sent both letters twice. The button now says what it is doing and will not
+// take a second press; the server refuses a repeat as well.
+let HRM_SAVING = false;
+function hrmBusy(btn, label) {
+  if (!btn) return () => {};
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  return () => { btn.disabled = false; btn.textContent = was; };
+}
+
+async function saveHrmCandidate(btn){
+  if (HRM_SAVING) return;
+  HRM_SAVING = true;
+  const done = hrmBusy(btn, 'Saving…');
+  try { await hrmWriteCandidate(); }
+  finally { HRM_SAVING = false; done(); }
+}
+
+async function hrmWriteCandidate(){
   const err = document.getElementById('hrmErr');
   err.style.display = 'none';
   const val = id => document.getElementById(id).value.trim();
@@ -7393,6 +7415,10 @@ async function saveHrmCandidate(){
                : await api('/api/hrm/candidates', 'POST', body);
   if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
   closeModal('hrmModal');
+  // The server recognised this as the same save arriving twice. Nothing was
+  // written again and nobody was emailed again, so say that rather than
+  // reporting a send that never happened.
+  if (r.duplicate) { showToast('✅ Already saved a moment ago — nothing was sent twice'); loadHrm(); return; }
   // The save worked whether or not the letter did, so say both rather than one
   // cheerful tick that hides a bounced invitation.
   if (!id && body.sendEmail && body.interview_date) {
@@ -7461,7 +7487,17 @@ function hrmStatusFields(){
     : 'Scheduled and Offer Sent change the pipeline only; nothing is sent.';
 }
 
-async function saveHrmStatus(){
+// Same reasoning as the Add form: this one can post a rejection, and posting it
+// twice is worse than posting it slowly.
+async function saveHrmStatus(btn){
+  if (HRM_SAVING) return;
+  HRM_SAVING = true;
+  const done = hrmBusy(btn, 'Saving…');
+  try { await hrmWriteStatus(); }
+  finally { HRM_SAVING = false; done(); }
+}
+
+async function hrmWriteStatus(){
   const err = document.getElementById('hrmStatusErr');
   err.style.display = 'none';
   const id = document.getElementById('hrmStatusId').value;
@@ -7477,7 +7513,9 @@ async function saveHrmStatus(){
   const r = await api('/api/hrm/candidates/' + id + '/status', 'PUT', body);
   if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
   closeModal('hrmStatusModal');
-  if (body.sendEmail && HRM_STATUS_MAILS[status]) {
+  if (r.duplicate) {
+    showToast(`✅ Status set to ${status} — the letter had already gone`);
+  } else if (body.sendEmail && HRM_STATUS_MAILS[status]) {
     showToast(r.emailed ? `✅ Status set to ${status} and the candidate emailed`
                         : `⚠️ Status set to ${status}, but the letter failed — ` + (r.emailError || 'see Sent mail'));
   } else {
