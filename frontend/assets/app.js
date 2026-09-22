@@ -160,6 +160,7 @@ async function init() {
       document.getElementById('nav-users').style.display = 'flex';
       document.getElementById('nav-dailyreports').style.display = 'flex';
       document.getElementById('nav-hr').style.display = 'flex';
+      document.getElementById('nav-hrm').style.display = 'flex';
       document.getElementById('nav-mis').style.display = 'flex';
       document.getElementById('nav-fms').style.display = 'flex';
       document.getElementById('nav-ims').style.display = 'flex';
@@ -279,7 +280,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -370,6 +371,7 @@ function navigate(page, el, fromHash) {
   if (page==='alltasks') loadAllTasks();
   if (page==='users') loadUsers();
   if (page==='hr') loadHr();
+  if (page==='hrm') loadHrm();
   if (page==='approvals') loadApprovals();
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
@@ -7226,6 +7228,292 @@ async function cmBulkUpload() {
   } catch(e) {
     showToast('Failed to upload: ' + e.message, 'error');
   }
+}
+
+// ══════════════════════════════════════════════════════
+// 🧑‍💼 RECRUITMENT
+// Candidates being interviewed, and the letters sent to them. The HR page next
+// door is the other half — people already employed.
+//
+// Changing a status is the only thing that emails anybody, so it lives in its
+// own dialog rather than being a field on the edit form: it is a decision, and
+// a stray keystroke should not tell somebody they were rejected.
+// ══════════════════════════════════════════════════════
+const HRM_STATUS_COLOUR = {
+  'Scheduled':   ['#dbeafe', '#1e40af'],
+  'Rescheduled': ['#fef3c7', '#92400e'],
+  'Selected':    ['#d1fae5', '#065f46'],
+  'Rejected':    ['#fee2e2', '#991b1b'],
+  'Offer Sent':  ['#ede9fe', '#5b21b6'],
+};
+// Which statuses write to the candidate, so the dialog can say so honestly
+// instead of offering a tick box that does nothing.
+const HRM_STATUS_MAILS = { Rescheduled: true, Selected: true, Rejected: true };
+
+let HRM_ROWS = [];
+let _hrmSearchTimer = null;
+function hrmDebounced(){ clearTimeout(_hrmSearchTimer); _hrmSearchTimer = setTimeout(loadHrm, 300); }
+
+const hrmPill = (status) => {
+  const [bg, fg] = HRM_STATUS_COLOUR[status] || ['#f1f5f9', '#334155'];
+  return `<span style="background:${bg};color:${fg};font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap">${dtEscape(status)}</span>`;
+};
+
+// "2026-10-02" → "02 Oct 2026". Empty stays a dash rather than "Invalid Date".
+function hrmDate(d){
+  if (!d) return '—';
+  const dt = new Date(String(d).slice(0,10) + 'T00:00:00');
+  if (isNaN(dt)) return dtEscape(String(d));
+  return dt.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+}
+function hrmTime(t){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '').trim());
+  if (!m) return '';
+  let h = Number(m[1]); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12;
+  return `${h}:${m[2]} ${ap}`;
+}
+
+async function loadHrm(){
+  const body = document.getElementById('hrmBody');
+  const tiles = document.getElementById('hrmTiles');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+
+  const params = new URLSearchParams();
+  const q = document.getElementById('hrmSearch').value.trim();
+  const st = document.getElementById('hrmStatusFilter').value;
+  if (q) params.set('q', q);
+  if (st) params.set('status', st);
+
+  try {
+    const [rows, stats] = await Promise.all([
+      api('/api/hrm/candidates' + (params.toString() ? '?' + params : '')),
+      api('/api/hrm/stats'),
+    ]);
+    if (rows.error) { body.innerHTML = `<tr><td colspan="6" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    HRM_ROWS = Array.isArray(rows) ? rows : [];
+
+    const tile = (label, value, sub, tone) => {
+      const col = tone === 'warn' ? '#dc2626' : tone === 'good' ? '#16a34a' : 'var(--foreground)';
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:8px">${label}</div>
+        <div style="font-size:23px;font-weight:800;line-height:1;color:${col}">${value}</div>
+        ${sub ? `<div style="font-size:11.5px;color:var(--faint);margin-top:6px">${sub}</div>` : ''}
+      </div>`;
+    };
+    const s = stats || {};
+    const by = s.byStatus || {};
+    tiles.innerHTML =
+      tile('Candidates', Number(s.total||0).toLocaleString('en-IN'), 'in the pipeline') +
+      tile('Interviews ahead', Number(s.upcoming||0), 'scheduled from today') +
+      tile('Selected', Number(by['Selected']||0), null, 'good') +
+      tile('Rejected', Number(by['Rejected']||0)) +
+      tile('Mail failed', Number(s.failedEmails||0), s.failedEmails ? 'open Sent mail to retry' : 'none', s.failedEmails ? 'warn' : null);
+
+    // A letter that never arrived is the kind of thing nobody notices until a
+    // candidate does not turn up, so it is said on the page, not only in a log.
+    const note = document.getElementById('hrmNote');
+    if (note) {
+      if (s.failedEmails) {
+        note.innerHTML = `⚠ ${s.failedEmails} letter${s.failedEmails===1?'':'s'} could not be sent. Open <b>Sent mail</b> to see why and send again.`;
+        note.style.color = '#92400e';
+        note.style.display = 'block';
+      } else note.style.display = 'none';
+    }
+
+    if (!HRM_ROWS.length) {
+      body.innerHTML = `<tr><td colspan="6" class="empty">No candidates yet — use <b>+ Add Candidate</b>.</td></tr>`;
+      return;
+    }
+    body.innerHTML = HRM_ROWS.map((c, i) => {
+      // A rescheduled interview shows the new time; the original is no longer
+      // when anybody is meeting.
+      const d = c.reschedule_date || c.interview_date;
+      const t = c.reschedule_date ? c.reschedule_time : c.interview_time;
+      const moved = c.reschedule_date ? ' <span style="font-size:10.5px;color:var(--faint)">(moved)</span>' : '';
+      return `<tr>
+        <td>
+          <b>${dtEscape(c.name)}</b>${moved}
+          <div style="font-size:11.5px;color:var(--faint)">${dtEscape(c.email)}${c.phone ? ' · ' + dtEscape(c.phone) : ''}</div>
+        </td>
+        <td style="font-size:13px">${dtEscape(c.profile_position || '—')}</td>
+        <td style="font-size:13px;white-space:nowrap">${hrmDate(d)}${t ? `<div style="font-size:11.5px;color:var(--faint)">${hrmTime(t)}</div>` : ''}</td>
+        <td>${hrmPill(c.status)}</td>
+        <td style="font-size:13px;white-space:nowrap">${hrmDate(c.joining_date)}</td>
+        <td style="white-space:nowrap">
+          <button class="action-btn" onclick="openHrmStatus(${i})">Status</button>
+          <button class="action-btn" style="margin-left:6px" onclick="openHrmCandidate(${i})">Edit</button>
+          <button class="action-btn delete" style="margin-left:6px" onclick="deleteHrmCandidate(${c.id})">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">Could not load candidates — ${dtEscape(e.message||'unknown error')}</td></tr>`;
+  }
+}
+
+// ── Add / edit ────────────────────────────────────────
+function openHrmCandidate(idx){
+  const c = (idx === undefined || idx === null) ? null : HRM_ROWS[idx];
+  document.getElementById('hrmModalTitle').textContent = c ? 'Edit Candidate' : 'Add Candidate';
+  document.getElementById('hrmEditId').value = c ? c.id : '';
+  const set = (id, v) => { document.getElementById(id).value = v || ''; };
+  set('hrmName', c?.name); set('hrmEmail', c?.email); set('hrmPhone', c?.phone);
+  set('hrmPosition', c?.profile_position); set('hrmDate', c?.interview_date);
+  set('hrmTime', c?.interview_time);
+  set('hrmSalary', c?.salary); set('hrmJoining', c?.joining_date); set('hrmNotes', c?.notes);
+  document.getElementById('hrmSendEmail').checked = !c;
+  // Editing never emails — only adding, and only then because an invitation is
+  // the point of adding somebody.
+  document.getElementById('hrmSendWrap').style.display = c ? 'none' : 'flex';
+  document.getElementById('hrmErr').style.display = 'none';
+  document.getElementById('hrmModal').classList.add('open');
+}
+
+async function saveHrmCandidate(){
+  const err = document.getElementById('hrmErr');
+  err.style.display = 'none';
+  const val = id => document.getElementById(id).value.trim();
+  const id = document.getElementById('hrmEditId').value;
+  const body = {
+    name: val('hrmName'), email: val('hrmEmail'), phone: val('hrmPhone'),
+    profile_position: val('hrmPosition'), interview_date: val('hrmDate'),
+    interview_time: val('hrmTime'),
+    salary: val('hrmSalary'), joining_date: val('hrmJoining'), notes: val('hrmNotes'),
+    sendEmail: document.getElementById('hrmSendEmail').checked,
+  };
+  if (!body.name) { err.textContent = 'Name is required'; err.style.display = 'block'; return; }
+
+  const r = id ? await api('/api/hrm/candidates/' + id, 'PUT', body)
+               : await api('/api/hrm/candidates', 'POST', body);
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('hrmModal');
+  // The save worked whether or not the letter did, so say both rather than one
+  // cheerful tick that hides a bounced invitation.
+  if (!id && body.sendEmail && body.interview_date) {
+    showToast(r.emailed ? '✅ Candidate added and invitation sent'
+                        : '⚠️ Candidate added, but the invitation failed — ' + (r.emailError || 'see Sent mail'));
+  } else {
+    showToast('✅ Saved');
+  }
+  loadHrm();
+}
+
+async function deleteHrmCandidate(id){
+  if (!confirm('Delete this candidate? Their sent-mail history stays.')) return;
+  const r = await api('/api/hrm/candidates/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  showToast('🗑 Candidate deleted');
+  loadHrm();
+}
+
+// ── Status ────────────────────────────────────────────
+function openHrmStatus(idx){
+  const c = HRM_ROWS[idx];
+  if (!c) return;
+  document.getElementById('hrmStatusId').value = c.id;
+  document.getElementById('hrmStatusTitle').textContent = 'Change Status';
+  document.getElementById('hrmStatusWho').innerHTML =
+    `<b>${dtEscape(c.name)}</b> · ${dtEscape(c.email)}${c.profile_position ? ' · ' + dtEscape(c.profile_position) : ''}`;
+  document.getElementById('hrmStatusPick').value = c.status || 'Scheduled';
+  document.getElementById('hrmReschedDate').value = c.reschedule_date || '';
+  document.getElementById('hrmReschedTime').value = c.reschedule_time || '';
+  document.getElementById('hrmReschedReason').value = c.reschedule_reason || '';
+  document.getElementById('hrmJoinDate').value = c.joining_date || '';
+  document.getElementById('hrmStatusSendEmail').checked = true;
+  document.getElementById('hrmStatusErr').style.display = 'none';
+  hrmStatusFields();
+  document.getElementById('hrmStatusModal').classList.add('open');
+}
+
+// Shows the fields the chosen status actually needs, and says plainly whether
+// it writes to the candidate.
+function hrmStatusFields(){
+  const st = document.getElementById('hrmStatusPick').value;
+  document.getElementById('hrmReschedFields').style.display = st === 'Rescheduled' ? 'block' : 'none';
+  document.getElementById('hrmJoinFields').style.display = st === 'Selected' ? 'block' : 'none';
+  const mails = !!HRM_STATUS_MAILS[st];
+  const box = document.getElementById('hrmStatusSendEmail');
+  box.disabled = !mails;
+  // Follows the status both ways. Only unticking it left the box dead after
+  // moving from a status that sends nothing to one that does — the dialog said
+  // the candidate would be told, and then quietly told nobody.
+  box.checked = mails;
+  document.getElementById('hrmStatusMailLabel').textContent =
+    mails ? 'Email the candidate' : 'No letter for this status';
+  document.getElementById('hrmStatusMailNote').textContent = mails
+    ? { Rescheduled: 'They get the new date and time.',
+        Selected: 'They are told they have been selected.',
+        Rejected: 'They are told the outcome — short, and without false comfort.' }[st]
+    : 'Scheduled and Offer Sent change the pipeline only; nothing is sent.';
+}
+
+async function saveHrmStatus(){
+  const err = document.getElementById('hrmStatusErr');
+  err.style.display = 'none';
+  const id = document.getElementById('hrmStatusId').value;
+  const status = document.getElementById('hrmStatusPick').value;
+  const body = { status, sendEmail: document.getElementById('hrmStatusSendEmail').checked };
+  if (status === 'Rescheduled') {
+    body.reschedule_date = document.getElementById('hrmReschedDate').value;
+    body.reschedule_time = document.getElementById('hrmReschedTime').value;
+    body.reschedule_reason = document.getElementById('hrmReschedReason').value.trim();
+  }
+  if (status === 'Selected') body.joining_date = document.getElementById('hrmJoinDate').value;
+
+  const r = await api('/api/hrm/candidates/' + id + '/status', 'PUT', body);
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('hrmStatusModal');
+  if (body.sendEmail && HRM_STATUS_MAILS[status]) {
+    showToast(r.emailed ? `✅ Status set to ${status} and the candidate emailed`
+                        : `⚠️ Status set to ${status}, but the letter failed — ` + (r.emailError || 'see Sent mail'));
+  } else {
+    showToast('✅ Status set to ' + status);
+  }
+  loadHrm();
+}
+
+// ── Sent mail ─────────────────────────────────────────
+async function openHrmLog(){
+  const body = document.getElementById('hrmLogBody');
+  body.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  document.getElementById('hrmLogModal').classList.add('open');
+  const rows = await api('/api/hrm/messages');
+  if (rows.error) { body.innerHTML = `<tr><td colspan="5" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">Nothing sent yet.</td></tr>'; return; }
+  body.innerHTML = rows.map(m => `<tr>
+    <td style="font-size:11.5px;color:var(--muted-foreground);white-space:nowrap">${dtEscape(m.created_at||'')}</td>
+    <td style="font-size:13px"><b>${dtEscape(m.candidate_name||'—')}</b>
+      <div style="font-size:11.5px;color:var(--faint)">${dtEscape(m.email||'')}</div></td>
+    <td style="font-size:12.5px">${dtEscape(m.action||'')}
+      <div style="font-size:11px;color:var(--faint)">${dtEscape(m.subject||'')}</div></td>
+    <td style="white-space:nowrap">
+      ${m.status === 'Sent'
+        ? '<span style="color:#16a34a;font-weight:700;font-size:12px">Sent</span>'
+        : `<span style="color:#dc2626;font-weight:700;font-size:12px">Failed</span>
+           <div style="font-size:11px;color:var(--faint);max-width:220px">${dtEscape(m.error_detail||'')}</div>`}
+      ${m.retry_count ? `<div style="font-size:10.5px;color:var(--faint)">retried ${m.retry_count}×</div>` : ''}
+    </td>
+    <td style="white-space:nowrap">
+      ${m.status === 'Failed' ? `<button class="action-btn" onclick="retryHrmMail(${m.id},this)">Send again</button>` : ''}
+      <button class="action-btn delete" style="margin-left:6px" onclick="deleteHrmMail(${m.id})">Delete</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function retryHrmMail(id, btn){
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  const r = await api('/api/hrm/messages/' + id + '/retry', 'POST', {});
+  showToast(r.ok ? '✅ Sent' : '⚠️ Still failing — ' + (r.reason || r.error || 'unknown'));
+  openHrmLog();
+  loadHrm();
+}
+
+async function deleteHrmMail(id){
+  const r = await api('/api/hrm/messages/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  openHrmLog();
+  loadHrm();
 }
 
 // ══════════════════════════════════════════════════════

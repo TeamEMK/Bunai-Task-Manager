@@ -283,6 +283,10 @@ function sendReminderEmail(to, opts) {
 module.exports = {
   enabled: () => !!(cfg.user && cfg.pass),
   recipientFor, sendMail, verify,
+  // Exposed so other senders can put their own words inside the same envelope.
+  // The recruitment letters use it, which is why a candidate's mail and a
+  // colleague's notification look like they came from one company.
+  shell,
   buildDelegationEmail, sendDelegationEmail,
   buildReminderEmail, sendReminderEmail,
 };

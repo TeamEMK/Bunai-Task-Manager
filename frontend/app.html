@@ -88,6 +88,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z"/></svg>
       <span class="nav-label-text">HR</span>
     </div>
+    <div class="nav-item" id="nav-hrm" style="display:none" onclick="navigate('hrm',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
+      <span class="nav-label-text">Recruitment</span>
+    </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
       <span class="nav-label-text">Leave Tracker</span>
@@ -1031,6 +1035,44 @@
   <!-- ══════════════════════════════════════════════════════
        LEAVE TRACKER — all users
        ══════════════════════════════════════════════════════ -->
+  <!-- ── RECRUITMENT (hiring pipeline — see hrm.routes.js) ── -->
+  <div id="page-hrm" class="page">
+    <div class="page-header">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="position:relative">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint)">🔍</span>
+          <input type="text" id="hrmSearch" placeholder="Search name, email, phone, position…" oninput="hrmDebounced()"
+            style="padding:8px 12px 8px 32px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none;width:300px"/>
+        </div>
+        <select id="hrmStatusFilter" onchange="loadHrm()"
+          style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-sans);outline:none">
+          <option value="">All statuses</option>
+          <option value="Scheduled">Scheduled</option>
+          <option value="Rescheduled">Rescheduled</option>
+          <option value="Selected">Selected</option>
+          <option value="Rejected">Rejected</option>
+          <option value="Offer Sent">Offer Sent</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="openHrmLog()">✉ Sent mail</button>
+        <button class="btn btn-primary" onclick="openHrmCandidate()">+ Add Candidate</button>
+      </div>
+    </div>
+
+    <div id="hrmTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:8px"></div>
+    <div id="hrmNote" style="display:none;font-size:12px;margin:0 2px 14px"></div>
+
+    <div class="table-container">
+      <table>
+        <thead><tr>
+          <th>Candidate</th><th>Position</th><th>Interview</th><th>Status</th><th>Joining</th><th>Action</th>
+        </tr></thead>
+        <tbody id="hrmBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div id="page-leaves" class="page">
     <div class="lv-card">
       <div class="lv-header">
@@ -1180,6 +1222,114 @@
 </div>
 
 <!-- ── HR: add / edit employee ── -->
+<!-- ── Recruitment: add / edit a candidate ── -->
+<div class="modal-overlay" id="hrmModal">
+  <div class="modal" style="width:620px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="hrmModalTitle">Add Candidate</h3>
+    <div class="alert error" id="hrmErr" style="display:none"></div>
+    <input type="hidden" id="hrmEditId"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Name <span style="color:#dc2626">*</span></label>
+        <input type="text" id="hrmName" placeholder="Candidate's full name"/></div>
+      <div class="form-group"><label>Email <span style="color:#dc2626">*</span>
+        <span style="color:var(--faint);font-weight:400;font-size:11px">(the invitation goes here)</span></label>
+        <input type="email" id="hrmEmail" placeholder="name@example.com"/></div>
+      <div class="form-group"><label>Phone</label>
+        <input type="tel" id="hrmPhone" placeholder="Optional"/></div>
+      <div class="form-group"><label>Position</label>
+        <input type="text" id="hrmPosition" placeholder="e.g. MIS Executive"/></div>
+      <div class="form-group"><label>Interview date</label>
+        <input type="date" id="hrmDate"/></div>
+      <div class="form-group"><label>Interview time</label>
+        <input type="time" id="hrmTime" step="300"/></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Salary discussed</label>
+        <input type="text" id="hrmSalary" placeholder="Optional"/></div>
+      <div class="form-group"><label>Expected joining</label>
+        <input type="date" id="hrmJoining"/></div>
+    </div>
+    <div class="form-group"><label>Notes</label>
+      <textarea id="hrmNotes" rows="3" placeholder="Anything worth remembering about this candidate"></textarea></div>
+    <label id="hrmSendWrap" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:4px">
+      <input type="checkbox" id="hrmSendEmail" checked style="width:15px;height:15px;accent-color:var(--brand-deep);cursor:pointer"/>
+      Email the invitation now
+    </label>
+    <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">
+      Only sent when an interview date is set. Untick to add the candidate quietly and invite them later.
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('hrmModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHrmCandidate()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recruitment: change status (this is what emails the candidate) ── -->
+<div class="modal-overlay" id="hrmStatusModal">
+  <div class="modal" style="width:520px;max-width:94vw">
+    <h3 id="hrmStatusTitle">Change Status</h3>
+    <div class="alert error" id="hrmStatusErr" style="display:none"></div>
+    <input type="hidden" id="hrmStatusId"/>
+    <div id="hrmStatusWho" style="font-size:13px;color:var(--muted-foreground);margin:-6px 0 14px"></div>
+    <div class="form-group"><label>New status</label>
+      <select id="hrmStatusPick" onchange="hrmStatusFields()">
+        <option value="Scheduled">Scheduled</option>
+        <option value="Rescheduled">Rescheduled</option>
+        <option value="Selected">Selected</option>
+        <option value="Rejected">Rejected</option>
+        <option value="Offer Sent">Offer Sent</option>
+      </select></div>
+
+    <div id="hrmReschedFields" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label>New date <span style="color:#dc2626">*</span></label>
+          <input type="date" id="hrmReschedDate"/></div>
+        <div class="form-group"><label>New time</label>
+          <input type="time" id="hrmReschedTime" step="300"/></div>
+      </div>
+      <div class="form-group"><label>Reason <span style="color:var(--faint);font-weight:400;font-size:11px">(shown to the candidate)</span></label>
+        <input type="text" id="hrmReschedReason" placeholder="e.g. Interviewer travelling"/></div>
+    </div>
+
+    <div id="hrmJoinFields" style="display:none">
+      <div class="form-group"><label>Expected joining date</label>
+        <input type="date" id="hrmJoinDate"/></div>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+      <input type="checkbox" id="hrmStatusSendEmail" checked style="width:15px;height:15px;accent-color:var(--brand-deep);cursor:pointer"/>
+      <span id="hrmStatusMailLabel">Email the candidate</span>
+    </label>
+    <div id="hrmStatusMailNote" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('hrmStatusModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHrmStatus()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recruitment: what was sent, and what failed ── -->
+<div class="modal-overlay" id="hrmLogModal">
+  <div class="modal" style="width:900px;max-width:94vw;display:flex;flex-direction:column;max-height:90vh;overflow:hidden">
+    <h3 style="flex:none">Sent mail</h3>
+    <div style="flex:none;margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      Every letter this portal sent, and why it failed when it did. A failed one can be sent again —
+      the candidate's current address is used, not the one that failed.
+    </div>
+    <div class="table-container" style="flex:1 1 auto;min-height:0;overflow:auto">
+      <table>
+        <thead><tr><th>When</th><th>Candidate</th><th>Letter</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="hrmLogBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer" style="flex:none;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeModal('hrmLogModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="hrModal">
   <div class="modal" style="width:940px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="hrModalTitle">Add Employee</h3>

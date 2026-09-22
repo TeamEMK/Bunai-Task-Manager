@@ -1,0 +1,153 @@
+// ══════════════════════════════════════════════════════
+// RECRUITMENT EMAIL
+//
+// The letters a candidate receives: the interview invitation, a new time when
+// it moves, and the outcome either way. These go to people outside the company
+// — often the first thing they see of it — so they say what is happening, when,
+// and what to do next, and nothing else.
+//
+// The same house style as the rest of the app's mail, reusing email.js's shell
+// so a candidate's letter and a colleague's notification look like one company
+// wrote them.
+// ══════════════════════════════════════════════════════
+const email = require('./email');
+
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+// "2026-09-22" → "22 September 2026". A candidate should not have to read a
+// date backwards, and an ISO string in a letter looks like a machine wrote it.
+function longDate(d) {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(String(d).slice(0, 10) + 'T00:00:00');
+  if (Number.isNaN(dt.getTime())) return String(d);
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+// "14:30" → "2:30 PM", and anything it cannot read comes back untouched rather
+// than becoming "Invalid Date" in somebody's inbox.
+function niceTime(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '').trim());
+  if (!m) return String(t || '');
+  let h = Number(m[1]);
+  const ampm = h < 12 ? 'AM' : 'PM';
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ampm}`;
+}
+
+const para = (html) =>
+  `<p style="margin:0 0 14px;font-family:${FONT};font-size:14.5px;line-height:1.65;color:#334155">${html}</p>`;
+
+// A plain-text twin of every letter. Some clients never render the HTML, and a
+// candidate reading the fallback should still get the date and the link.
+//
+// Blocks have to become line breaks before the tags go, or every paragraph runs
+// into the next one — "Dear Asha,Thank you for your interest" — and the detail
+// table collapses into a ribbon of stray spaces.
+function stripTags(html) {
+  return String(html)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h\d)>/gi, '\n\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/td>\s*<td[^>]*>/gi, ': ')   // label cell, value cell → "Label: value"
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function detail(rows) {
+  const cells = rows
+    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '')
+    .map(([k, v]) => `
+      <tr>
+        <td style="padding:7px 14px 7px 0;font-family:${FONT};font-size:13px;color:#64748b;white-space:nowrap">${k}</td>
+        <td style="padding:7px 0;font-family:${FONT};font-size:14px;color:#0f172a;font-weight:600">${v}</td>
+      </tr>`).join('');
+  if (!cells) return '';
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"
+    style="margin:4px 0 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 16px">${cells}</table>`;
+}
+
+// ── The four letters ──────────────────────────────────
+
+function buildInterviewEmail(c) {
+  const when = [longDate(c.interview_date), niceTime(c.interview_time)].filter(Boolean).join(', ');
+  const body = para(`Dear ${c.name},`)
+    + para(`Thank you for your interest in Bunai. We would like to invite you to an interview${c.profile_position ? ` for the role of <b>${c.profile_position}</b>` : ''}.`)
+    + detail([['Date & time', when], ['Position', c.profile_position]])
+    + para('Interviews are held at our office. If this time does not suit you, reply to this email and we will arrange another.')
+    + para('We look forward to speaking with you.');
+  const html = email.shell({
+    preheader: `Interview invitation${when ? ' — ' + when : ''}`,
+    eyebrow: 'INTERVIEW INVITATION', eyebrowColor: '#1a56db',
+    headline: 'You are invited to an interview', body,
+  });
+  return { subject: `Interview invitation${c.profile_position ? ` — ${c.profile_position}` : ''}`, html, text: stripTags(body) };
+}
+
+function buildRescheduleEmail(c) {
+  const when = [longDate(c.reschedule_date || c.interview_date), niceTime(c.reschedule_time || c.interview_time)]
+    .filter(Boolean).join(', ');
+  const body = para(`Dear ${c.name},`)
+    + para('Your interview has been moved. The new time is below; everything else is unchanged.')
+    + detail([['New date & time', when], ['Position', c.profile_position],
+              ['Reason', c.reschedule_reason]])
+    + para('Apologies for the change, and thank you for your patience.');
+  const html = email.shell({
+    preheader: `Interview moved${when ? ' to ' + when : ''}`,
+    eyebrow: 'INTERVIEW RESCHEDULED', eyebrowColor: '#d97706',
+    headline: 'Your interview has been moved', body,
+  });
+  return { subject: 'Your interview has been rescheduled', html, text: stripTags(body) };
+}
+
+function buildSelectedEmail(c) {
+  const body = para(`Dear ${c.name},`)
+    + para(`We are glad to tell you that you have been selected${c.profile_position ? ` for the role of <b>${c.profile_position}</b>` : ''} at Bunai.`)
+    + detail([['Position', c.profile_position], ['Expected joining', longDate(c.joining_date)]])
+    + para('We will follow up shortly with the next steps. If you have any questions in the meantime, simply reply to this email.')
+    + para('Congratulations, and welcome.');
+  const html = email.shell({
+    preheader: 'You have been selected', eyebrow: 'SELECTED', eyebrowColor: '#059669',
+    headline: 'Congratulations — you have been selected', body,
+  });
+  return { subject: `Congratulations — you have been selected${c.profile_position ? ` for ${c.profile_position}` : ''}`, html, text: stripTags(body) };
+}
+
+function buildRejectedEmail(c) {
+  // Short, and without false comfort. The one thing it must do is close the
+  // loop, because the worst outcome for a candidate is never being told.
+  const body = para(`Dear ${c.name},`)
+    + para(`Thank you for taking the time to speak with us${c.profile_position ? ` about the ${c.profile_position} role` : ''}.`)
+    + para('After careful consideration we have decided not to proceed on this occasion. This is not a reflection of your ability, and we would be glad to hear from you about future openings.')
+    + para('We wish you the very best.');
+  const html = email.shell({
+    preheader: 'Update on your application', eyebrow: 'APPLICATION UPDATE', eyebrowColor: '#64748b',
+    headline: 'Update on your application', body,
+  });
+  return { subject: 'Update on your application', html, text: stripTags(body) };
+}
+
+const BUILDERS = {
+  interview: buildInterviewEmail,
+  rescheduled: buildRescheduleEmail,
+  selected: buildSelectedEmail,
+  rejected: buildRejectedEmail,
+};
+
+// Builds and sends in one step, returning what happened rather than throwing,
+// so the caller can record a failure against the candidate instead of losing
+// the whole request to it.
+async function sendToCandidate(kind, candidate) {
+  const build = BUILDERS[kind];
+  if (!build) return { ok: false, reason: 'unknown email kind: ' + kind, subject: '' };
+  const { subject, html, text } = build(candidate);
+  if (!candidate.email) return { ok: false, reason: 'candidate has no email address', subject };
+  const r = await email.sendMail(candidate.email, subject, { text, html });
+  return { ...r, subject };
+}
+
+module.exports = { BUILDERS, sendToCandidate, longDate, niceTime };

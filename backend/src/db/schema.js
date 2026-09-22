@@ -250,6 +250,51 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // ── Recruitment ────────────────────────────────────
+  // The hiring pipeline: people being interviewed, not people employed. The
+  // hr_employees table above is the other half — someone who joins moves from
+  // here to there. Modelled on the same pipeline in the e-marketing project,
+  // with one deliberate difference: that one reaches candidates over WhatsApp
+  // and keys off a phone number, this one emails them, so email is the contact
+  // that matters and phone is only kept for the record.
+  ['hrm_candidates', `CREATE TABLE hrm_candidates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) DEFAULT '',
+    profile_position VARCHAR(255) DEFAULT '',
+    interview_date DATE DEFAULT NULL,
+    interview_time VARCHAR(20) DEFAULT '',
+    status ENUM('Scheduled','Rescheduled','Selected','Rejected','Offer Sent') DEFAULT 'Scheduled',
+    reschedule_date DATE DEFAULT NULL,
+    reschedule_time VARCHAR(20) DEFAULT '',
+    reschedule_reason TEXT,
+    joining_date DATE DEFAULT NULL,
+    salary VARCHAR(100) DEFAULT '',
+    notes TEXT,
+    created_by INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  // Every mail the portal sends, and why it failed when it did. Mail goes
+  // missing quietly — a wrong address, SMTP refusing, credentials expired — and
+  // without a record the first anybody hears of it is a candidate who never
+  // turned up.
+  ['hrm_message_log', `CREATE TABLE hrm_message_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    candidate_id INT DEFAULT NULL,
+    candidate_name VARCHAR(255) DEFAULT '',
+    email VARCHAR(255) DEFAULT '',
+    action VARCHAR(255) DEFAULT '',
+    subject VARCHAR(500) DEFAULT '',
+    status ENUM('Sent','Failed') DEFAULT 'Failed',
+    error_detail TEXT,
+    retry_count INT DEFAULT 0,
+    last_retry_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['leave_requests', `CREATE TABLE leave_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -374,6 +419,10 @@ const COLUMNS = [
 //   [table, index name, column list, { unique }]
 // ══════════════════════════════════════════════════════
 const INDEXES = [
+  ['hrm_candidates', 'idx_hrm_status', 'status'],
+  ['hrm_candidates', 'idx_hrm_interview', 'interview_date'],
+  ['hrm_message_log', 'idx_hrm_msg_candidate', 'candidate_id'],
+  ['hrm_message_log', 'idx_hrm_msg_status', 'status'],
   // ── hr_employees ──
   // Employee code is the human key — unique, but nullable (many NULLs allowed).
   ['hr_employees', 'uq_employee_code', 'employee_code', { unique: true }],
