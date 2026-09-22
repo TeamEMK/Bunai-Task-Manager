@@ -9,8 +9,10 @@
 // a long random token, one per candidate, that opens their form and nothing
 // else. It is checked on every request — reading the form, and submitting it.
 //
-// The uploads land outside frontend/ and are streamed back only to a logged-in
-// admin. Somebody's Aadhaar must not sit at a guessable public URL.
+// The documents are stored in the database, not on disk: this deploys to
+// Vercel, where the filesystem is read-only apart from /tmp and /tmp is gone
+// by the next request. They are handed back only through an authenticated
+// route - somebody's Aadhaar must not sit at a guessable public URL.
 // ══════════════════════════════════════════════════════
 const crypto = require('crypto');
 const fs = require('fs');
@@ -176,20 +178,20 @@ router.post('/joining/:token',
       }
     }
 
-    // Everything has passed, so the documents can go to disk. Named after the
-    // field rather than whatever the phone called it, and the old one is
-    // replaced when a form is filled in a second time.
-    const dir = path.join(config.uploadsDir, 'joining', String(c.id));
-    fs.mkdirSync(dir, { recursive: true });
+    // Everything has passed, so the documents can be stored. The bytes go into
+    // hrm_joining_files; what lands on hrm_joining_details is the name the
+    // candidate's own phone gave the file, which is what the office sees.
     const saved = {};
     for (const field of FILE_FIELDS) {
       const f = files[field]?.[0];
       if (!f) { saved[field] = existing?.[field] || ''; continue; }
-      const name = `${field}-${crypto.randomBytes(4).toString('hex')}${ALLOWED[f.mimetype]}`;
-      fs.writeFileSync(path.join(dir, name), f.buffer);
-      if (existing?.[field] && existing[field] !== name) {
-        fs.unlink(path.join(dir, existing[field]), () => {});
-      }
+      const name = clean(f.originalname, 255) || `${field}${ALLOWED[f.mimetype]}`;
+      await db.query(
+        `INSERT INTO hrm_joining_files (candidate_id, field, file_name, mime, bytes, content)
+         VALUES (?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE file_name=VALUES(file_name), mime=VALUES(mime),
+           bytes=VALUES(bytes), content=VALUES(content), uploaded_at=NOW()`,
+        [c.id, field, name, f.mimetype, f.size, f.buffer]);
       saved[field] = name;
     }
 
@@ -245,20 +247,30 @@ router.get('/hrm/candidates/:id/joining-details', requireAuth, requireAdmin, asy
   });
 }));
 
-// The documents themselves. Streamed rather than served statically, because
-// that is the only way the login still applies to them.
+// The documents themselves. Handed over by this route rather than served as
+// static files, because that is the only way the login still applies to them.
 router.get('/hrm/joining-file/:id/:field', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const field = String(req.params.field);
   if (!FILE_FIELDS.includes(field)) throw httpError(400, 'Unknown document');
+
+  const doc = await db.one(
+    'SELECT file_name, mime, content FROM hrm_joining_files WHERE candidate_id=? AND field=?', [id, field]);
+  if (doc?.content) {
+    res.set('Content-Type', doc.mime || 'application/octet-stream');
+    // inline: a PDF or a photo should open in the tab, not land in Downloads.
+    res.set('Content-Disposition', `inline; filename="${String(doc.file_name || field).replace(/[^\w. -]/g, '_')}"`);
+    return res.send(doc.content);
+  }
+
+  // Anything uploaded before the documents moved into the database is still on
+  // this machine's disk. Worth reading rather than losing.
   const row = await db.one('SELECT * FROM hrm_joining_details WHERE candidate_id=?', [id]);
   const name = row?.[field];
   if (!name) throw httpError(404, 'Not uploaded');
-  // The name came out of our own INSERT, but it ends up in a filesystem path,
-  // so it is checked rather than trusted.
-  if (!/^[a-z0-9_]+-[a-f0-9]{8}\.[a-z]{3,4}$/i.test(name)) throw httpError(400, 'Bad file name');
+  if (!/^[a-z0-9_]+-[a-f0-9]{8}\.[a-z]{3,4}$/i.test(name)) throw httpError(404, 'Not stored');
   const file = path.join(config.uploadsDir, 'joining', String(id), name);
-  if (!fs.existsSync(file)) throw httpError(404, 'The file is recorded but missing from disk');
+  if (!fs.existsSync(file)) throw httpError(404, 'The file is recorded but its bytes are missing');
   res.sendFile(file);
 }));
 

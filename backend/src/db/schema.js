@@ -284,6 +284,29 @@ const TABLES = [
   // missing quietly — a wrong address, SMTP refusing, credentials expired — and
   // without a record the first anybody hears of it is a candidate who never
   // turned up.
+  // The documents themselves, bytes and all.
+  //
+  // They were on disk once, which is the better place for a file - until you
+  // remember this deploys to Vercel, where the filesystem is read-only apart
+  // from /tmp and /tmp does not survive the request that wrote it. A scan that
+  // vanishes the moment the candidate submits it is worse than a fat row.
+  //
+  // Kept in their own table rather than as columns on hrm_joining_details, so
+  // reading somebody's address does not drag a megabyte of PDF along with it.
+  ['hrm_joining_files', `CREATE TABLE hrm_joining_files (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    candidate_id INT NOT NULL,
+    -- resume_file, aadhaar_file, aadhaar_file_2, pan_file, pan_file_2
+    field VARCHAR(32) NOT NULL,
+    file_name VARCHAR(255) DEFAULT '',
+    mime VARCHAR(100) DEFAULT '',
+    bytes INT DEFAULT 0,
+    content LONGBLOB,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- One document per slot: uploading again replaces it.
+    UNIQUE KEY uniq_hrm_join_file (candidate_id, field)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // What a selected candidate fills in before they join: who they are, who to
   // call if something happens, where they live, and the documents payroll and
   // the office need on day one. One row per candidate - the form can be sent
