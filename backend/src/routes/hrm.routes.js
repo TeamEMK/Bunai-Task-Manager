@@ -17,6 +17,7 @@ const { db } = require('../db/pool');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const hrmEmail = require('../services/hrmEmail');
+const joining = require('./joining.routes');
 
 const router = express.Router();
 
@@ -92,9 +93,14 @@ router.get('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req, 
             DATE_FORMAT(c.interview_date,'%Y-%m-%d')  AS interview_date,
             DATE_FORMAT(c.reschedule_date,'%Y-%m-%d') AS reschedule_date,
             DATE_FORMAT(c.joining_date,'%Y-%m-%d')    AS joining_date,
-            DATE_FORMAT(c.created_at,'%Y-%m-%d %H:%i') AS created_at
+            DATE_FORMAT(c.created_at,'%Y-%m-%d %H:%i') AS created_at,
+            -- Where the onboarding form has got to, so the row can say so
+            -- without a request per candidate.
+            DATE_FORMAT(c.joining_form_sent_at,'%Y-%m-%d %H:%i') AS joining_form_sent_at,
+            DATE_FORMAT(j.submitted_at,'%Y-%m-%d %H:%i') AS joining_submitted_at
        FROM hrm_candidates c
        LEFT JOIN users u ON u.id = c.created_by
+       LEFT JOIN hrm_joining_details j ON j.candidate_id = c.id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY COALESCE(c.reschedule_date, c.interview_date) DESC, c.id DESC
       LIMIT 500`, args);
@@ -244,6 +250,17 @@ router.put('/hrm/candidates/:id/status', requireAuth, requireAdmin, asyncRoute(a
   if (willSend) {
     mailCandidate(updated, kind, action)
       .catch(err => console.error('⚠️ Status letter failed after the reply:', err.message));
+  }
+
+  // Being selected is the moment the onboarding form is due, so it follows the
+  // congratulations rather than waiting for somebody to remember. Sent once:
+  // if it has gone before, or they have already filled it in, the button on
+  // the candidate's row is there to send it again deliberately.
+  if (status === 'Selected' && b.sendEmail !== false && !c.joining_form_sent_at) {
+    (async () => {
+      const done = await db.one('SELECT id FROM hrm_joining_details WHERE candidate_id=?', [id]);
+      if (!done) await joining.mailForm({ ...c, ...fields, id });
+    })().catch(err => console.error('⚠️ Onboarding form failed after the reply:', err.message));
   }
 }));
 

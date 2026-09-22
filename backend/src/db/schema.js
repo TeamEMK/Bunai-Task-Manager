@@ -284,6 +284,47 @@ const TABLES = [
   // missing quietly — a wrong address, SMTP refusing, credentials expired — and
   // without a record the first anybody hears of it is a candidate who never
   // turned up.
+  // What a selected candidate fills in before they join: who they are, who to
+  // call if something happens, where they live, and the documents payroll and
+  // the office need on day one. One row per candidate - the form can be sent
+  // again and re-submitted, and the second answer replaces the first rather
+  // than piling up beside it.
+  //
+  // The documents themselves are files on disk; only their names are here. A
+  // scan of somebody's Aadhaar does not belong in a database row that gets
+  // dumped into a backup by accident.
+  ['hrm_joining_details', `CREATE TABLE hrm_joining_details (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    candidate_id INT NOT NULL,
+    full_name VARCHAR(255) DEFAULT '',
+    emp_mobile VARCHAR(20) DEFAULT '',
+    email VARCHAR(255) DEFAULT '',
+    dob DATE DEFAULT NULL,
+    -- Two people to reach, and the relation is free text because the form's
+    -- list has an "Other" the candidate types into (Uncle, Brother, ...).
+    guardian1_name VARCHAR(255) DEFAULT '',
+    guardian1_relation VARCHAR(100) DEFAULT '',
+    guardian1_mobile VARCHAR(20) DEFAULT '',
+    guardian2_name VARCHAR(255) DEFAULT '',
+    guardian2_relation VARCHAR(100) DEFAULT '',
+    guardian2_mobile VARCHAR(20) DEFAULT '',
+    street VARCHAR(500) DEFAULT '',
+    city VARCHAR(255) DEFAULT '',
+    state VARCHAR(255) DEFAULT '',
+    pincode VARCHAR(20) DEFAULT '',
+    aadhaar_no VARCHAR(20) DEFAULT '',
+    pan_no VARCHAR(20) DEFAULT '',
+    -- Aadhaar and PAN are each one PDF or two photos, front and back.
+    resume_file VARCHAR(255) DEFAULT '',
+    aadhaar_file VARCHAR(255) DEFAULT '',
+    aadhaar_file_2 VARCHAR(255) DEFAULT '',
+    pan_file VARCHAR(255) DEFAULT '',
+    pan_file_2 VARCHAR(255) DEFAULT '',
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_hrm_joining_candidate (candidate_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['hrm_message_log', `CREATE TABLE hrm_message_log (
     id INT AUTO_INCREMENT PRIMARY KEY,
     candidate_id INT DEFAULT NULL,
@@ -323,6 +364,11 @@ const COLUMNS = [
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.
   ['hrm_candidates', 'interviewer_email', `VARCHAR(255) DEFAULT '' AFTER profile_position`],
+  // The onboarding form is opened by somebody who has no login, so the link
+  // itself is the credential: a long random string, one per candidate, good
+  // only for their own form.
+  ['hrm_candidates', 'joining_form_token', `VARCHAR(64) DEFAULT NULL`],
+  ['hrm_candidates', 'joining_form_sent_at', `DATETIME DEFAULT NULL`],
 
   ['users', 'notification_email', `VARCHAR(255) DEFAULT '' AFTER email`],
   // user_role — separate from app `role`. Decides leave-approval hierarchy
@@ -429,6 +475,7 @@ const COLUMNS = [
 const INDEXES = [
   ['hrm_candidates', 'idx_hrm_status', 'status'],
   ['hrm_candidates', 'idx_hrm_interview', 'interview_date'],
+  ['hrm_candidates', 'idx_hrm_join_token', 'joining_form_token'],
   ['hrm_message_log', 'idx_hrm_msg_candidate', 'candidate_id'],
   ['hrm_message_log', 'idx_hrm_msg_status', 'status'],
   // ── hr_employees ──

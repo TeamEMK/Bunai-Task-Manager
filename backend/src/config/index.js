@@ -29,6 +29,10 @@ module.exports = {
   root: ROOT,
   // Everything the browser downloads lives in frontend/; the server only reads it.
   publicDir: FRONTEND,
+  // Where uploaded documents land. Deliberately NOT under frontend/: an
+  // Aadhaar scan must not be one guessable URL away from the open internet,
+  // so these are streamed back through an authenticated route instead.
+  uploadsDir: path.join(ROOT, 'uploads'),
   imsAppDir: path.join(FRONTEND, 'ims-app'),
 
   isServerless,

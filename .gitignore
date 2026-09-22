@@ -38,3 +38,5 @@ tmp/
 .DS_Store
 Thumbs.db
 DEPLOY.md
+# Uploaded onboarding documents - real people's ID scans, never committed.
+uploads/

@@ -7251,6 +7251,7 @@ const HRM_STATUS_COLOUR = {
 const HRM_STATUS_MAILS = { Rescheduled: true, Selected: true, Rejected: true };
 
 let HRM_ROWS = [];
+let HRM_JOIN = null;
 let _hrmSearchTimer = null;
 function hrmDebounced(){ clearTimeout(_hrmSearchTimer); _hrmSearchTimer = setTimeout(loadHrm, 300); }
 
@@ -7277,7 +7278,7 @@ async function loadHrm(){
   const body = document.getElementById('hrmBody');
   const tiles = document.getElementById('hrmTiles');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
 
   const params = new URLSearchParams();
   const q = document.getElementById('hrmSearch').value.trim();
@@ -7290,7 +7291,7 @@ async function loadHrm(){
       api('/api/hrm/candidates' + (params.toString() ? '?' + params : '')),
       api('/api/hrm/stats'),
     ]);
-    if (rows.error) { body.innerHTML = `<tr><td colspan="6" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    if (rows.error) { body.innerHTML = `<tr><td colspan="7" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     HRM_ROWS = Array.isArray(rows) ? rows : [];
 
     const tile = (label, value, sub, tone) => {
@@ -7322,7 +7323,7 @@ async function loadHrm(){
     }
 
     if (!HRM_ROWS.length) {
-      body.innerHTML = `<tr><td colspan="6" class="empty">No candidates yet — use <b>+ Schedule Interview</b>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="empty">No candidates yet — use <b>+ Schedule Interview</b>.</td></tr>`;
       return;
     }
     body.innerHTML = HRM_ROWS.map((c, i) => {
@@ -7340,6 +7341,7 @@ async function loadHrm(){
         <td style="font-size:13px;white-space:nowrap">${hrmDate(d)}${t ? `<div style="font-size:11.5px;color:var(--faint)">${hrmTime(t)}</div>` : ''}</td>
         <td>${hrmPill(c.status)}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(c.joining_date)}</td>
+        <td style="white-space:nowrap">${hrmJoinCell(c)}</td>
         <td style="white-space:nowrap">
           <button class="action-btn" onclick="openHrmStatus(${i})">Status</button>
           <button class="action-btn" style="margin-left:6px" onclick="openHrmCandidate(${i})">Edit</button>
@@ -7348,7 +7350,7 @@ async function loadHrm(){
       </tr>`;
     }).join('');
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="6" class="empty">Could not load candidates — ${dtEscape(e.message||'unknown error')}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="empty">Could not load candidates — ${dtEscape(e.message||'unknown error')}</td></tr>`;
   }
 }
 
@@ -7531,6 +7533,107 @@ async function hrmWriteStatus(){
   }
   loadHrm();
   if (r.sending) hrmWatchMail(id, r.letters);
+}
+
+// ── Onboarding form ──────────────────────────
+// Three states, and the row says which: nothing sent, sent and waiting, or the
+// details are in. The middle one is the one worth seeing at a glance — a form
+// sent a fortnight ago and never filled in is somebody to chase.
+function hrmJoinCell(c){
+  const open = `onclick="openHrmJoin(${c.id})"`;
+  if (c.joining_submitted_at) {
+    return `<button class="action-btn" ${open} style="color:#15803d;border-color:#bbf7d0">✓ Received</button>`;
+  }
+  if (c.joining_form_sent_at) {
+    const days = Math.floor((Date.now() - new Date(String(c.joining_form_sent_at).replace(' ', 'T')).getTime()) / 86400000);
+    const late = days >= 3;
+    return `<button class="action-btn" ${open}${late ? ' style="color:#b45309;border-color:#fde68a"' : ''}>Sent${days > 0 ? ' · ' + days + 'd' : ''}</button>`;
+  }
+  // Before anybody is selected there is nothing to chase, so the button is
+  // quiet rather than absent — it can still be sent by hand.
+  return `<button class="action-btn" ${open} style="color:var(--faint)">Send…</button>`;
+}
+
+async function openHrmJoin(id){
+  const box = document.getElementById('hrmJoinBody');
+  document.getElementById('hrmJoinModal').classList.add('open');
+  box.innerHTML = '<div style="padding:18px;color:var(--muted-foreground)">Loading…</div>';
+  const r = await api('/api/hrm/candidates/' + id + '/joining-details');
+  if (r.error) { box.innerHTML = `<div style="padding:18px;color:#b91c1c">${dtEscape(r.error)}</div>`; return; }
+  HRM_JOIN = { id, ...r };
+  document.getElementById('hrmJoinTitle').textContent = 'Onboarding — ' + ((r.candidate && r.candidate.name) || '');
+  hrmJoinRender();
+}
+
+function hrmJoinRender(){
+  const r = HRM_JOIN || {};
+  const d = r.details;
+  const box = document.getElementById('hrmJoinBody');
+  const when = (v) => dtEscape(String(v || '').slice(0, 16).replace('T', ' '));
+  const line = (k, v) => v ? `<tr>
+      <td style="padding:7px 14px 7px 0;color:var(--muted-foreground);font-size:12.5px;white-space:nowrap;vertical-align:top">${k}</td>
+      <td style="padding:7px 0;font-size:13.5px;color:var(--foreground);font-weight:600">${dtEscape(String(v))}</td></tr>` : '';
+
+  const DOCS = { resume_file:'CV', aadhaar_file:'Aadhaar', aadhaar_file_2:'Aadhaar (back)', pan_file:'PAN', pan_file_2:'PAN (back)' };
+  const docs = (r.files || []).map(f =>
+    `<a href="/api/hrm/joining-file/${r.id}/${f}" target="_blank"
+        style="display:inline-block;margin:0 8px 8px 0;padding:7px 13px;border:1px solid var(--border);
+               border-radius:8px;background:var(--card);color:var(--foreground);font-size:12.5px;
+               font-weight:600;text-decoration:none">⬇ ${DOCS[f] || f}</a>`).join('');
+
+  const state = d
+    ? `<span style="color:#15803d;font-weight:600">Received ${when(d.submitted_at)}</span>`
+    : r.sent_at
+      ? `<span style="color:#b45309;font-weight:600">Sent ${when(r.sent_at)} — not filled in yet</span>`
+      : '<span style="color:var(--muted-foreground)">Not sent yet</span>';
+
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 2px 14px;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px">${state}</div>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-outline" onclick="hrmCopyJoinLink()">Copy link</button>
+      <button class="btn btn-sm btn-primary" onclick="hrmSendJoinForm(this)">${r.sent_at ? 'Send again' : 'Send the form'}</button>
+    </div>
+    ${d ? `
+      <table style="width:100%;border-collapse:collapse;margin:14px 0 4px">
+        ${line('Name', d.full_name)}
+        ${line('Mobile', d.emp_mobile)}
+        ${line('Email', d.email)}
+        ${line('Date of birth', hrmDate(d.dob))}
+        ${line('Address', [d.street, d.city, d.state, d.pincode].filter(Boolean).join(', '))}
+        ${line('Contact 1', [d.guardian1_name, d.guardian1_relation, d.guardian1_mobile].filter(Boolean).join(' · '))}
+        ${line('Contact 2', [d.guardian2_name, d.guardian2_relation, d.guardian2_mobile].filter(Boolean).join(' · '))}
+        ${line('Aadhaar no.', d.aadhaar_no)}
+        ${line('PAN', d.pan_no)}
+      </table>
+      <div style="margin:10px 0 4px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">Documents</div>
+      <div>${docs || '<span style="font-size:13px;color:var(--faint)">none uploaded</span>'}</div>
+    ` : `
+      <div style="padding:22px 2px;font-size:13.5px;color:var(--muted-foreground)">
+        Nothing has come back yet. ${r.sent_at ? 'The candidate has the link — send it again if they have lost it.'
+          : 'Send the form and this page fills in as soon as they submit it.'}
+      </div>`}`;
+}
+
+// Worth having by hand: a candidate who cannot find the email can be sent the
+// link on whatever channel the office already uses.
+function hrmCopyJoinLink(){
+  const link = HRM_JOIN && HRM_JOIN.link;
+  if (!link) return showToast('⚠️ No link yet — send the form once and it is created');
+  navigator.clipboard.writeText(link)
+    .then(() => showToast('✅ Link copied'))
+    .catch(() => showToast('⚠️ Could not copy — ' + link));
+}
+
+async function hrmSendJoinForm(btn){
+  const done = hrmBusy(btn, 'Sending…');
+  try {
+    const r = await api('/api/hrm/candidates/' + HRM_JOIN.id + '/joining-form', 'POST');
+    if (r.error || r.ok === false) return showToast('⚠️ ' + (r.error || r.reason || 'The letter failed — see Sent mail'));
+    showToast('✅ Onboarding form emailed');
+    await openHrmJoin(HRM_JOIN.id);
+    loadHrm();
+  } finally { done(); }
 }
 
 // ── Sent mail ─────────────────────────────────────────

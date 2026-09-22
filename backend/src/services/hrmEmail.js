@@ -187,6 +187,51 @@ function buildRejectedEmail(c) {
   return { subject: 'Update on your application', html, text: stripTags(body) };
 }
 
+// Sent once a candidate is selected: the link to the form where they hand over
+// the details the office needs before they can start. The link is the whole
+// point of the letter, so it is a button as well as a line of text - a plain
+// URL in a mail app is easy to miss and easier to mistype.
+//
+// It says what will be asked for, because somebody who knows they need their
+// Aadhaar to hand fills the form once instead of abandoning it halfway.
+function buildOnboardingEmail(c, url) {
+  const body = para(`Dear ${esc(c.name)},`)
+    + para('Welcome aboard. Before your first day we need a few details from you - please fill this short form:')
+    + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:2px 0 18px">
+        <tr><td bgcolor="#0f172a" style="border-radius:6px">
+          <a href="${esc(url)}" target="_blank" style="display:inline-block;padding:12px 26px;font-family:${FONT};
+             font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px">Open the form</a>
+        </td></tr></table>`
+    + para(`<span style="font-size:12.5px;color:#64748b">If the button does not work, paste this into your browser:<br>
+        <a href="${esc(url)}" style="color:#1a56db">${esc(url)}</a></span>`)
+    + para('Keep these ready before you start:')
+    + `<ul style="margin:0 0 16px 18px;padding:0;font-family:${FONT};font-size:14.5px;line-height:1.8;color:#334155">
+        <li>Your mobile number, email and date of birth</li>
+        <li>Two family contacts - name, relation and mobile number</li>
+        <li>Your home address</li>
+        <li>Your CV - PDF or Word</li>
+        <li>Aadhaar card - one PDF, or photos of the front and back</li>
+        <li>PAN card, if you have one - same again</li>
+      </ul>`
+    + para('The link is yours alone, so please do not forward it. If anything is unclear, simply reply to this email.');
+  const html = email.shell({
+    preheader: 'A few details before your first day',
+    eyebrow: 'ONBOARDING', eyebrowColor: '#059669',
+    headline: 'A few details before you join', body,
+    tag: TAG, footer: FOOTER,
+  });
+  return { subject: 'Your joining details form - Bunai', html, text: stripTags(body) };
+}
+
+// Its own path rather than a `kind`, because it needs the form's address and
+// the four candidate letters need nothing but the candidate.
+async function sendOnboardingForm(candidate, url) {
+  const { subject, html, text } = buildOnboardingEmail(candidate, url);
+  if (!candidate.email) return { ok: false, reason: 'candidate has no email address', subject };
+  const r = await email.sendMail(candidate.email, subject, { text, html });
+  return { ...r, subject };
+}
+
 // The interviewer's own letter. Not the candidate's: it carries the phone
 // number and the address, which is how the person taking the interview reaches
 // them if something changes on the day.
@@ -247,4 +292,8 @@ async function sendToCandidate(kind, candidate) {
   return { ...r, subject };
 }
 
-module.exports = { BUILDERS, sendToCandidate, sendToInterviewer, buildInterviewerEmail, longDate, niceTime };
+module.exports = {
+  BUILDERS, sendToCandidate, sendToInterviewer, buildInterviewerEmail,
+  buildOnboardingEmail, sendOnboardingForm,
+  longDate, niceTime,
+};
