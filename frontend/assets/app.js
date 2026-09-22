@@ -7362,6 +7362,7 @@ function openHrmCandidate(idx){
   set('hrmPosition', c?.profile_position); set('hrmDate', c?.interview_date);
   set('hrmTime', c?.interview_time);
   set('hrmSalary', c?.salary); set('hrmJoining', c?.joining_date); set('hrmNotes', c?.notes);
+  set('hrmIntvEmail', c?.interviewer_email);
   document.getElementById('hrmSendEmail').checked = !c;
   // Editing never emails — only adding, and only then because an invitation is
   // the point of adding somebody.
@@ -7382,6 +7383,7 @@ async function saveHrmCandidate(){
     name: val('hrmName'), email: val('hrmEmail'), phone: val('hrmPhone'),
     profile_position: val('hrmPosition'), interview_date: val('hrmDate'),
     interview_time: val('hrmTime'),
+    interviewer_email: val('hrmIntvEmail'),
     salary: val('hrmSalary'), joining_date: val('hrmJoining'), notes: val('hrmNotes'),
     sendEmail: document.getElementById('hrmSendEmail').checked,
   };
@@ -7394,8 +7396,16 @@ async function saveHrmCandidate(){
   // The save worked whether or not the letter did, so say both rather than one
   // cheerful tick that hides a bounced invitation.
   if (!id && body.sendEmail && body.interview_date) {
-    showToast(r.emailed ? '✅ Candidate added and invitation sent'
-                        : '⚠️ Candidate added, but the invitation failed — ' + (r.emailError || 'see Sent mail'));
+    // Two letters can go out, and they can fail independently — a cheerful tick
+    // that hides a bounced one would be the wrong thing to show.
+    const bits = [];
+    bits.push(r.emailed ? 'invitation sent' : 'invitation FAILED (' + (r.emailError || 'see Sent mail') + ')');
+    if (body.interviewer_email) {
+      bits.push(r.interviewerEmailed ? 'interviewer told'
+        : 'interviewer NOT told (' + (r.interviewerError || 'see Sent mail') + ')');
+    }
+    const allOk = r.emailed && (!body.interviewer_email || r.interviewerEmailed);
+    showToast((allOk ? '✅ Candidate added — ' : '⚠️ Candidate added — ') + bits.join(', '));
   } else {
     showToast('✅ Saved');
   }

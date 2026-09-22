@@ -1234,15 +1234,18 @@
       <div class="form-group"><label>Email <span style="color:#dc2626">*</span>
         <span style="color:var(--faint);font-weight:400;font-size:11px">(the invitation goes here)</span></label>
         <input type="email" id="hrmEmail" placeholder="name@example.com"/></div>
-      <div class="form-group"><label>Phone</label>
-        <input type="tel" id="hrmPhone" placeholder="Optional"/></div>
-      <div class="form-group"><label>Position</label>
+      <div class="form-group"><label>Candidate phone</label>
+        <input type="tel" id="hrmPhone" placeholder="9876543210"/></div>
+      <div class="form-group"><label>Position / profile</label>
         <input type="text" id="hrmPosition" placeholder="e.g. MIS Executive"/></div>
       <div class="form-group"><label>Interview date</label>
         <input type="date" id="hrmDate"/></div>
       <div class="form-group"><label>Interview time</label>
         <input type="time" id="hrmTime" step="300"/></div>
     </div>
+    <div class="form-group"><label>Interviewer email
+      <span style="color:var(--faint);font-weight:400;font-size:11px">(they get the details too — phone and notes included)</span></label>
+      <input type="email" id="hrmIntvEmail" placeholder="name@bunai.com — leave blank to tell nobody"/></div>
     <!-- Neither of these exists yet when an interview is first being booked:
          salary comes out of the conversation, and the joining date is asked for
          in the Selected dialog. Hidden while adding, shown when editing. -->

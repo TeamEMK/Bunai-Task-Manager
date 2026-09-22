@@ -263,6 +263,9 @@ const TABLES = [
     email VARCHAR(255) NOT NULL,
     phone VARCHAR(50) DEFAULT '',
     profile_position VARCHAR(255) DEFAULT '',
+    -- Who is taking the interview, typed in when the interview is booked.
+    -- They get their own letter, with the candidate's phone and the notes.
+    interviewer_email VARCHAR(255) DEFAULT '',
     interview_date DATE DEFAULT NULL,
     interview_time VARCHAR(20) DEFAULT '',
     status ENUM('Scheduled','Rescheduled','Selected','Rejected','Offer Sent') DEFAULT 'Scheduled',
@@ -316,6 +319,11 @@ const TABLES = [
 // A database created from TABLES above already has all of them — the lookup in
 // migrations.js skips every one of these on a modern schema.
 const COLUMNS = [
+  // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
+  // once the table is there, so a database that already has it would never get
+  // the column and every insert would fail on an unknown field.
+  ['hrm_candidates', 'interviewer_email', `VARCHAR(255) DEFAULT '' AFTER profile_position`],
+
   ['users', 'notification_email', `VARCHAR(255) DEFAULT '' AFTER email`],
   // user_role — separate from app `role`. Decides leave-approval hierarchy
   // (e.g. an IT person may have app role 'admin' but user role 'user',

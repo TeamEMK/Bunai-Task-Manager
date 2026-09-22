@@ -114,6 +114,7 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
     email,
     phone: clean(b.phone, 50),
     profile_position: clean(b.profile_position),
+    interviewer_email: clean(b.interviewer_email),
     interview_date: dateOrNull(b.interview_date),
     interview_time: clean(b.interview_time, 20),
     salary: clean(b.salary, 100),
@@ -122,9 +123,11 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
 
   const [r] = await db.query(
     `INSERT INTO hrm_candidates
-       (name,email,phone,profile_position,interview_date,interview_time,salary,notes,status,created_by)
-     VALUES (?,?,?,?,?,?,?,?, 'Scheduled', ?)`,
+       (name,email,phone,profile_position,interviewer_email,
+        interview_date,interview_time,salary,notes,status,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?, 'Scheduled', ?)`,
     [candidate.name, candidate.email, candidate.phone, candidate.profile_position,
+     candidate.interviewer_email,
      candidate.interview_date, candidate.interview_time,
      candidate.salary, candidate.notes, req.session.userId]);
   candidate.id = r.insertId;
@@ -135,7 +138,22 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
   if (b.sendEmail !== false && candidate.interview_date) {
     mail = await mailCandidate(candidate, 'interview', 'Interview invitation');
   }
-  res.json({ id: candidate.id, emailed: !!mail?.ok, emailError: mail && !mail.ok ? mail.reason : null });
+
+  // The interviewer is told separately. Their letter is not the candidate's —
+  // it carries the phone number and the notes, which the candidate should not
+  // see, and it is worth sending even when the candidate's fails.
+  let intv = null;
+  if (b.sendEmail !== false && candidate.interview_date && looksLikeEmail(candidate.interviewer_email)) {
+    intv = await hrmEmail.sendToInterviewer(candidate).catch(e => ({ ok: false, reason: e.message }));
+    await logEmail({ ...candidate, name: 'Interviewer', email: candidate.interviewer_email },
+      'Interviewer notified', intv);
+  }
+
+  res.json({
+    id: candidate.id,
+    emailed: !!mail?.ok, emailError: mail && !mail.ok ? mail.reason : null,
+    interviewerEmailed: !!intv?.ok, interviewerError: intv && !intv.ok ? intv.reason : null,
+  });
 }));
 
 // ── Update ────────────────────────────────────────────
@@ -151,9 +169,11 @@ router.put('/hrm/candidates/:id', requireAuth, requireAdmin, asyncRoute(async (r
 
   await db.query(
     `UPDATE hrm_candidates SET name=?, email=?, phone=?, profile_position=?,
+            interviewer_email=?,
             interview_date=?, interview_time=?, salary=?, notes=?, joining_date=?
       WHERE id=?`,
     [name, email, clean(b.phone, 50), clean(b.profile_position),
+     clean(b.interviewer_email),
      dateOrNull(b.interview_date), clean(b.interview_time, 20),
      clean(b.salary, 100), clean(b.notes, 5000), dateOrNull(b.joining_date), id]);
   res.json({ success: true });
