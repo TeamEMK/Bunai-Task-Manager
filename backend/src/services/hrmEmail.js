@@ -80,20 +80,26 @@ function detail(rows) {
 
 // ── The four letters ──────────────────────────────────
 
+// The company is telling the candidate what has been arranged, not asking them
+// for a favour. "We would like to invite you" read like a request that still
+// needed their agreement, when in fact the slot is already booked and the
+// interviewer has been told. So: the interview has been scheduled, here is
+// when, tell us if you cannot make it.
 function buildInterviewEmail(c) {
   const when = [longDate(c.interview_date), niceTime(c.interview_time)].filter(Boolean).join(', ');
   const body = para(`Dear ${c.name},`)
-    + para(`Thank you for your interest in Bunai. We would like to invite you to an interview${c.profile_position ? ` for the role of <b>${c.profile_position}</b>` : ''}.`)
+    + para(`Thank you for your interest in Bunai. Your interview${c.profile_position ? ` for the role of <b>${c.profile_position}</b>` : ''} has been scheduled. The details are below.`)
     + detail([['Date & time', when], ['Position', c.profile_position]])
-    + para('Interviews are held at our office. If this time does not suit you, reply to this email and we will arrange another.')
-    + para('We look forward to speaking with you.');
+    + para('The interview is held at our office. Please arrive a few minutes early.')
+    + para('If you cannot make this time, reply to this email and we will arrange another.')
+    + para('We look forward to meeting you.');
   const html = email.shell({
-    preheader: `Interview invitation${when ? ' — ' + when : ''}`,
-    eyebrow: 'INTERVIEW INVITATION', eyebrowColor: '#1a56db',
-    headline: 'You are invited to an interview', body,
+    preheader: `Interview scheduled${when ? ' — ' + when : ''}`,
+    eyebrow: 'INTERVIEW SCHEDULED', eyebrowColor: '#1a56db',
+    headline: 'Your interview has been scheduled', body,
     tag: TAG, footer: FOOTER,
   });
-  return { subject: `Interview invitation${c.profile_position ? ` — ${c.profile_position}` : ''}`, html, text: stripTags(body) };
+  return { subject: `Interview scheduled${c.profile_position ? ` — ${c.profile_position}` : ''}`, html, text: stripTags(body) };
 }
 
 function buildRescheduleEmail(c) {
