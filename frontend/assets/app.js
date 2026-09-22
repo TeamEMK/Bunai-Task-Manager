@@ -101,6 +101,10 @@ let ME = null;
 // app needed. Leave as "/ims" unless you host the IMS elsewhere.
 const IMS_WEBAPP_URL = "/ims";
 
+// A separate tool of the client's, opened from the dashboard. It lives outside
+// this app, so it is a plain link in a new tab rather than anything embedded.
+const BUNAI_GRAPHICS_URL = "https://bunai-graphics-generator-orpin.vercel.app/";
+
 // ══════════════════════════════════════════════════════
 // UNIT / LOCATION NAMES  ← rename your production units here
 // The two Merchandising FMS forms write to two different sheets, one per unit.
@@ -820,6 +824,8 @@ async function loadDashboard() {
 
     if (isAdmin) {
       document.getElementById('dashBtns').innerHTML = `
+        <a class="btn btn-outline" href="${BUNAI_GRAPHICS_URL}" target="_blank" rel="noopener noreferrer"
+           style="text-decoration:none">🎨 Bunai Graphics</a>
         <button class="btn btn-yellow" onclick="openHoliday()">🗓 Holidays</button>
         <button class="btn btn-green" onclick="openChecklist()">+ Checklist</button>
         <button class="btn btn-primary" onclick="openDelegate()">+ Delegate</button>`;
