@@ -280,7 +280,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -386,6 +386,7 @@ function navigate(page, el, fromHash) {
   if (page==='stock') loadStock();
   if (page==='sales') loadSales();
   if (page==='returns') loadReturns();
+  if (page==='inventory') loadInventory();
   window.scrollTo(0,0);
 }
 
@@ -2863,6 +2864,580 @@ async function openHrDetail(id) {
       + (e.performance_remarks ? `<div class="hr-drow"><div class="k">Performance</div><div class="v" style="white-space:pre-wrap">${dtEscape(e.performance_remarks)}</div></div>` : '')
       + (e.record_log ? `<div class="hr-drow"><div class="k">Record log</div><div class="v" style="white-space:pre-wrap">${dtEscape(e.record_log)}</div></div>` : '')
       + (e.notes ? noteBlock(e.notes) : '') : '');
+}
+
+// ══════════════════════════════════════════════════════
+// INVENTORY — company equipment, and who is holding it.
+//
+// Everybody opens this page. To most people it is "what am I holding, and how
+// do I give it back"; to an admin it is the register. The extra tabs, the KPI
+// tiles and every lifecycle button belong to the second — and the API refuses
+// them for the first regardless of what the page shows.
+// ══════════════════════════════════════════════════════
+let invItems = [], invAssigns = [], invPeople = [];
+let invTab = 'mine', invCanManage = false, invUserId = null;
+let invEditId = null, invAssignItemId = null, invHandoverId = null, invReturnId = null;
+let invPhoto = null, invSelfAdd = false;
+
+// Plain names, because the type is what names an item — the form has no
+// free-text name field. An 'other' item is named by the type typed in instead.
+const INV_TYPES = {
+  laptop: 'Laptop', keyboard: 'Keyboard', mouse: 'Mouse', mobile: 'Mobile',
+  sim: 'SIM', charger: 'Charger', other: 'Other',
+};
+const INV_ICONS = {
+  laptop: '💻', keyboard: '⌨️', mouse: '🖱️', mobile: '📱',
+  sim: '📇', charger: '🔌', other: '📦',
+};
+const INV_CONDITIONS = { new: 'New', good: 'Good', fair: 'Fair', poor: 'Poor' };
+const INV_STATUS_COLOR = { available: '#16a34a', assigned: '#d97706', damaged: '#dc2626', retired: '#64748b' };
+
+// Mirrors RETURN_REASONS in backend/src/routes/inventory.routes.js — keep the
+// two in step.
+const INV_REASONS = {
+  offboarding: 'Offboarding — leaving the company',
+  damaged: 'Damaged',
+  retired: 'Retired — end of life',
+};
+const INV_REASON_SHORT = { offboarding: 'Offboarding', damaged: 'Damaged', retired: 'Retired' };
+// The holder can only say why they are handing it back. Calling an item
+// finished is a judgement about the asset, so it stays with the custodian —
+// the server enforces this too, this only keeps it out of reach.
+const INV_HOLDER_REASONS = ['offboarding', 'damaged'];
+
+const invReasonOptions = keys => '<option value="">— select —</option>'
+  + keys.map(k => `<option value="${k}">${dtEscape(INV_REASONS[k])}</option>`).join('');
+
+const invDate = d => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+
+function invShowErr(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!msg) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function invPill(text, color) {
+  return `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;color:${color};background:${color}1a">${dtEscape(text)}</span>`;
+}
+
+function invTile(label, value, tone) {
+  const col = tone || 'var(--foreground)';
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:7px">${label}</div>
+    <div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${col}">${value}</div>
+  </div>`;
+}
+
+async function loadInventory() {
+  const content = document.getElementById('invContent');
+  content.innerHTML = '<div class="empty">Loading…</div>';
+
+  const d = await api('/api/inventory');
+  if (d.error) { content.innerHTML = `<div class="empty" style="color:#dc2626">${dtEscape(d.error)}</div>`; return; }
+
+  invItems = d.items || [];
+  invCanManage = !!d.canManage;
+  invUserId = d.userId;
+
+  document.getElementById('invTabAll').style.display = invCanManage ? '' : 'none';
+  document.getElementById('invTabAssign').style.display = invCanManage ? '' : 'none';
+  document.getElementById('invTiles').style.display = invCanManage ? 'grid' : 'none';
+  // A non-custodian who somehow lands on a custodian tab goes back to their own.
+  if (!invCanManage && invTab !== 'mine') invSetTab('mine', document.getElementById('invTabMine'));
+
+  if (invCanManage) {
+    const a = await api('/api/inventory/assignments');
+    invAssigns = a.error ? [] : (a.assignments || []);
+  }
+
+  invFillTypeFilter();
+  invRender();
+}
+
+function invFillTypeFilter() {
+  const el = document.getElementById('invFType');
+  const keep = el.value;
+  el.innerHTML = '<option value="">All types</option>'
+    + Object.keys(INV_TYPES).map(t => `<option value="${t}">${INV_TYPES[t]}</option>`).join('');
+  el.value = keep;
+}
+
+function invSetTab(tab, el) {
+  invTab = tab;
+  document.querySelectorAll('#invTabs .tab').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  invRender();
+}
+
+function invClear() {
+  ['invSearch', 'invFType', 'invFStatus'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  invRender();
+}
+
+function invRender() {
+  const el = document.getElementById('invContent');
+
+  // Adding is contextual to the open tab, so the button says which it is.
+  // Assignments is a history view — nothing to add there.
+  document.getElementById('invAddBtn').style.display = invTab === 'assignments' ? 'none' : '';
+  document.getElementById('invAddBtnLabel').textContent = invTab === 'mine' ? 'Add My Equipment' : 'Add Item';
+
+  document.getElementById('invSubtitle').textContent = {
+    mine: 'Equipment issued to you.',
+    all: 'Everything the company owns, and who is holding it.',
+    assignments: 'Every spell of somebody holding something, including the ones already closed.',
+  }[invTab];
+
+  // Status only varies across the shared pool. Everything on My Equipment is
+  // by definition assigned, so the filter is noise there — and it is cleared
+  // on the way out, or a status picked on All Equipment would go on filtering
+  // from a control that is no longer on screen.
+  const showStatus = invTab === 'all';
+  document.getElementById('invFStatus').style.display = showStatus ? '' : 'none';
+  if (!showStatus) document.getElementById('invFStatus').value = '';
+
+  if (invCanManage) {
+    const n = s => invItems.filter(i => i.status === s).length;
+    document.getElementById('invTiles').innerHTML =
+      invTile('Total items', invItems.length) +
+      invTile('Assigned', n('assigned'), '#d97706') +
+      invTile('Available', n('available'), '#16a34a') +
+      invTile('Handover pending', invItems.filter(i => i.handover_status === 'pending_handover').length, '#dc2626');
+  }
+
+  if (invTab === 'assignments') { invRenderAssignments(el); return; }
+
+  const q = (document.getElementById('invSearch').value || '').toLowerCase().trim();
+  const type = document.getElementById('invFType').value;
+  const status = document.getElementById('invFStatus').value;
+
+  let items = invTab === 'mine'
+    ? invItems.filter(i => i.assigned_to_id && String(i.assigned_to_id) === String(invUserId))
+    : invItems;
+  if (type) items = items.filter(i => i.type === type);
+  if (status) items = items.filter(i => i.status === status);
+  if (q) items = items.filter(i => [i.name, i.brand, i.model, i.serial_number, i.assigned_to_name, i.notes]
+    .join(' ').toLowerCase().includes(q));
+
+  if (!items.length) {
+    el.innerHTML = `<div class="empty">${invTab === 'mine'
+      ? 'Nothing is issued to you. Anything you already hold can be added with the button above.'
+      : 'Nothing matches.'}</div>`;
+    return;
+  }
+
+  // My Equipment is a read-only view of your own kit, even for a custodian.
+  // Handing out and taking back is the register's job and lives on All
+  // Equipment, so nobody returns their own laptop to stock from the tab that
+  // is meant to show what they are holding.
+  const actions = invCanManage && invTab !== 'mine';
+  el.innerHTML = `<div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(232px,1fr))">${items.map(i => invCard(i, actions)).join('')}</div>`;
+}
+
+function invCard(item, withActions) {
+  const color = INV_STATUS_COLOR[item.status] || '#64748b';
+  const photo = item.photo
+    ? `<img src="${dtEscape(item.photo)}" alt="" style="width:100%;height:132px;object-fit:cover;display:block"/>`
+    : `<div style="height:132px;display:grid;place-items:center;background:var(--muted);font-size:34px">${INV_ICONS[item.type] || '📦'}</div>`;
+
+  // Brand and condition only. Model, serial, notes and the photo are one click
+  // away in the detail dialog, so the grid stays scannable.
+  const spec = [item.brand, INV_CONDITIONS[item.item_condition]].filter(Boolean).map(dtEscape).join(' · ');
+
+  const holder = item.assigned_to_name
+    ? `<div style="font-size:12px;color:#d97706;font-weight:600;margin-top:5px">👤 ${dtEscape(item.assigned_to_name)}</div>` : '';
+
+  // Who filed it, and only when that is not already obvious: on self-added kit
+  // the filer is the holder, and the line right above already says the name.
+  // Compare ids, not names — two people can share one.
+  const filedByOther = item.created_by && String(item.created_by) !== String(item.assigned_to_id);
+  const filedBy = (invTab === 'all' && item.created_by_name && filedByOther)
+    ? `<div style="font-size:11.5px;color:var(--faint);margin-top:4px">Added by ${dtEscape(item.created_by_name)}</div>` : '';
+
+  const pending = item.handover_status === 'pending_handover'
+    ? `<div style="font-size:11.5px;color:#dc2626;font-weight:700;margin-top:5px">⚠ Handover pending${item.return_reason ? ' · ' + dtEscape(INV_REASON_SHORT[item.return_reason] || item.return_reason) : ''}</div>` : '';
+
+  let buttons = '';
+  if (withActions) {
+    if (item.status === 'available') {
+      buttons += `<button class="action-btn edit" onclick="invOpenAssign(${item.id})">Assign</button>`;
+    }
+    if (item.handover_status === 'active' && item.assignment_id) {
+      buttons += `<button class="action-btn revise" onclick="invOpenHandover(${item.assignment_id})">Handover</button>`;
+    }
+    if (item.handover_status === 'pending_handover' && item.assignment_id) {
+      buttons += `<button class="action-btn done" onclick="invOpenReturn(${item.assignment_id})">Mark Returned</button>`;
+    }
+    buttons += `<button class="action-btn edit" onclick="invOpenEdit(${item.id})">Edit</button>`;
+    buttons += `<button class="action-btn delete" onclick="invDelete(${item.id})">Delete</button>`;
+  } else if (invTab === 'mine' && item.handover_status === 'active' && item.assignment_id) {
+    // The holder can only raise the intent. Confirming it is physically back
+    // stays with the custodian, so there is no Mark Returned here — once it is
+    // pending the card shows the badge and no button.
+    buttons += `<button class="action-btn revise" onclick="invOpenHandover(${item.assignment_id})">Return</button>`;
+  }
+
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-xs);display:flex;flex-direction:column">
+    <div onclick="invOpenDetail(${item.id})" style="cursor:pointer" title="Click for full details">
+      ${photo}
+      <div style="padding:12px 14px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="font-weight:700;font-size:14px;line-height:1.3">${dtEscape(item.name)}</div>
+          ${invPill(item.status, color)}
+        </div>
+        ${spec ? `<div style="font-size:12px;color:var(--muted-foreground);margin-top:4px">${spec}</div>` : ''}
+        ${filedBy}
+        ${holder}
+        ${pending}
+      </div>
+    </div>
+    ${buttons ? `<div style="padding:0 14px 12px;display:flex;flex-wrap:wrap;gap:6px;margin-top:auto">${buttons}</div>` : ''}
+  </div>`;
+}
+
+function invRenderAssignments(el) {
+  const q = (document.getElementById('invSearch').value || '').toLowerCase().trim();
+  const type = document.getElementById('invFType').value;
+
+  let rows = invAssigns;
+  if (type) rows = rows.filter(a => a.item_type === type);
+  if (q) rows = rows.filter(a => [a.item_name, a.brand, a.model, a.serial_number, a.user_name, a.assigned_by_name]
+    .join(' ').toLowerCase().includes(q));
+
+  if (!rows.length) { el.innerHTML = '<div class="empty">Nothing matches.</div>'; return; }
+
+  const body = rows.map(a => {
+    const thumb = a.photo
+      ? `<img src="${dtEscape(a.photo)}" onclick="event.stopPropagation();invOpenPhoto(${a.id},'assign')" style="width:38px;height:38px;object-fit:cover;border-radius:6px;cursor:zoom-in;display:block"/>`
+      : `<div style="width:38px;height:38px;border-radius:6px;background:var(--muted);display:grid;place-items:center;font-size:17px">${INV_ICONS[a.item_type] || '📦'}</div>`;
+
+    const state = a.handover_status === 'pending_handover' ? invPill('Pending return', '#dc2626')
+      : a.handover_status === 'returned' ? invPill('Returned', '#64748b')
+        : invPill('Active', '#16a34a');
+    const why = a.return_reason
+      ? `<div style="font-size:11.5px;color:var(--faint);margin-top:4px">${dtEscape(INV_REASON_SHORT[a.return_reason] || a.return_reason)}</div>` : '';
+
+    let act = '—';
+    if (a.handover_status === 'active') {
+      act = `<button class="action-btn revise" onclick="invOpenHandover(${a.id})">Handover</button>`;
+    } else if (a.handover_status === 'pending_handover') {
+      act = `<button class="action-btn done" onclick="invOpenReturn(${a.id})">Mark Returned</button>`;
+    }
+
+    return `<tr>
+      <td>${thumb}</td>
+      <td><div style="font-weight:600">${dtEscape(a.item_name)}</div><div style="font-size:11.5px;color:var(--faint)">${dtEscape([(INV_TYPES[a.item_type] || a.item_type) === a.item_name ? '' : (INV_TYPES[a.item_type] || a.item_type), a.brand, a.model].filter(Boolean).join(" · "))}${a.serial_number ? ' · SN: ' + dtEscape(a.serial_number) : ''}</div></td>
+      <td><div style="font-weight:600">${dtEscape(a.user_name)}</div><div style="font-size:11.5px;color:var(--faint)">${dtEscape(a.user_department || a.user_role || '')}</div></td>
+      <td style="white-space:nowrap">${invDate(a.assigned_at)}</td>
+      <td style="white-space:nowrap">${a.returned_at ? invDate(a.returned_at) : '—'}</td>
+      <td>${state}${why}</td>
+      <td>${act}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div class="users-grid"><table>
+    <thead><tr><th style="width:52px"></th><th>Item</th><th>Held by</th><th>Given on</th><th>Back on</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table></div>`;
+}
+
+function invOpenDetail(id) {
+  const i = invItems.find(x => String(x.id) === String(id));
+  if (!i) return;
+
+  const row = (label, value) => value
+    ? `<div style="display:flex;gap:14px;padding:8px 0;border-bottom:1px solid var(--border)">
+         <div style="width:130px;flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">${label}</div>
+         <div style="font-size:13px;white-space:pre-wrap">${dtEscape(String(value))}</div>
+       </div>` : '';
+
+  const photo = i.photo
+    ? `<img src="${dtEscape(i.photo)}" onclick="invOpenPhoto(${i.id},'item')" style="width:100%;max-height:230px;object-fit:cover;border-radius:10px;margin-bottom:14px;cursor:zoom-in;display:block"/>`
+    : `<div style="height:140px;display:grid;place-items:center;background:var(--muted);border-radius:10px;margin-bottom:14px;font-size:44px">${INV_ICONS[i.type] || '📦'}</div>`;
+
+  document.getElementById('invDetailTitle').innerHTML =
+    `${INV_ICONS[i.type] || '📦'} ${dtEscape(i.name)} ${invPill(i.status, INV_STATUS_COLOR[i.status] || '#64748b')}`;
+
+  document.getElementById('invDetailBody').innerHTML = photo
+    + row('Type', INV_TYPES[i.type] || i.type)
+    + row('Brand', i.brand)
+    + row('Model', i.model)
+    + row('Serial no.', i.serial_number)
+    + row('Condition', INV_CONDITIONS[i.item_condition] || i.item_condition)
+    + row('Held by', i.assigned_to_name)
+    + row('Given on', i.assigned_at ? invDate(i.assigned_at) : '')
+    + row('Added by', i.created_by_name)
+    + row('Notes', i.notes)
+    + row('Return reason', INV_REASON_SHORT[i.return_reason] || i.return_reason)
+    + row('Handover notes', i.handover_notes)
+    + (i.handover_status === 'pending_handover'
+      ? '<div class="alert error" style="display:block;margin-top:14px">⚠ Handover pending — waiting for the custodian to confirm they have it.</div>' : '');
+
+  document.getElementById('invDetailModal').classList.add('open');
+}
+
+function invOpenPhoto(id, from) {
+  const src = from === 'assign'
+    ? (invAssigns.find(a => String(a.id) === String(id)) || {}).photo
+    : (invItems.find(i => String(i.id) === String(id)) || {}).photo;
+  if (!src) return;
+  document.getElementById('invPhotoBig').src = src;
+  document.getElementById('invPhotoModal').classList.add('open');
+}
+
+// ── ADD / EDIT ────────────────────────────────────────
+function invResetForm() {
+  document.getElementById('invFieldType').value = 'laptop';
+  ['invFieldOther', 'invFieldBrand', 'invFieldModel', 'invFieldSerial', 'invFieldNotes', 'invFieldPhoto']
+    .forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('invFieldCondition').value = 'good';
+  document.getElementById('invPhotoPreview').style.display = 'none';
+  invShowErr('invErr', '');
+  invPhoto = null;
+  invTypeChanged();
+}
+
+// From My Equipment this logs kit the person already holds, and it lands
+// assigned to them. From All Equipment a custodian adds it to the shared pool
+// as unassigned stock.
+function invOpenAdd() {
+  invEditId = null;
+  invSelfAdd = invTab === 'mine';
+  invResetForm();
+  document.getElementById('invModalTitle').textContent = invSelfAdd ? 'Add to My Equipment' : 'Add Equipment';
+  document.getElementById('invSaveBtn').textContent = invSelfAdd ? 'Add to My Equipment' : 'Save Item';
+  // Condition is the custodian's assessment of stock. Somebody logging kit
+  // they already hold does not grade it, so it stays hidden and defaults to
+  // good.
+  document.getElementById('invFieldConditionWrap').style.display = invSelfAdd ? 'none' : '';
+  document.getElementById('invModal').classList.add('open');
+}
+
+function invOpenEdit(id) {
+  const i = invItems.find(x => String(x.id) === String(id));
+  if (!i) return;
+  invEditId = id;
+  invSelfAdd = false;
+  invResetForm();
+
+  document.getElementById('invFieldType').value = INV_TYPES[i.type] ? i.type : 'other';
+  // An 'other' item is named by whatever type was typed in, so that name goes
+  // back into the box it came from.
+  if (i.type === 'other') document.getElementById('invFieldOther').value = i.name || '';
+  document.getElementById('invFieldBrand').value = i.brand || '';
+  document.getElementById('invFieldModel').value = i.model || '';
+  document.getElementById('invFieldSerial').value = i.serial_number || '';
+  document.getElementById('invFieldCondition').value = i.item_condition || 'good';
+  document.getElementById('invFieldNotes').value = i.notes || '';
+  invTypeChanged();
+
+  if (i.photo) {
+    const p = document.getElementById('invPhotoPreview');
+    p.src = i.photo;
+    p.style.display = 'block';
+  }
+
+  document.getElementById('invModalTitle').textContent = 'Edit Equipment';
+  document.getElementById('invSaveBtn').textContent = 'Save Changes';
+  document.getElementById('invFieldConditionWrap').style.display = '';
+  document.getElementById('invModal').classList.add('open');
+}
+
+function invTypeChanged() {
+  document.getElementById('invFieldOtherWrap').style.display =
+    document.getElementById('invFieldType').value === 'other' ? '' : 'none';
+}
+
+// A phone photo is three or four megabytes, and every byte of it would end up
+// on the row and then be sent back on every load of the page. Draw it into a
+// canvas at a sane size first — what leaves the browser is usually under
+// 200KB, and it is still perfectly legible on the card.
+function invPickPhoto(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { showToast('That is not an image.', 'error'); event.target.value = ''; return; }
+  if (file.size > 10 * 1024 * 1024) { showToast('That photo is too large.', 'error'); event.target.value = ''; return; }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1000;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      invPhoto = canvas.toDataURL('image/jpeg', 0.82);
+      const preview = document.getElementById('invPhotoPreview');
+      preview.src = invPhoto;
+      preview.style.display = 'block';
+    };
+    // A file the browser cannot decode never fires onload, so say so rather
+    // than silently saving the item without its photo.
+    img.onerror = () => { showToast('That photo could not be read.', 'error'); event.target.value = ''; };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function invSave() {
+  const type = document.getElementById('invFieldType').value;
+  const other = document.getElementById('invFieldOther').value.trim();
+  const brand = document.getElementById('invFieldBrand').value.trim();
+  const model = document.getElementById('invFieldModel').value.trim();
+
+  if (type === 'other' && !other) return invShowErr('invErr', 'What kind of item is it?');
+  if (!brand) return invShowErr('invErr', 'Brand is required.');
+  if (!model) return invShowErr('invErr', 'Model is required.');
+  invShowErr('invErr', '');
+
+  const body = {
+    // No name field on the form — the type names the item, except for 'other',
+    // which is named by whatever type was typed in.
+    name: type === 'other' ? other : INV_TYPES[type],
+    type, brand, model,
+    serial_number: document.getElementById('invFieldSerial').value.trim(),
+    item_condition: document.getElementById('invFieldCondition').value,
+    notes: document.getElementById('invFieldNotes').value.trim(),
+  };
+  // Only when a new one was chosen: sending nothing leaves the photo already
+  // on the row alone, which is what editing anything else should do.
+  if (invPhoto) body.photo = invPhoto;
+
+  const r = invEditId
+    ? await api('/api/inventory/' + invEditId, 'PUT', body)
+    : await api(invSelfAdd ? '/api/inventory/self-add' : '/api/inventory', 'POST', body);
+  if (r.error) return invShowErr('invErr', r.error);
+
+  closeModal('invModal');
+  showToast(invEditId ? 'Item updated.' : (invSelfAdd ? 'Added to your equipment.' : 'Item added.'));
+  loadInventory();
+}
+
+async function invDelete(id) {
+  const i = invItems.find(x => String(x.id) === String(id));
+  if (!confirm(`Remove ${i ? i.name : 'this item'} from the register?\n\nThe record is kept, not erased.`)) return;
+  const r = await api('/api/inventory/' + id, 'DELETE');
+  if (r.error) { showToast(r.error, 'error'); return; }
+  showToast('Removed.');
+  loadInventory();
+}
+
+// ── ASSIGN ────────────────────────────────────────────
+async function invOpenAssign(itemId) {
+  const i = invItems.find(x => String(x.id) === String(itemId));
+  if (!i) return;
+  invAssignItemId = itemId;
+  invShowErr('invAssignErr', '');
+  document.getElementById('invAssignItem').textContent =
+    `${i.name} — ${[i.brand, i.model].filter(Boolean).join(' ')}`;
+
+  const sel = document.getElementById('invAssignUser');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  document.getElementById('invAssignModal').classList.add('open');
+
+  if (!invPeople.length) {
+    const people = await api('/api/inventory/people');
+    invPeople = Array.isArray(people) ? people : [];
+  }
+  sel.innerHTML = '<option value="">Select a person…</option>'
+    + invPeople.map(p => `<option value="${p.id}">${dtEscape(p.name)}${p.department ? ' — ' + dtEscape(p.department) : ''}</option>`).join('');
+}
+
+async function invDoAssign() {
+  const userId = document.getElementById('invAssignUser').value;
+  if (!userId) return invShowErr('invAssignErr', 'Pick a person.');
+
+  const r = await api('/api/inventory/assign', 'POST', { item_id: invAssignItemId, user_id: userId });
+  if (r.error) return invShowErr('invAssignErr', r.error);
+
+  closeModal('invAssignModal');
+  showToast('Equipment assigned.');
+  loadInventory();
+}
+
+// ── HANDOVER (step one) ───────────────────────────────
+// What the two lists know about one assignment, whichever tab it was opened
+// from: an item card knows it by assignment_id, the history table by its own
+// row id.
+function invAssignInfo(assignmentId) {
+  const item = invItems.find(i => String(i.assignment_id) === String(assignmentId));
+  if (item) return { name: item.name, holder: item.assigned_to_name || '', reason: item.return_reason || '' };
+  const a = invAssigns.find(x => String(x.id) === String(assignmentId));
+  if (a) return { name: a.item_name, holder: a.user_name || '', reason: a.return_reason || '' };
+  return { name: 'this item', holder: '', reason: '' };
+}
+
+function invOpenHandover(assignmentId) {
+  const info = invAssignInfo(assignmentId);
+  invHandoverId = assignmentId;
+  invShowErr('invHandoverErr', '');
+
+  // The custodian is starting a handover for somebody else; the holder is
+  // giving their own kit back. Same act, same endpoint — only the wording and
+  // the reasons on offer differ.
+  const mine = !invCanManage || invTab === 'mine';
+  document.getElementById('invHandoverTitle').textContent = mine ? 'Return Equipment' : 'Initiate Handover';
+  document.getElementById('invHandoverDesc').textContent = mine
+    ? `${info.name} — it stays listed as yours until the custodian confirms they have it.`
+    : `${info.name} — currently with ${info.holder || 'somebody'}.`;
+  document.getElementById('invHandoverBtn').textContent = mine ? 'Request Return' : 'Mark as Handover Pending';
+  document.getElementById('invHandoverReason').innerHTML =
+    invReasonOptions(mine ? INV_HOLDER_REASONS : Object.keys(INV_REASONS));
+  document.getElementById('invHandoverReason').value = '';
+  document.getElementById('invHandoverNotes').value = '';
+  document.getElementById('invHandoverModal').classList.add('open');
+}
+
+async function invDoHandover() {
+  const reason = document.getElementById('invHandoverReason').value;
+  if (!reason) return invShowErr('invHandoverErr', 'Pick a reason.');
+
+  const r = await api('/api/inventory/handover/' + invHandoverId, 'POST',
+    { reason, notes: document.getElementById('invHandoverNotes').value.trim() });
+  if (r.error) return invShowErr('invHandoverErr', r.error);
+
+  closeModal('invHandoverModal');
+  showToast('Marked as coming back — the custodian will confirm receipt.');
+  loadInventory();
+}
+
+// ── RETURN (step two) ─────────────────────────────────
+function invOpenReturn(assignmentId) {
+  const info = invAssignInfo(assignmentId);
+  invReturnId = assignmentId;
+  invShowErr('invReturnErr', '');
+  document.getElementById('invReturnDesc').textContent =
+    `${info.name}${info.holder ? ' from ' + info.holder : ''} — confirm you have it back.`;
+  document.getElementById('invReturnReason').innerHTML = invReasonOptions(Object.keys(INV_REASONS));
+  // Prefilled with whatever was claimed at step one, but still editable: this
+  // is the final word on where the item lands.
+  document.getElementById('invReturnReason').value = info.reason || '';
+  invReturnReasonChanged();
+  document.getElementById('invReturnModal').classList.add('open');
+}
+
+function invReturnReasonChanged() {
+  document.getElementById('invReturnEffect').innerHTML = {
+    offboarding: 'Goes back into <b>available</b> stock and can be handed out again.',
+    damaged: 'Marked <b>damaged</b> — it cannot be handed out.',
+    retired: 'Marked <b>retired</b> — it cannot be handed out.',
+  }[document.getElementById('invReturnReason').value] || '';
+}
+
+async function invDoReturn() {
+  const reason = document.getElementById('invReturnReason').value;
+  if (!reason) return invShowErr('invReturnErr', 'Pick a reason.');
+
+  const r = await api('/api/inventory/return/' + invReturnId, 'POST', { reason });
+  if (r.error) return invShowErr('invReturnErr', r.error);
+
+  closeModal('invReturnModal');
+  showToast(r.itemStatus === 'available' ? 'Back in stock.' : `Returned and marked ${r.itemStatus}.`);
+  loadInventory();
 }
 
 // ══════════════════════════════════════════════════════

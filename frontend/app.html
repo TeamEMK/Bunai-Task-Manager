@@ -102,6 +102,10 @@
     </div>
 
     <div class="nav-section">Inventory &amp; Sales</div>
+    <div class="nav-item" id="nav-inventory" onclick="navigate('inventory',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      <span class="nav-label-text">Inventory</span>
+    </div>
     <div class="nav-item" id="nav-ims" style="display:none" onclick="navigate('ims',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
       <span class="nav-label-text">IMS</span>
@@ -354,6 +358,47 @@
   </div>
 
   <!-- ── PROFILE ── -->
+  <!-- ── INVENTORY — company equipment, and who is holding it ──
+       Everybody opens this tab, but it shows two different jobs. To most people
+       it is "what am I holding, and how do I give it back". To an admin it is
+       the register: what is in stock, what is out, and with whom. The extra
+       tabs and every lifecycle button only appear for the second, and the API
+       refuses them for the first regardless. -->
+  <div id="page-inventory" class="page">
+    <div class="page-header">
+      <div class="tab-group" id="invTabs">
+        <div class="tab active" id="invTabMine" onclick="invSetTab('mine',this)">My Equipment</div>
+        <div class="tab" id="invTabAll" style="display:none" onclick="invSetTab('all',this)">All Equipment</div>
+        <div class="tab" id="invTabAssign" style="display:none" onclick="invSetTab('assignments',this)">Assignments</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" id="invAddBtn" onclick="invOpenAdd()">+ <span id="invAddBtnLabel">Add Item</span></button>
+        <button class="btn btn-outline" onclick="loadInventory()">Refresh</button>
+      </div>
+    </div>
+
+    <div id="invSubtitle" style="font-size:13px;color:var(--muted-foreground);margin:-10px 0 14px"></div>
+
+    <!-- The register at a glance. Only the custodian sees it: on My Equipment
+         the four numbers would all be "what you are holding", counted four ways. -->
+    <div id="invTiles" style="display:none;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+
+    <div class="cp-filter-row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;align-items:center">
+      <input id="invSearch" type="text" placeholder="Search brand, model, serial, person…" oninput="invRender()" style="min-width:240px;flex:1;max-width:360px"/>
+      <select id="invFType" onchange="invRender()"><option value="">All types</option></select>
+      <select id="invFStatus" onchange="invRender()" style="display:none">
+        <option value="">All status</option>
+        <option value="available">Available</option>
+        <option value="assigned">Assigned</option>
+        <option value="damaged">Damaged</option>
+        <option value="retired">Retired</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="invClear()">Clear</button>
+    </div>
+
+    <div id="invContent"><div class="empty">Loading…</div></div>
+  </div>
+
   <div id="page-ims" class="page" style="padding:0;">
     <div id="imsConfigNote" style="display:none;margin:40px auto;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px 30px;">
       <h2 style="margin:0 0 10px;font-size:18px;color:var(--foreground);">📦 Inventory (IMS) — almost ready</h2>
@@ -1476,6 +1521,131 @@
         <button class="btn btn-outline" id="hrDetailDelBtn" style="color:#dc2626;border-color:#f3c0c0">Delete</button>
       </div>
       <button class="btn btn-outline" onclick="closeModal('hrDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add / edit an item. The same form serves three jobs, and the title says
+     which: adding to the shared pool, logging kit you already hold, or
+     correcting a row that is already there. -->
+<div class="modal-overlay" id="invModal">
+  <div class="modal" style="width:680px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="invModalTitle">Add Equipment</h3>
+    <div class="alert error" id="invErr"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Type *</label>
+        <select id="invFieldType" onchange="invTypeChanged()">
+          <option value="laptop">Laptop</option>
+          <option value="keyboard">Keyboard</option>
+          <option value="mouse">Mouse</option>
+          <option value="mobile">Mobile</option>
+          <option value="sim">SIM</option>
+          <option value="charger">Charger</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group" id="invFieldOtherWrap" style="display:none"><label>Specify type *</label><input id="invFieldOther" placeholder="e.g. Monitor, Headphones"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Brand *</label><input id="invFieldBrand" placeholder="e.g. Dell, Apple, Samsung"/></div>
+      <div class="form-group"><label>Model *</label><input id="invFieldModel" placeholder="e.g. XPS 15, iPhone 14"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Serial number</label><input id="invFieldSerial" placeholder="Serial / IMEI / SIM no."/></div>
+      <div class="form-group" id="invFieldConditionWrap"><label>Condition</label>
+        <select id="invFieldCondition">
+          <option value="new">New</option>
+          <option value="good" selected>Good</option>
+          <option value="fair">Fair</option>
+          <option value="poor">Poor</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="invFieldNotes" rows="2" placeholder="Anything worth knowing about this one…"></textarea></div>
+    <div class="form-group">
+      <label>Photo</label>
+      <input type="file" id="invFieldPhoto" accept="image/*" onchange="invPickPhoto(event)"/>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:5px">Shrunk before it is sent, so a phone photo is fine.</div>
+      <img id="invPhotoPreview" alt="" style="display:none;margin-top:10px;max-height:150px;border-radius:8px;border:1px solid var(--border)"/>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('invModal')">Cancel</button>
+      <button class="btn btn-primary" id="invSaveBtn" onclick="invSave()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hand an item to somebody -->
+<div class="modal-overlay" id="invAssignModal">
+  <div class="modal" style="width:480px;max-width:94vw">
+    <h3>Assign Equipment</h3>
+    <div class="alert error" id="invAssignErr"></div>
+    <div style="font-weight:600;font-size:14px;margin-bottom:14px" id="invAssignItem"></div>
+    <div class="form-group"><label>Assign to *</label>
+      <select id="invAssignUser"><option value="">Loading…</option></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('invAssignModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="invDoAssign()">Assign</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step one of a return: say it is coming back. Raised either by the
+     custodian when somebody is leaving, or by the holder themselves — same
+     endpoint, same dialog, only the wording differs. -->
+<div class="modal-overlay" id="invHandoverModal">
+  <div class="modal" style="width:480px;max-width:94vw">
+    <h3 id="invHandoverTitle">Initiate Handover</h3>
+    <div class="alert error" id="invHandoverErr"></div>
+    <div style="font-size:13px;color:var(--muted-foreground);margin-bottom:14px" id="invHandoverDesc"></div>
+    <div class="form-group"><label>Reason *</label>
+      <!-- Built in JS: the holder is offered fewer reasons than the custodian. -->
+      <select id="invHandoverReason"></select>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="invHandoverNotes" rows="3" placeholder="Condition at handover, anything else…"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('invHandoverModal')">Cancel</button>
+      <button class="btn btn-yellow" id="invHandoverBtn" onclick="invDoHandover()">Mark as Handover Pending</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step two: the custodian has it in hand. The reason chosen here is the
+     final word and decides whether the item goes back into stock. -->
+<div class="modal-overlay" id="invReturnModal">
+  <div class="modal" style="width:480px;max-width:94vw">
+    <h3>Confirm Return</h3>
+    <div class="alert error" id="invReturnErr"></div>
+    <div style="font-size:13px;color:var(--muted-foreground);margin-bottom:14px" id="invReturnDesc"></div>
+    <div class="form-group"><label>Reason *</label>
+      <select id="invReturnReason" onchange="invReturnReasonChanged()"></select>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:6px" id="invReturnEffect"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('invReturnModal')">Cancel</button>
+      <button class="btn btn-green" onclick="invDoReturn()">Confirm Return</button>
+    </div>
+  </div>
+</div>
+
+<!-- The card carries the essentials; everything else is one click away here. -->
+<div class="modal-overlay" id="invDetailModal">
+  <div class="modal" style="width:560px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="invDetailTitle">Equipment</h3>
+    <div id="invDetailBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('invDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Photo, full size -->
+<div class="modal-overlay" id="invPhotoModal">
+  <div class="modal" style="width:720px;max-width:94vw;padding:14px">
+    <img id="invPhotoBig" alt="" style="width:100%;border-radius:10px;display:block"/>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('invPhotoModal')">Close</button>
     </div>
   </div>
 </div>

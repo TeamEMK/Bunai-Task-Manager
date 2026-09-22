@@ -354,6 +354,42 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // ── INVENTORY — company equipment and who is holding it ──
+  // Two tables, not one. The item is a thing the company owns and keeps owning;
+  // an assignment is one spell of somebody holding it. Keeping the spells as
+  // their own rows is what lets the register answer "who had this laptop last
+  // year" — a `holder` column on the item would only ever know about today.
+  ['inventory_items', `CREATE TABLE inventory_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(30) NOT NULL,
+    brand VARCHAR(255) DEFAULT '',
+    model VARCHAR(255) DEFAULT '',
+    serial_number VARCHAR(255) DEFAULT '',
+    photo LONGTEXT DEFAULT NULL,
+    item_condition VARCHAR(20) DEFAULT 'good',
+    status VARCHAR(20) DEFAULT 'available',
+    notes TEXT,
+    created_by INT DEFAULT NULL,
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  // One spell of somebody holding an item. Closed by a return rather than
+  // deleted, so the register keeps the history of who held what.
+  ['inventory_assignments', `CREATE TABLE inventory_assignments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    item_id INT NOT NULL,
+    user_id INT NOT NULL,
+    assigned_by INT NOT NULL,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    returned_at DATETIME DEFAULT NULL,
+    handover_status VARCHAR(20) DEFAULT 'active',
+    handover_notes TEXT,
+    return_reason VARCHAR(20) DEFAULT NULL
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
 ];
 
 // Columns added after a table first shipped. [table, column, DDL fragment]
@@ -484,6 +520,15 @@ const INDEXES = [
   // Link back to the login account, and the default list ordering.
   ['hr_employees', 'idx_user', 'user_id'],
   ['hr_employees', 'idx_status_name', 'employment_status, full_name'],
+
+  // ── inventory ──
+  // The grid filters on status and type; both assignment lookups are by item
+  // or by person, and "what is still out" is a query on the spell's state.
+  ['inventory_items', 'idx_inventory_status', 'status'],
+  ['inventory_items', 'idx_inventory_type', 'type'],
+  ['inventory_assignments', 'idx_inv_assign_item', 'item_id'],
+  ['inventory_assignments', 'idx_inv_assign_user', 'user_id'],
+  ['inventory_assignments', 'idx_inv_assign_status', 'handover_status'],
 
   // ── users ──
   // HOD scoping: "SELECT id FROM users WHERE department=? AND role NOT IN (…)"
