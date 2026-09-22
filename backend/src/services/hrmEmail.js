@@ -49,10 +49,9 @@ const para = (html) =>
 const esc = (v) => String(v == null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// The note the office typed goes to the candidate as well as the interviewer -
-// it is usually the part that is actually about them: where to come, who to
-// ask for, what to bring. Set apart from the template text because a person
-// wrote it.
+// The note the office typed, shown to the candidate and to nobody else. It is
+// the part of the letter that is actually about them - which floor, what to
+// bring - so it is set apart from the template text a machine wrote.
 function note(text) {
   const t = String(text == null ? '' : text).trim();
   if (!t) return '';
@@ -172,9 +171,13 @@ function buildRejectedEmail(c) {
   return { subject: 'Update on your application', html, text: stripTags(body) };
 }
 
-// The interviewer's own letter. Deliberately not the candidate's: it carries
-// the phone number and the internal notes, which is exactly what the person
-// taking the interview needs and exactly what the candidate must not see.
+// The interviewer's own letter. Not the candidate's: it carries the phone
+// number and the address, which is how the person taking the interview reaches
+// them if something changes on the day.
+//
+// The Notes box is deliberately absent. What gets typed there is written for
+// the candidate - which floor, what to bring - so it belongs in their letter,
+// and repeating it here only pads a page somebody is skimming for a number.
 function buildInterviewerEmail(c) {
   const when = [longDate(c.reschedule_date || c.interview_date),
                 niceTime(c.reschedule_time || c.interview_time)].filter(Boolean).join(', ');
@@ -186,9 +189,8 @@ function buildInterviewerEmail(c) {
         ['Date & time', when],
         ['Candidate phone', esc(c.phone)],
         ['Candidate email', esc(c.email)],
-        ['Notes', esc(c.notes)],
       ])
-    + para('The candidate has been sent the date and time, and the note, as well.');
+    + para('The candidate has been sent the date and time separately.');
   const html = email.shell({
     preheader: `Interview with ${c.name}${when ? ' — ' + when : ''}`,
     eyebrow: 'INTERVIEW SCHEDULED', eyebrowColor: '#1a56db',
