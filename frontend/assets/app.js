@@ -8847,7 +8847,7 @@ function renderEmp360(d) {
     return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
       <span style="width:104px;font-size:12px;color:var(--muted-foreground)">${nice}</span>
       <span style="flex:1;height:8px;background:var(--muted);border-radius:99px;overflow:hidden">
-        <span style="display:block;height:100%;width:${v}%;background:${gradeColor(v >= 85 ? 'Excellent' : v >= 70 ? 'Good' : v >= 50 ? 'Average' : 'x')}"></span></span>
+        <span style="display:block;height:100%;width:${100 + v}%;background:${gradeColor(v >= -15 ? 'Excellent' : v >= -30 ? 'Good' : v >= -50 ? 'Average' : 'x')}"></span></span>
       <span style="width:42px;text-align:right;font-size:12px;font-weight:700">${v}</span>
       <span style="width:34px;text-align:right;font-size:11px;color:var(--faint)">${sc.weights[k]}%</span></div>`;
   }).join('');
@@ -8879,6 +8879,9 @@ function renderEmp360(d) {
         </div>
         <div style="font-size:12px;color:var(--muted-foreground);margin-top:8px">
           ${dtEscape(d.user.name)} · ${dtEscape(d.user.department)} · unweighted average ${sc.average ?? '—'}
+        </div>
+        <div style="font-size:11px;color:var(--faint);margin-top:6px">
+          Scores run −100 to 0 — 0 means nothing slipped.
         </div>`)}
       ${card(label('Score Breakdown') + catRows)}
     </div>
@@ -8905,7 +8908,7 @@ function renderEmp360(d) {
         <th>Week</th><th>Committed</th><th>Achieved</th><th>Gap</th><th>Tasks</th><th>Pending</th><th></th>
       </tr></thead><tbody>${weekly}</tbody></table></div>
       <div style="font-size:11px;color:var(--faint);margin-top:8px">
-        Weekly scores run −100 to 0, where 0 means nothing slipped. Gap is achieved minus committed, so positive beats the commitment.
+        Gap is achieved minus committed, so positive beats the commitment.
       </div>`)}`;
 }
 

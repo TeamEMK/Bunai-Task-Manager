@@ -113,18 +113,28 @@ router.get('/compliance/employee/:id', requireAuth, asyncRoute(async (req, res) 
     list: clientRows,
   };
 
-  // ── Scorecard. Each section is 0-100, or null when it does not apply to this
-  // employee — a null section is dropped and its weight shared among the rest,
-  // so nobody is penalised for work they were never given.
-  const clamp = n => Math.max(0, Math.min(100, n));
+  // ── Scorecard. Each section is a SHORTFALL in [-100, 0]: 0 means nothing
+  // slipped, -100 that nothing landed. It weighs exactly what it weighed before
+  // — the same completion, overdue and revision terms — only read from the other
+  // end: how far short of perfect the section is, rather than how far along it
+  // got. A 60 is now written -40.
+  //
+  // That is the scale utils/scores.js already defines and the one the
+  // week-by-week table further down has always been on, so the page finally
+  // speaks one language instead of two.
+  //
+  // A section is null when it does not apply to this employee; a null section is
+  // dropped and its weight shared among the rest, so nobody is penalised for
+  // work they were never given.
+  const shortfall = n => round1(Math.max(0, Math.min(100, n)) - 100);
   const cat = {
     delegation: delegation.total > 0
-      ? round1(clamp((delegation.completed / delegation.total) * 100 - (delegation.overdue / delegation.total) * 30 - (delegation.revised / delegation.total) * 15))
+      ? shortfall((delegation.completed / delegation.total) * 100 - (delegation.overdue / delegation.total) * 30 - (delegation.revised / delegation.total) * 15)
       : null,
     checklist: checklist.total > 0
-      ? round1(clamp((checklist.completed / checklist.total) * 100 - (checklist.overdue / checklist.total) * 30))
+      ? shortfall((checklist.completed / checklist.total) * 100 - (checklist.overdue / checklist.total) * 30)
       : null,
-    clients: clients.total > 0 ? round1(clamp((clients.active / clients.total) * 100)) : null,
+    clients: clients.total > 0 ? shortfall((clients.active / clients.total) * 100) : null,
   };
   // Daily reports and meetings used to be scored here too; their share is
   // spread over what is left.
@@ -134,8 +144,11 @@ router.get('/compliance/employee/:id', requireAuth, asyncRoute(async (req, res) 
   let wSum = 0, wTot = 0;
   for (const k of present) { wSum += cat[k] * weights[k]; wTot += weights[k]; }
   const final = wTot ? round1(wSum / wTot) : null;
+  // The same four bands as before, shifted onto the new scale: -15 is where 85
+  // used to sit, -30 where 70 did, -50 where 50 did. Nobody's grade moves
+  // because the number is now written the other way round.
   const grade = final == null ? 'N/A'
-    : final >= 85 ? 'Excellent' : final >= 70 ? 'Good' : final >= 50 ? 'Average' : 'Needs Improvement';
+    : final >= -15 ? 'Excellent' : final >= -30 ? 'Good' : final >= -50 ? 'Average' : 'Needs Improvement';
   const scores = { categories: cat, weights, average, final, grade };
 
   // ── Weekly: what they committed on Monday vs what the week actually scored.
