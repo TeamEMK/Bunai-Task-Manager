@@ -7070,16 +7070,23 @@ function openFMSDoneModal(rowIdx) {
   // Set plan display
   document.getElementById('fmsDonePlanDisplay').textContent = row.planValue || '—';
 
-  // What saving will actually do. On a sheet that derives the actual date from a
-  // checkbox, the app ticks that checkbox and the sheet fills the date — so
-  // showing a timestamp here would promise something it does not write.
+  // The date this is being marked done on — the day, without the clock, which
+  // is what anybody reading the row afterwards is looking for.
   const now = new Date();
   const pad = n => String(n).padStart(2,'0');
-  const actualStr = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const actualStr = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
+  document.getElementById('fmsDoneActualDisplay').textContent = actualStr;
+
+  // Where a sheet stamps the date itself off a checkbox, the app ticks the box
+  // and the sheet does the writing. The date above is still the right answer,
+  // but it is worth saying which hand writes it — quietly, under the box,
+  // rather than in place of the date.
   const completeCol = (window._fmsActiveStepData || {}).complete_col || '';
-  document.getElementById('fmsDoneActualDisplay').textContent = completeCol
-    ? `✓ tick "${completeCol}" — the sheet fills the date itself`
-    : actualStr;
+  const noteEl = document.getElementById('fmsDoneActualNote');
+  if (noteEl) {
+    noteEl.textContent = completeCol ? `the sheet stamps this when "${completeCol}" is ticked` : '';
+    noteEl.style.display = completeCol ? 'block' : 'none';
+  }
 
   // Check delay: actual > plan = delayed
   const planVal = (row.planValue || '').trim();
