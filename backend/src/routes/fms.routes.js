@@ -616,6 +616,25 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
     return res.status(400).json({ error: 'Neither an Actual column nor a completion checkbox is configured for this step' });
   }
 
+  // What is in the Actual cell right now, as a formula rather than as the blank
+  // it renders to. The two guards below both turn on this one cell.
+  const actualCell = actualCol ? `${tabName}!${actualCol}${rowNumber}` : null;
+  const actualFormula = actualCell
+    ? String(((await google.readFormulas(spreadsheetId, actualCell))[0] || [])[0] || '')
+    : '';
+
+  // Writing our own timestamp into a cell that holds =if(H8,H8,if(J8,$A$1,""))
+  // replaces the formula with a number. It looks right that once, and every
+  // later tick on that row fills nothing, because the thing that did the
+  // filling is gone. So this refuses rather than breaking the row.
+  if (!completeCol && actualFormula.startsWith('=')) {
+    return res.status(400).json({
+      error: `${actualCol}${rowNumber} is a formula in the sheet — it fills itself when the step's `
+        + `Status box is ticked. Set that Status column on this step in FMS Admin; writing a `
+        + `timestamp here would delete the formula.`,
+    });
+  }
+
   const data = completeCol
     ? [{ range: `${tabName}!${completeCol}${rowNumber}`, values: [[true]] }]
     : [{ range: `${tabName}!${actualCol}${rowNumber}`, values: [[istSheetSerialNow()]] }];
@@ -653,12 +672,29 @@ router.post('/fms-tasks/:fmsId/steps/:stepId/done', requireAuth, asyncRoute(asyn
   // The row just changed — drop any cached read of this sheet.
   google.invalidateSheet(spreadsheetId);
 
+  // Ticking the box only completes the row if the sheet fills the date in
+  // answer to it. When that formula is missing from this particular row - it
+  // is lost the moment anybody types over the cell and deletes it - the tick
+  // lands, the doer's name lands, and the row stays pending with nothing to
+  // show why. So look, and say so.
+  let warning = null;
+  if (completeCol && actualCell) {
+    const after = await google.readValues(spreadsheetId, actualCell, { fresh: true });
+    const filled = String(((after[0] || [])[0] ?? '')).trim();
+    if (!filled) {
+      warning = `Ticked, but the sheet did not fill ${actualCol}${rowNumber}, so this row stays `
+        + `pending. That cell has lost its formula — copy it down from a row below and the date `
+        + `will appear.`;
+    }
+  }
+
   res.json({
     success: true,
     // Which mechanism was used, so the screen can say "ticked Status" rather
     // than implying a date was written.
     completedBy: completeCol ? 'checkbox' : 'timestamp',
     column: completeCol || actualCol,
+    warning,
   });
 }));
 

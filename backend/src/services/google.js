@@ -115,6 +115,18 @@ async function readValues(spreadsheetId, range, { fresh = false } = {}) {
 
 // Drops cached reads for a spreadsheet — called after we write to it, so the
 // next read does not serve the value we just replaced.
+// The same cells, as the sheet stores them rather than as it renders them. A
+// cell that shows as blank may hold a formula waiting on something else, and
+// the difference decides whether writing to it is safe. Never cached: it is
+// read to decide a write.
+async function readFormulas(spreadsheetId, range) {
+  const api = await getSheetsClient(['https://www.googleapis.com/auth/spreadsheets']);
+  const res = await api.spreadsheets.values.get({
+    spreadsheetId, range, valueRenderOption: 'FORMULA',
+  });
+  return res.data.values || [];
+}
+
 function invalidateSheet(spreadsheetId) {
   for (const key of _valuesCache.keys()) {
     if (key.startsWith(`${spreadsheetId}!`)) _valuesCache.delete(key);
@@ -203,6 +215,7 @@ function prewarm() {
 }
 
 module.exports = {
+  readFormulas,
   getSheetsClient, getReadClient, getWriteClient, READ_SCOPE, WRITE_SCOPE,
   readValues, invalidateSheet,
   listTabs, resolveTabNameByGid, findTabByTitle, forgetTabs,

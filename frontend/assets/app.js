@@ -4670,13 +4670,15 @@ function toggleSidebarPin(){
   else apply();
 })();
 
-function showToast(msg,type='success') {
+// `ms` because not every message is the same size: a tick confirmation is read
+// in a glance, an explanation of why the sheet did nothing is not.
+function showToast(msg,type='success',ms=3000) {
   const t=document.createElement('div');
   const bg=type==='error'?'#dc2626':'var(--foreground)';
-  t.style.cssText=`position:fixed;bottom:24px;right:24px;background:${bg};color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.2);animation:fadeIn .3s ease`;
+  t.style.cssText=`position:fixed;bottom:24px;right:24px;max-width:min(420px,calc(100vw - 48px));background:${bg};color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.5;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.2);animation:fadeIn .3s ease`;
   t.textContent=msg;
   document.body.appendChild(t);
-  setTimeout(()=>t.remove(),3000);
+  setTimeout(()=>t.remove(),ms);
 }
 
 // ══════════════════════════════════════════════════════
@@ -7240,7 +7242,14 @@ async function saveFMSDone() {
   if (r.error) { errEl.textContent = r.error; errEl.style.display = 'block'; return; }
 
   closeModal('fmsDoneModal');
-  showToast('✅ Saved to Google Sheet!');
+  // The tick can land and the row still not complete, when the sheet has no
+  // formula left to answer it. Saying "Saved" then would be a lie the doer
+  // only discovers when the row is still sitting there.
+  if (r.warning) {
+    showToast('⚠️ ' + r.warning, 'error', 12000);
+  } else {
+    showToast('✅ Saved to Google Sheet!');
+  }
   // Reload rows
   loadFMSTaskRows();
 }
