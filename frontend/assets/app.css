@@ -90,7 +90,26 @@ body{
   z-index:100;display:flex;flex-direction:column;
   transition:width .25s ease;overflow:hidden;
 }
-.sidebar:hover{ width:var(--rail-open); box-shadow:var(--shadow-md); }
+.sidebar:hover, .sidebar.pinned{ width:var(--rail-open); box-shadow:var(--shadow-md); }
+
+/* The pin. Out of the way until the rail is open — at 60px there is no room
+   for it beside the mark, and a button nobody can reach is worse than none.
+   Pinned, it stays lit and tilts, so the state reads without a tooltip. */
+.sidebar-pin{
+  margin-left:auto;flex-shrink:0;
+  width:30px;height:30px;display:grid;place-items:center;
+  background:transparent;border:0;border-radius:8px;cursor:pointer;padding:0;
+  color:var(--sidebar-muted);
+  opacity:0;pointer-events:none;
+  transition:opacity .2s .1s, color .15s, background .15s, transform .2s;
+}
+.sidebar:hover .sidebar-pin, .sidebar.pinned .sidebar-pin{ opacity:1;pointer-events:auto; }
+.sidebar-pin:hover{ background:var(--sidebar-hover);color:var(--sidebar-foreground); }
+.sidebar-pin:focus-visible{ outline:2px solid var(--brand);outline-offset:2px; }
+.sidebar.pinned .sidebar-pin{ color:var(--brand);transform:rotate(-35deg); }
+.sidebar-pin svg{ width:17px;height:17px;display:block; }
+/* A drawer on a phone is either open or shut; there is nothing to pin. */
+@media (max-width:768px){ .sidebar-pin{display:none;} }
 
 .sidebar-logo{
   padding:12px;border-bottom:1px solid var(--sidebar-border);
@@ -124,7 +143,8 @@ body{
   opacity:0;transition:opacity .2s .1s;white-space:nowrap;
   letter-spacing:0;padding-bottom:3px;
 }
-.sidebar:hover .logo-text, .sidebar:hover .logo-wordmark{opacity:1;}
+.sidebar:hover .logo-text, .sidebar:hover .logo-wordmark,
+.sidebar.pinned .logo-text, .sidebar.pinned .logo-wordmark{opacity:1;}
 /* White logo inside the app. The Bunai mark is a circle, not a wide wordmark, so it stays a fixed square — widening it would only pad empty space, and
    growing it to fill the expanded rail would blow out the 60px logo row.
    The wordmark beside it carries the name once the sidebar opens. */
@@ -132,7 +152,7 @@ body{
   width:26px;height:26px;object-fit:contain;flex-shrink:0;display:block;
   transition:width .25s ease,height .25s ease;
 }
-.sidebar:hover .sidebar-logo-img{ width:32px;height:32px; }
+.sidebar:hover .sidebar-logo-img, .sidebar.pinned .sidebar-logo-img{ width:32px;height:32px; }
 
 .nav{padding:10px 8px;flex:1;overflow-y:auto;overflow-x:hidden;}
 .nav::-webkit-scrollbar{width:3px;}
@@ -149,7 +169,7 @@ body{
 }
 .nav-item svg{width:18px;height:18px;flex-shrink:0;}
 .nav-label-text{opacity:0;transition:opacity .2s .1s;}
-.sidebar:hover .nav-label-text{opacity:1;}
+.sidebar:hover .nav-label-text, .sidebar.pinned .nav-label-text{opacity:1;}
 .nav-item:hover{background:var(--sidebar-hover);color:var(--sidebar-foreground);}
 .nav-item.active{background:var(--sidebar-active);color:var(--brand);font-weight:600;}
 /* Collapsed to a 60px rail the label is hidden, so the active row needs a mark
@@ -163,7 +183,7 @@ body{
    the item labels), revealed on hover; the spacing still groups the icons. */
 .nav-section{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--muted-foreground);padding:13px 14px 4px;white-space:nowrap;overflow:hidden;opacity:0;transition:opacity .2s .1s;user-select:none;}
 .nav-section:first-child{padding-top:6px;}
-.sidebar:hover .nav-section{opacity:1;}
+.sidebar:hover .nav-section, .sidebar.pinned .nav-section{opacity:1;}
 
 .sidebar-user{
   padding:12px;border-top:1px solid var(--sidebar-border);
@@ -176,7 +196,7 @@ body{
   color:var(--foreground);flex-shrink:0;
 }
 .su-info{opacity:0;transition:opacity .2s .1s;}
-.sidebar:hover .su-info{opacity:1;}
+.sidebar:hover .su-info, .sidebar.pinned .su-info{opacity:1;}
 .su-name{font-size:12px;font-weight:600;color:var(--sidebar-foreground);}
 .su-role{font-size:11px;color:var(--sidebar-muted);}
 
@@ -189,7 +209,7 @@ body{
 }
 .logout-btn:hover{background:rgba(252,165,165,.12);}
 .logout-label{opacity:0;transition:opacity .2s .1s;}
-.sidebar:hover .logout-label{opacity:1;}
+.sidebar:hover .logout-label, .sidebar.pinned .logout-label{opacity:1;}
 
 /* ══════════════════════════════════════
    MAIN
@@ -198,7 +218,7 @@ body{
 /* Sidebar expands -> content slides across instead of being covered. Needs the
    sibling combinator because .sidebar is position:fixed and can't push on its
    own; both transitions share the same .25s so they move as one. */
-.sidebar:hover ~ .main{ margin-left:var(--rail-open); }
+.sidebar:hover ~ .main, .sidebar.pinned ~ .main{ margin-left:var(--rail-open); }
 /* Translucent + blurred so content scrolling underneath stays faintly visible. */
 .topbar{
   background:color-mix(in srgb,var(--card) 80%,transparent);
@@ -721,7 +741,7 @@ tbody tr:last-child td{border-bottom:none;}
   /* On phones the sidebar is an off-canvas drawer over a backdrop, so content
      must NOT be pushed. This resets the desktop push rule, which would other-
      wise win on specificity (0, 2, 1 beats 0, 1, 0) and shove the page off-screen. */
-  .main, .sidebar:hover ~ .main{margin-left:0;}
+  .main, .sidebar:hover ~ .main, .sidebar.pinned ~ .main{margin-left:0;}
   .topbar{padding:0 14px;height:54px;gap:10px;}
   .topbar-title{font-size:15px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .mobile-hamburger{display:flex;align-items:center;justify-content:center;}

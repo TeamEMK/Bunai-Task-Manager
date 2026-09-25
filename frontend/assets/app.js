@@ -4637,6 +4637,39 @@ async function logout() {
   window.location.replace('/');
 }
 
+// ── Sidebar pin ────────────────────────────────────────
+// The rail opens on hover, which is fine for a glance and tiring for an hour's
+// work. Pinning keeps it open; the choice is this browser's alone, so it lives
+// in localStorage rather than on the account.
+function toggleSidebarPin(){
+  const bar = document.getElementById('sidebar');
+  if (!bar) return;
+  const pinned = bar.classList.toggle('pinned');
+  const btn = document.getElementById('sidebarPin');
+  if (btn) {
+    btn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+    btn.title = pinned ? 'Unpin the menu' : 'Keep the menu open';
+  }
+  // Storage can be blocked outright in a private window; the pin still works
+  // for this visit, it just will not be remembered.
+  try { localStorage.setItem('sidebarPinned', pinned ? '1' : '0'); } catch (e) {}
+}
+
+// The class is set before paint by the snippet in app.html; this only catches
+// the button up with it.
+(function () {
+  const apply = () => {
+    const bar = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebarPin');
+    if (!bar || !btn) return;
+    const pinned = bar.classList.contains('pinned');
+    btn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+    btn.title = pinned ? 'Unpin the menu' : 'Keep the menu open';
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+})();
+
 function showToast(msg,type='success') {
   const t=document.createElement('div');
   const bg=type==='error'?'#dc2626':'var(--foreground)';
