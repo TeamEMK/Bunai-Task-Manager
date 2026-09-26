@@ -9,6 +9,11 @@
 // production host has no Word and no LibreOffice to convert one, and a PDF is
 // what should reach a candidate anyway — it looks the same everywhere and is
 // not edited by accident on the way to being signed.
+//
+// The shape follows the letter the sister company sends: a letterhead the page
+// is written under, the facts that matter set in bold so they can be checked
+// at a glance, and a page count at the foot so a two-page letter is visibly
+// two pages and nobody signs a stray first sheet.
 // ══════════════════════════════════════════════════════
 const PDFDocument = require('pdfkit');
 
@@ -28,6 +33,8 @@ const DOCUMENTS = [
   'Address Proof.',
 ];
 
+const COMPANY = 'Bunai Private Limited';
+
 // "2026-12-01" → "01/12/2026". The template writes its blanks as ___/___/____,
 // so the filled letter should read the same way round.
 function slashDate(value) {
@@ -39,7 +46,10 @@ function slashDate(value) {
 }
 
 const MARGIN = 62;          // a hair under an inch, so it prints inside any tray
+const FOOT = 40;            // room under the text for the page count
 const INK = '#000000';
+const QUIET = '#444444';
+const RULE = '#999999';
 const BODY_SIZE = 11.5;
 const LINE_GAP = 4.5;
 
@@ -52,62 +62,102 @@ const BOLD = 'Times-Bold';
 function build(offer) {
   const doc = new PDFDocument({
     size: 'A4',
-    margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
+    // Held open so the page count can be written once the page count is known.
+    bufferPages: true,
+    margins: { top: MARGIN, bottom: MARGIN + FOOT, left: MARGIN, right: MARGIN },
     info: {
       Title: `Offer Letter — ${offer.name || ''}`,
-      Author: 'Bunai Private Limited',
+      Author: offer.company || COMPANY,
       Subject: `Offer of employment${offer.position ? ` — ${offer.position}` : ''}`,
     },
   });
 
   const width = doc.page.width - MARGIN * 2;
+
+  // Ranged left, not justified. pdfkit justifies each run of a mixed-weight
+  // sentence separately, which swallows the space between a bold word and the
+  // next plain one - "JaipurOffice" - and stretches the rest to hide it. A
+  // clean ragged right beats a justified line with a word missing a space.
   const para = (text, opts = {}) => {
     doc.font(opts.bold ? BOLD : FONT).fontSize(opts.size || BODY_SIZE).fillColor(INK)
-      .text(text, { width, align: opts.align || 'justify', lineGap: LINE_GAP, ...opts });
+      .text(text, { width, align: opts.align || 'left', lineGap: LINE_GAP, ...opts });
     doc.moveDown(opts.after ?? 0.55);
   };
-  // A label and its value on one line, the label bold as in the template.
-  const field = (label, value) => {
-    doc.font(BOLD).fontSize(BODY_SIZE).fillColor(INK)
-      .text(label, { continued: true, lineGap: LINE_GAP })
-      .font(FONT).text(' ' + (value || ''));
+
+  // A sentence made of alternating plain and bold runs. Everything a reader
+  // checks first — the role, the dates — is the bold half, and the runs are
+  // written continued so the line still justifies as one paragraph.
+  const rich = (runs, opts = {}) => {
+    doc.fontSize(BODY_SIZE).fillColor(INK);
+    runs.filter(r => r && r.t !== '').forEach((run, i, all) => {
+      doc.font(run.b ? BOLD : FONT)
+        .text(run.t, {
+          width, align: opts.align || 'left', lineGap: LINE_GAP,
+          continued: i < all.length - 1,
+        });
+    });
+    doc.moveDown(opts.after ?? 0.55);
   };
 
-  // ── the date, top right ──
-  doc.font(BOLD).fontSize(BODY_SIZE)
-    .text(slashDate(offer.offerDate), { width, align: 'right', lineGap: LINE_GAP });
+  // A label and its value on one line: the label plain, the value bold, which
+  // is the way the letter this one follows sets them.
+  const field = (label, value) => {
+    if (value === undefined || value === null || String(value).trim() === '') return;
+    doc.fontSize(BODY_SIZE).fillColor(INK)
+      .font(FONT).text(label + ' ', { continued: true, lineGap: LINE_GAP })
+      .font(BOLD).text(String(value));
+  };
+
+  // ── the letterhead ──
+  doc.font(BOLD).fontSize(16).fillColor(INK)
+    .text(offer.company || COMPANY, { width, align: 'left' });
+  [offer.companyAddress1, offer.companyAddress2].filter(Boolean).forEach((line) => {
+    doc.font(FONT).fontSize(9).fillColor(QUIET).text(line, { width, align: 'left', lineGap: 1 });
+  });
+  doc.moveDown(0.6);
+  doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + width, doc.y).lineWidth(0.8).strokeColor(RULE).stroke();
   doc.moveDown(1);
 
-  // ── who it is addressed to ──
+  // ── the date, then who it is addressed to ──
+  doc.font(FONT).fontSize(BODY_SIZE).fillColor(INK)
+    .text(slashDate(offer.offerDate), { width, align: 'left', lineGap: LINE_GAP });
+  doc.moveDown(0.9);
+
   field('Employee Name:', offer.name);
   field('Address 1:', offer.address1);
   field('Address 2:', offer.address2);
   field('Contact No.:', offer.phone);
   field('Email ID:', offer.email);
-  doc.moveDown(1.1);
+  doc.moveDown(1.2);
 
-  doc.font(BOLD).fontSize(13).text('OFFER LETTER', { width, align: 'center', underline: true });
-  doc.moveDown(1.1);
+  doc.font(BOLD).fontSize(13).fillColor(INK)
+    .text('OFFER LETTER', { width, align: 'center', underline: true });
+  doc.moveDown(1.2);
 
-  para(`Dear ${offer.name || ''},`, { align: 'left', after: 0.7 });
+  rich([{ t: 'Dear ' }, { t: offer.name || '', b: true }, { t: ',' }], { align: 'left', after: 0.7 });
 
   // The one sentence that changes shape: without a department or a location
   // there is nothing to put between "position of" and "Office", and leaving
   // the template's underscores in a signed letter would look unfinished.
-  const where = [
-    offer.department ? ` in ${offer.department}` : '',
-    offer.location ? ` in ${offer.location} Office` : '',
-  ].join('');
-  para(
-    `With reference to your application and subsequent interview you had with us, we are pleased `
-    + `to offer you a position of ${offer.position || ''}${where} of the Bunai Private Limited, `
-    + `(hereinafter referred to as the “Entity”) on the terms and conditions as mutually `
-    + `discussed and agreed with you.`);
+  rich([
+    { t: 'With reference to your application and subsequent interview you had with us, we are '
+       + 'pleased to offer you a position of ' },
+    { t: offer.position || '', b: true },
+    offer.department ? { t: ' in ' } : null,
+    offer.department ? { t: offer.department, b: true } : null,
+    offer.location ? { t: ' in ' } : null,
+    offer.location ? { t: offer.location, b: true } : null,
+    offer.location ? { t: ' Office' } : null,
+    { t: ` of the ${offer.company || COMPANY}, (hereinafter referred to as the “Entity”) on the `
+       + 'terms and conditions as mutually discussed and agreed with you.' },
+  ].filter(Boolean));
 
-  para(
-    `Your employment with the Entity is scheduled to commence on ${slashDate(offer.joiningDate)} `
-    + `(the “Joining Date”), subject to your acceptance of this Offer letter and completion of `
-    + `joining formalities.`);
+  rich([
+    { t: 'Your employment with the Entity is scheduled to commence on ' },
+    { t: slashDate(offer.joiningDate), b: true },
+    { t: ' (the “Joining Date”), subject to your acceptance of this Offer letter and completion '
+       + 'of joining formalities.' },
+  ]);
 
   para(
     `The Entity may also, at its discretion, carry out background verification and has the right `
@@ -118,9 +168,16 @@ function build(offer) {
     + `shall be issued to you upon your joining the aforesaid position and after a satisfactory `
     + `background verification check.`);
 
-  para(
-    `Further, this Offer is valid only till ${slashDate(offer.validTill)}. You are required to `
-    + `communicate your acceptance of the Offer on or before this date.`);
+  rich([
+    { t: 'Further, this Offer is valid only till ' },
+    { t: slashDate(offer.validTill), b: true },
+    { t: '. You are required to communicate your acceptance of the Offer on or before this date.' },
+  ]);
+
+  // The list is checked off as one thing, so it should not be torn in half by
+  // a page break. If the rest of this page cannot hold it, it starts the next.
+  const listHeight = DOCUMENTS.length * (BODY_SIZE + LINE_GAP + 3) + 40;
+  if (doc.y + listHeight > doc.page.height - doc.page.margins.bottom) doc.addPage();
 
   para('You are required to bring the following documents at the time of joining:', { after: 0.4 });
 
@@ -133,41 +190,61 @@ function build(offer) {
   doc.moveDown(0.6);
 
   para('The originals of the above documents shall be returned after verification.');
-  doc.moveDown(0.4);
-
+  doc.moveDown(0.3);
   para('Wishing you a successful career in our organization!', { after: 1 });
 
   // ── who it comes from ──
   para('Sincerely,', { align: 'left', after: 0.15 });
-  para('For Bunai Private Limited', { align: 'left', bold: true, after: 1.6 });
+  para(`For ${offer.company || COMPANY}`, { align: 'left', bold: true, after: 1.6 });
 
-  para('Authorized Signatory', { align: 'left', bold: true, after: 0.35 });
+  para('Authorized Signatory', { align: 'left', after: 0.25 });
   field('Name:', offer.signatoryName);
   field('Designation:', offer.signatoryDesignation);
   field('E-mail:', offer.signatoryEmail);
   field('Phone:', offer.signatoryPhone);
-  doc.moveDown(1.4);
+  doc.moveDown(1.5);
 
   // ── and the half the candidate signs ──
-  // Kept on the same page as the offer where it fits; a signature block that
-  // floats alone on page two is the classic way a returned copy loses its
-  // first page.
-  if (doc.y > doc.page.height - MARGIN - 150) doc.addPage();
+  // Kept whole: a signature block split across a page break is how a returned
+  // copy ends up missing the page that says what was agreed.
+  if (doc.y > doc.page.height - MARGIN - FOOT - 165) doc.addPage();
 
   para('Acknowledgement and Acceptance:', { align: 'left', bold: true, after: 0.35 });
-  para(
-    `I, the undersigned, have read and understood this Offer Letter and accept the Offer. I will `
-    + `join by ${slashDate(offer.joiningDate)} failing which the Offer shall stand withdrawn.`,
-    { after: 2.2 });
+  rich([
+    { t: 'I, the undersigned, have read and understood this Offer Letter and accept the Offer. '
+       + 'I will join by ' },
+    { t: slashDate(offer.joiningDate), b: true },
+    { t: ' failing which the Offer shall stand withdrawn.' },
+  ], { after: 2.4 });
 
   const third = width / 3;
   const ruleY = doc.y;
   doc.font(FONT).fontSize(BODY_SIZE).fillColor(INK);
   ['Name', 'Signature', 'Date'].forEach((label, i) => {
     const x = MARGIN + third * i;
-    doc.moveTo(x, ruleY).lineTo(x + third - 22, ruleY).lineWidth(0.7).strokeColor(INK).stroke();
-    doc.text(label, x, ruleY + 6, { width: third - 22, align: 'left' });
+    doc.moveTo(x, ruleY).lineTo(x + third - 26, ruleY).lineWidth(0.8).strokeColor(INK).stroke();
+    doc.text(label, x, ruleY + 6, { width: third - 26, align: 'left', lineBreak: false });
   });
+  doc.moveDown(1.4);
+  doc.font(FONT).fontSize(BODY_SIZE).fillColor(INK)
+    .text('************', MARGIN, doc.y, { width, align: 'center', lineBreak: false });
+
+  // ── the page count, once the pages are all there ──
+  const range = doc.bufferedPageRange();
+  for (let i = 0; i < range.count; i++) {
+    doc.switchToPage(range.start + i);
+    // The footer sits in the bottom margin, and writing into the margin is
+    // what pdfkit treats as running out of room - it would add a blank page
+    // per page. Dropping the margin for the one line stops that.
+    const keep = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font(FONT).fontSize(8.5).fillColor(QUIET)
+      .text(`Page ${i + 1} of ${range.count}`,
+        MARGIN, doc.page.height - MARGIN - 4,
+        { width, align: 'center', lineBreak: false });
+    doc.page.margins.bottom = keep;
+  }
+  doc.flushPages();
 
   return doc;
 }
@@ -197,4 +274,4 @@ function fileName(offer) {
   return `Offer Letter - ${who}.pdf`;
 }
 
-module.exports = { render, fileName, slashDate, DOCUMENTS };
+module.exports = { render, fileName, slashDate, DOCUMENTS, COMPANY };

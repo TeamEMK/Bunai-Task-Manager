@@ -310,6 +310,11 @@ const TABLES = [
     -- deliberately NOT inherited by the next candidate's letter: who sees an
     -- offer is a decision about that offer.
     cc_emails VARCHAR(1000) DEFAULT '',
+    -- The letterhead the page is written under. Stored per offer so an old
+    -- letter can be reproduced exactly, even after the office moves.
+    company_name VARCHAR(255) DEFAULT '',
+    company_address1 VARCHAR(500) DEFAULT '',
+    company_address2 VARCHAR(500) DEFAULT '',
     sent_at TIMESTAMP NULL DEFAULT NULL,
     sent_by INT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -464,6 +469,9 @@ const COLUMNS = [
   // hrm_offers existed before this column did, and CREATE TABLE IF NOT EXISTS
   // does nothing to a table that is already there.
   ['hrm_offers', 'cc_emails', `VARCHAR(1000) DEFAULT '' AFTER signatory_phone`],
+  ['hrm_offers', 'company_name', `VARCHAR(255) DEFAULT '' AFTER cc_emails`],
+  ['hrm_offers', 'company_address1', `VARCHAR(500) DEFAULT '' AFTER company_name`],
+  ['hrm_offers', 'company_address2', `VARCHAR(500) DEFAULT '' AFTER company_address1`],
 
   ['users', 'notification_email', `VARCHAR(255) DEFAULT '' AFTER email`],
   // user_role — separate from app `role`. Decides leave-approval hierarchy

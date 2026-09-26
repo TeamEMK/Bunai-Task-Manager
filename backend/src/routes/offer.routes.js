@@ -16,6 +16,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const hrmEmail = require('../services/hrmEmail');
 const offerLetter = require('../services/offerLetter');
+const COMPANY = offerLetter.COMPANY;
 
 const router = express.Router();
 
@@ -73,6 +74,10 @@ async function prefill(id) {
       signatoryEmail: mine?.signatory_email || last?.signatory_email || '',
       signatoryPhone: mine?.signatory_phone || last?.signatory_phone || '',
       cc: mine?.cc_emails || '',
+      // Carried over like the signatory: one office, typed once.
+      company: mine?.company_name || last?.company_name || COMPANY,
+      companyAddress1: mine?.company_address1 || last?.company_address1 || '',
+      companyAddress2: mine?.company_address2 || last?.company_address2 || '',
     },
     sentAt: mine?.sent_at || null,
     // Whether the signatory came from this candidate's own draft or was
@@ -102,6 +107,9 @@ function fromBody(b, candidate) {
     signatoryPhone: clean(b.signatoryPhone, 50),
     // Split on commas or spaces, since people type both, and only what looks
     // like an address survives - a typo should not silently become a recipient.
+    company: clean(b.company) || COMPANY,
+    companyAddress1: clean(b.companyAddress1, 500),
+    companyAddress2: clean(b.companyAddress2, 500),
     cc: String(b.cc || '').split(/[,;\s]+/).map(x => x.trim()).filter(looksLikeEmail).slice(0, 10),
   };
 }
@@ -124,6 +132,8 @@ async function remember(id, offer, userId, sent) {
     signatory_name: offer.signatoryName, signatory_designation: offer.signatoryDesignation,
     signatory_email: offer.signatoryEmail, signatory_phone: offer.signatoryPhone,
     cc_emails: (offer.cc || []).join(', '),
+    company_name: offer.company, company_address1: offer.companyAddress1,
+    company_address2: offer.companyAddress2,
   };
   const keys = Object.keys(cols);
   const set = keys.map(k => `${k}=VALUES(${k})`).join(', ');
