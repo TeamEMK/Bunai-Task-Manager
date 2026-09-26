@@ -21,7 +21,7 @@ const joining = require('./joining.routes');
 
 const router = express.Router();
 
-const STATUSES = ['Scheduled', 'Rescheduled', 'Selected', 'Rejected', 'Offer Sent'];
+const STATUSES = ['Scheduled', 'Rescheduled', 'Selected', 'Onboarding', 'Rejected', 'Offer Sent'];
 
 // Which letter belongs to which status. A status with no entry simply sends
 // nothing — "Offer Sent" is here as a pipeline stage, and the offer letter
@@ -252,11 +252,12 @@ router.put('/hrm/candidates/:id/status', requireAuth, requireAdmin, asyncRoute(a
       .catch(err => console.error('⚠️ Status letter failed after the reply:', err.message));
   }
 
-  // Being selected is the moment the onboarding form is due, so it follows the
-  // congratulations rather than waiting for somebody to remember. Sent once:
-  // if it has gone before, or they have already filled it in, the button on
-  // the candidate's row is there to send it again deliberately.
-  if (status === 'Selected' && b.sendEmail !== false && !c.joining_form_sent_at) {
+  // Moving somebody to Onboarding is the moment the form is due - being
+  // selected only means they have been chosen, and the two often happen days
+  // apart while an offer is agreed. Sent once: if it has gone before, or they
+  // have already filled it in, the button on the candidate's row is there to
+  // send it again deliberately.
+  if (status === 'Onboarding' && b.sendEmail !== false && !c.joining_form_sent_at) {
     (async () => {
       const done = await db.one('SELECT id FROM hrm_joining_details WHERE candidate_id=?', [id]);
       if (!done) await joining.mailForm({ ...c, ...fields, id });

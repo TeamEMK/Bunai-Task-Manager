@@ -268,7 +268,7 @@ const TABLES = [
     interviewer_email VARCHAR(255) DEFAULT '',
     interview_date DATE DEFAULT NULL,
     interview_time VARCHAR(20) DEFAULT '',
-    status ENUM('Scheduled','Rescheduled','Selected','Rejected','Offer Sent') DEFAULT 'Scheduled',
+    status ENUM('Scheduled','Rescheduled','Selected','Onboarding','Rejected','Offer Sent') DEFAULT 'Scheduled',
     reschedule_date DATE DEFAULT NULL,
     reschedule_time VARCHAR(20) DEFAULT '',
     reschedule_reason TEXT,
@@ -715,6 +715,12 @@ const WIDENINGS = [
   ['leave_requests', 'leave_type',
    `ENUM('full_day','half_day','work_from_home','extra_working','early_leaving') NOT NULL`,
    'early_leaving'],
+  // 'Onboarding' is the stage between being chosen and being sent an offer:
+  // the candidate has said yes, and their papers are being collected. It was
+  // added after the fact, so existing rows keep whatever status they had.
+  ['hrm_candidates', 'status',
+   `ENUM('Scheduled','Rescheduled','Selected','Onboarding','Rejected','Offer Sent') DEFAULT 'Scheduled'`,
+   'Onboarding'],
 ];
 
 const BACKFILLS = [

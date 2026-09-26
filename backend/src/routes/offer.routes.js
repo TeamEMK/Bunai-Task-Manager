@@ -48,7 +48,8 @@ async function prefill(id) {
 
   const mine = await db.one(`${OFFER_SELECT} WHERE o.candidate_id=?`, [id]);
   const last = await db.one(`${OFFER_SELECT} WHERE o.sent_at IS NOT NULL ORDER BY o.sent_at DESC LIMIT 1`);
-  const joining = await db.one('SELECT * FROM hrm_joining_details WHERE candidate_id=?', [id]);
+  const joining = await db.one(
+    `SELECT *, DATE_FORMAT(dob,'%Y-%m-%d') AS dob FROM hrm_joining_details WHERE candidate_id=?`, [id]);
 
   // The address on the letter is the one they gave on the joining form. Split
   // the way the template asks for it: the street on one line, the town on the
@@ -80,6 +81,19 @@ async function prefill(id) {
       companyAddress2: mine?.company_address2 || last?.company_address2 || '',
     },
     sentAt: mine?.sent_at || null,
+    // What the candidate sent back. The letter is written off the back of it -
+    // the address on the page comes from here - so it belongs beside the form,
+    // and its absence is what holds the letter up.
+    joining: joining ? {
+      full_name: joining.full_name, emp_mobile: joining.emp_mobile, email: joining.email,
+      dob: joining.dob ? String(joining.dob).slice(0, 10) : '',
+      street: joining.street, city: joining.city, state: joining.state, pincode: joining.pincode,
+      guardian1: [joining.guardian1_name, joining.guardian1_relation, joining.guardian1_mobile].filter(Boolean).join(' · '),
+      guardian2: [joining.guardian2_name, joining.guardian2_relation, joining.guardian2_mobile].filter(Boolean).join(' · '),
+      aadhaar_no: joining.aadhaar_no, pan_no: joining.pan_no,
+      files: ['resume_file', 'aadhaar_file', 'aadhaar_file_2', 'pan_file', 'pan_file_2']
+        .filter(f => joining[f]),
+    } : null,
     // Whether the signatory came from this candidate's own draft or was
     // inherited, so the screen can say where it got it.
     signatoryFrom: mine?.signatory_name ? 'this offer' : (last?.signatory_name ? 'the last offer sent' : null),
@@ -170,6 +184,17 @@ router.post('/hrm/candidates/:id/offer/send', requireAuth, requireAdmin, asyncRo
   const c = await db.one('SELECT * FROM hrm_candidates WHERE id=?', [id]);
   if (!c) throw httpError(404, 'Candidate not found');
   if (!looksLikeEmail(c.email)) return res.status(400).json({ error: 'That candidate has no valid email address' });
+
+  // The offer goes out after the joining details are in, not before. Those
+  // details are the address on the letter and the documents the file is built
+  // from, and an offer sent first is an offer that has to be chased.
+  const details = await db.one('SELECT id FROM hrm_joining_details WHERE candidate_id=?', [id]);
+  if (!details) {
+    return res.status(400).json({
+      error: 'This candidate has not sent their joining details yet. Move them to Onboarding to '
+        + 'email the form, and send the offer once it comes back.',
+    });
+  }
 
   const offer = fromBody(req.body || {}, c);
   const missing = whatIsMissing(offer);

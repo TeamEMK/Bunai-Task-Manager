@@ -7875,7 +7875,7 @@ const HRM_STATUS_COLOUR = {
 };
 // Which statuses write to the candidate, so the dialog can say so honestly
 // instead of offering a tick box that does nothing.
-const HRM_STATUS_MAILS = { Rescheduled: true, Selected: true, Rejected: true };
+const HRM_STATUS_MAILS = { Rescheduled: true, Selected: true, Onboarding: true, Rejected: true };
 
 let HRM_ROWS = [];
 let HRM_JOIN = null;
@@ -8304,6 +8304,8 @@ async function openHrmOffer(id){
   const from = document.getElementById('hrmOfferSigFrom');
   if (from) from.textContent = r.signatoryFrom === 'the last offer sent' ? '— carried over from the last offer' : '';
   const note = document.getElementById('hrmOfferSentNote');
+  note.style.cssText = 'display:none;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;'
+    + 'border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px';
   if (r.sentAt) {
     note.textContent = `Already sent on ${r.sentAt}. Sending again replaces it with whatever is on this form.`;
     note.style.display = 'block';
@@ -8314,7 +8316,80 @@ async function openHrmOffer(id){
 
   document.getElementById('hrmOfferModal').classList.add('open');
   hrmOfferWatch();
+  // Open on whichever half answers the question in front of them: the letter
+  // if it can go, their details if that is what it is waiting for.
+  hrmOfferTab(r.joining ? 'letter' : 'details');
+  hrmOfferGate();
   hrmOfferRedraw();
+}
+
+// Which half of the right pane is showing.
+function hrmOfferTab(which){
+  const letter = which !== 'details';
+  document.getElementById('hrmOfferFrame').style.display = letter ? '' : 'none';
+  document.getElementById('hrmOfferDetails').style.display = letter ? 'none' : '';
+  [['hrmOfferTabLetter', letter], ['hrmOfferTabDetails', !letter]].forEach(([id, on]) => {
+    const b = document.getElementById(id);
+    if (b) b.style.cssText = on
+      ? 'border-color:var(--brand-mid);color:var(--brand-deep);font-weight:700'
+      : '';
+  });
+  if (!letter) hrmOfferRenderDetails();
+}
+
+// What the candidate sent back, laid out to be read while the letter is being
+// written - the address here is the address that goes on it.
+function hrmOfferRenderDetails(){
+  const box = document.getElementById('hrmOfferDetails');
+  const j = HRM_OFFER && HRM_OFFER.joining;
+  if (!j) {
+    box.innerHTML = `<div style="padding:26px 6px;font-size:13.5px;color:var(--muted-foreground);line-height:1.6">
+      <b style="color:var(--foreground)">Nothing back yet.</b><br>
+      Move this candidate to <b>Onboarding</b> and the joining form is emailed to them.
+      Their answers land here, and the offer letter can go once they do.</div>`;
+    return;
+  }
+  const row = (k, v) => v ? `<tr>
+    <td style="padding:7px 14px 7px 0;color:var(--muted-foreground);font-size:12.5px;white-space:nowrap;vertical-align:top">${k}</td>
+    <td style="padding:7px 0;font-size:13.5px;color:var(--foreground);font-weight:600">${dtEscape(String(v))}</td></tr>` : '';
+  const DOCS = { resume_file:'CV', aadhaar_file:'Aadhaar', aadhaar_file_2:'Aadhaar (back)', pan_file:'PAN', pan_file_2:'PAN (back)' };
+  const docs = (j.files || []).map(f =>
+    `<a href="/api/hrm/joining-file/${HRM_OFFER.id}/${f}" target="_blank"
+        style="display:inline-block;margin:0 8px 8px 0;padding:7px 13px;border:1px solid var(--border);
+               border-radius:8px;background:var(--card);color:var(--foreground);font-size:12.5px;
+               font-weight:600;text-decoration:none">\u2b07 ${DOCS[f] || f}</a>`).join('');
+  box.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      ${row('Name', j.full_name)}
+      ${row('Mobile', j.emp_mobile)}
+      ${row('Email', j.email)}
+      ${row('Date of birth', hrmDate(j.dob))}
+      ${row('Address', [j.street, j.city, j.state, j.pincode].filter(Boolean).join(', '))}
+      ${row('Contact 1', j.guardian1)}
+      ${row('Contact 2', j.guardian2)}
+      ${row('Aadhaar no.', j.aadhaar_no)}
+      ${row('PAN', j.pan_no)}
+    </table>
+    <div style="margin:14px 0 6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">Documents</div>
+    <div>${docs || '<span style="font-size:13px;color:var(--faint)">none uploaded</span>'}</div>`;
+}
+
+// The letter waits for the details. Saying why, on the button that is refusing
+// to work, beats a red line after somebody has filled the whole form in.
+function hrmOfferGate(){
+  const btn = document.getElementById('hrmOfferSendBtn');
+  if (!btn) return;
+  const ready = !!(HRM_OFFER && HRM_OFFER.joining);
+  btn.disabled = !ready;
+  btn.title = ready ? '' : 'Waiting on the candidate\u2019s joining details';
+  const note = document.getElementById('hrmOfferSentNote');
+  if (!ready && note && !(HRM_OFFER && HRM_OFFER.sentAt)) {
+    note.textContent = 'The offer cannot go until this candidate sends their joining details. '
+      + 'Move them to Onboarding to email the form.';
+    note.style.cssText = 'display:block;background:#fef9c3;border:1px solid #fde68a;color:#92400e;'
+      + 'border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px';
+  }
 }
 
 // Every field redraws the letter, once they stop typing. Bound once - the
