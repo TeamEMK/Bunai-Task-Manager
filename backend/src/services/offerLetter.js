@@ -31,6 +31,7 @@ const DOCUMENTS = [
   'Last 3 months Bank Statement (for salary verification).',
   'Last 3 months Salary Slips.',
   'Address Proof.',
+  'Any other bank account.',
 ];
 
 const COMPANY = 'Bunai Private Limited';
@@ -74,38 +75,42 @@ function build(offer) {
 
   const width = doc.page.width - MARGIN * 2;
 
-  // Ranged left, not justified. pdfkit justifies each run of a mixed-weight
-  // sentence separately, which swallows the space between a bold word and the
-  // next plain one - "JaipurOffice" - and stretches the rest to hide it. A
-  // clean ragged right beats a justified line with a word missing a space.
   const para = (text, opts = {}) => {
     doc.font(opts.bold ? BOLD : FONT).fontSize(opts.size || BODY_SIZE).fillColor(INK)
-      .text(text, { width, align: opts.align || 'left', lineGap: LINE_GAP, ...opts });
+      .text(text, { width, align: opts.align || 'justify', lineGap: LINE_GAP, ...opts });
     doc.moveDown(opts.after ?? 0.55);
   };
 
   // A sentence made of alternating plain and bold runs. Everything a reader
   // checks first — the role, the dates — is the bold half, and the runs are
   // written continued so the line still justifies as one paragraph.
+  //
+  // The space AFTER a bold word has to live inside the bold run. While
+  // justifying, pdfkit trims a plain run's leading space at a continued
+  // boundary — which is how the letter this one follows ended up reading
+  // "JaipurOffice" — and a space carried inside the bold run survives it. A
+  // space looks the same in either weight, so nothing is lost by moving it.
   const rich = (runs, opts = {}) => {
     doc.fontSize(BODY_SIZE).fillColor(INK);
-    runs.filter(r => r && r.t !== '').forEach((run, i, all) => {
+    const parts = runs.filter(r => r && r.t !== '');
+    parts.forEach((run, i) => {
       doc.font(run.b ? BOLD : FONT)
         .text(run.t, {
-          width, align: opts.align || 'left', lineGap: LINE_GAP,
-          continued: i < all.length - 1,
+          width, align: opts.align || 'justify', lineGap: LINE_GAP,
+          continued: i < parts.length - 1,
         });
     });
     doc.moveDown(opts.after ?? 0.55);
   };
 
-  // A label and its value on one line: the label plain, the value bold, which
-  // is the way the letter this one follows sets them.
-  const field = (label, value) => {
+  // A label and its value on one line. The candidate's own details are set in
+  // bold and the signatory's plain, the way the letter this one follows does
+  // it: the reader is checking their name, not ours.
+  const field = (label, value, plain) => {
     if (value === undefined || value === null || String(value).trim() === '') return;
     doc.fontSize(BODY_SIZE).fillColor(INK)
       .font(FONT).text(label + ' ', { continued: true, lineGap: LINE_GAP })
-      .font(BOLD).text(String(value));
+      .font(plain ? FONT : BOLD).text(String(value));
   };
 
   // ── the letterhead ──
@@ -142,20 +147,20 @@ function build(offer) {
   rich([
     { t: 'With reference to your application and subsequent interview you had with us, we are '
        + 'pleased to offer you a position of ' },
-    { t: offer.position || '', b: true },
-    offer.department ? { t: ' in ' } : null,
-    offer.department ? { t: offer.department, b: true } : null,
-    offer.location ? { t: ' in ' } : null,
-    offer.location ? { t: offer.location, b: true } : null,
-    offer.location ? { t: ' Office' } : null,
-    { t: ` of the ${offer.company || COMPANY}, (hereinafter referred to as the “Entity”) on the `
+    { t: (offer.position || '') + ' ', b: true },
+    offer.department ? { t: 'in ' } : null,
+    offer.department ? { t: offer.department + ' ', b: true } : null,
+    offer.location ? { t: 'in ' } : null,
+    offer.location ? { t: offer.location + ' ', b: true } : null,
+    offer.location ? { t: 'Office ' } : null,
+    { t: `of the ${offer.company || COMPANY}, (hereinafter referred to as the “Entity”) on the `
        + 'terms and conditions as mutually discussed and agreed with you.' },
   ].filter(Boolean));
 
   rich([
     { t: 'Your employment with the Entity is scheduled to commence on ' },
-    { t: slashDate(offer.joiningDate), b: true },
-    { t: ' (the “Joining Date”), subject to your acceptance of this Offer letter and completion '
+    { t: slashDate(offer.joiningDate) + ' ', b: true },
+    { t: '(the “Joining Date”), subject to your acceptance of this Offer letter and completion '
        + 'of joining formalities.' },
   ]);
 
@@ -198,10 +203,10 @@ function build(offer) {
   para(`For ${offer.company || COMPANY}`, { align: 'left', bold: true, after: 1.6 });
 
   para('Authorized Signatory', { align: 'left', after: 0.25 });
-  field('Name:', offer.signatoryName);
-  field('Designation:', offer.signatoryDesignation);
-  field('E-mail:', offer.signatoryEmail);
-  field('Phone:', offer.signatoryPhone);
+  field('Name:', offer.signatoryName, true);
+  field('Designation:', offer.signatoryDesignation, true);
+  field('E-mail:', offer.signatoryEmail, true);
+  field('Phone:', offer.signatoryPhone, true);
   doc.moveDown(1.5);
 
   // ── and the half the candidate signs ──
@@ -213,8 +218,8 @@ function build(offer) {
   rich([
     { t: 'I, the undersigned, have read and understood this Offer Letter and accept the Offer. '
        + 'I will join by ' },
-    { t: slashDate(offer.joiningDate), b: true },
-    { t: ' failing which the Offer shall stand withdrawn.' },
+    { t: slashDate(offer.joiningDate) + ' ', b: true },
+    { t: 'failing which the Offer shall stand withdrawn.' },
   ], { after: 2.4 });
 
   const third = width / 3;
