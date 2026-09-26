@@ -36,6 +36,7 @@ api.use(require('./weekPlan.routes'));
 api.use(require('./pms.routes'));
 api.use(hrm);
 api.use(require('./joining.routes').router);
+api.use(require('./offer.routes'));
 api.use(ims.apiRouter);
 
 module.exports = { api, pages: ims.pageRouter };

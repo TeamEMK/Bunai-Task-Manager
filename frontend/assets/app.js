@@ -7902,7 +7902,7 @@ async function loadHrm(){
   const body = document.getElementById('hrmBody');
   const tiles = document.getElementById('hrmTiles');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
 
   const params = new URLSearchParams();
   const q = document.getElementById('hrmSearch').value.trim();
@@ -7915,7 +7915,7 @@ async function loadHrm(){
       api('/api/hrm/candidates' + (params.toString() ? '?' + params : '')),
       api('/api/hrm/stats'),
     ]);
-    if (rows.error) { body.innerHTML = `<tr><td colspan="7" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    if (rows.error) { body.innerHTML = `<tr><td colspan="8" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     HRM_ROWS = Array.isArray(rows) ? rows : [];
 
     const tile = (label, value, sub, tone) => {
@@ -7947,7 +7947,7 @@ async function loadHrm(){
     }
 
     if (!HRM_ROWS.length) {
-      body.innerHTML = `<tr><td colspan="7" class="empty">No candidates yet — use <b>+ Schedule Interview</b>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="8" class="empty">No candidates yet — use <b>+ Schedule Interview</b>.</td></tr>`;
       return;
     }
     body.innerHTML = HRM_ROWS.map((c, i) => {
@@ -7966,6 +7966,7 @@ async function loadHrm(){
         <td>${hrmPill(c.status)}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(c.joining_date)}</td>
         <td style="white-space:nowrap">${hrmJoinCell(c)}</td>
+        <td style="white-space:nowrap">${hrmOfferCell(c)}</td>
         <td style="white-space:nowrap">
           <button class="action-btn" onclick="openHrmStatus(${i})">Status</button>
           <button class="action-btn" style="margin-left:6px" onclick="openHrmCandidate(${i})">Edit</button>
@@ -7974,7 +7975,7 @@ async function loadHrm(){
       </tr>`;
     }).join('');
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">Could not load candidates — ${dtEscape(e.message||'unknown error')}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="empty">Could not load candidates — ${dtEscape(e.message||'unknown error')}</td></tr>`;
   }
 }
 
@@ -8256,6 +8257,126 @@ async function hrmSendJoinForm(btn){
     if (r.error || r.ok === false) return showToast('⚠️ ' + (r.error || r.reason || 'The letter failed — see Sent mail'));
     showToast('✅ Onboarding form emailed');
     await openHrmJoin(HRM_JOIN.id);
+    loadHrm();
+  } finally { done(); }
+}
+
+// ── Offer letter ──────────────────────────────────────
+let HRM_OFFER = null;
+
+// Only worth offering to somebody who has been selected; before that there is
+// nothing to write a letter about. Once sent, the cell says so.
+function hrmOfferCell(c){
+  const open = `onclick="openHrmOffer(${c.id})"`;
+  if (c.status === 'Offer Sent') {
+    return `<button class="action-btn" ${open} style="color:#15803d;border-color:#bbf7d0">✓ Sent</button>`;
+  }
+  if (c.status !== 'Selected') return '<span style="color:var(--faint);font-size:12.5px">—</span>';
+  return `<button class="action-btn" ${open}>Write…</button>`;
+}
+
+async function openHrmOffer(id){
+  const r = await api('/api/hrm/candidates/' + id + '/offer');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  HRM_OFFER = { id, ...r };
+  const o = r.offer || {};
+  const set = (el, v) => { const e = document.getElementById(el); if (e) e.value = v || ''; };
+  set('hrmOfferPosition', o.position || (r.candidate && r.candidate.position));
+  set('hrmOfferDept', o.department);
+  set('hrmOfferLocation', o.location);
+  set('hrmOfferDate', o.offerDate);
+  set('hrmOfferJoining', o.joiningDate);
+  set('hrmOfferValid', o.validTill);
+  set('hrmOfferAddr1', o.address1);
+  set('hrmOfferAddr2', o.address2);
+  set('hrmOfferSigName', o.signatoryName);
+  set('hrmOfferSigRole', o.signatoryDesignation);
+  set('hrmOfferSigEmail', o.signatoryEmail);
+  set('hrmOfferSigPhone', o.signatoryPhone);
+
+  document.getElementById('hrmOfferTitle').textContent = 'Offer letter — ' + ((r.candidate && r.candidate.name) || '');
+  hrmOfferError('');
+  // Where the signatory came from, because a name that filled itself in is
+  // worth a second look before it goes under a signature.
+  const from = document.getElementById('hrmOfferSigFrom');
+  if (from) from.textContent = r.signatoryFrom === 'the last offer sent' ? '— carried over from the last offer' : '';
+  const note = document.getElementById('hrmOfferSentNote');
+  if (r.sentAt) {
+    note.textContent = `Already sent on ${r.sentAt}. Sending again replaces it with whatever is on this form.`;
+    note.style.display = 'block';
+  } else note.style.display = 'none';
+
+  document.getElementById('hrmOfferModal').classList.add('open');
+}
+
+function hrmOfferBody(){
+  const val = id => document.getElementById(id).value.trim();
+  return {
+    position: val('hrmOfferPosition'), department: val('hrmOfferDept'), location: val('hrmOfferLocation'),
+    offerDate: val('hrmOfferDate'), joiningDate: val('hrmOfferJoining'), validTill: val('hrmOfferValid'),
+    address1: val('hrmOfferAddr1'), address2: val('hrmOfferAddr2'),
+    signatoryName: val('hrmOfferSigName'), signatoryDesignation: val('hrmOfferSigRole'),
+    signatoryEmail: val('hrmOfferSigEmail'), signatoryPhone: val('hrmOfferSigPhone'),
+  };
+}
+
+function hrmOfferError(msg){
+  const el = document.getElementById('hrmOfferErr');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+  if (msg) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// The letter itself, in a tab. A POST because the form has not been saved yet:
+// what opens is what is on screen right now, not what is stored.
+async function previewHrmOffer(btn){
+  const done = hrmBusy(btn, 'Opening…');
+  try {
+    hrmOfferError('');
+    const token = localStorage.getItem('authToken');
+    const res = await fetch('/api/hrm/candidates/' + HRM_OFFER.id + '/offer/preview', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      credentials: 'include',
+      body: JSON.stringify(hrmOfferBody()),
+    });
+    if (!res.ok) {
+      let msg = 'The letter could not be made';
+      try { msg = (await res.json()).error || msg; } catch (e) {}
+      return hrmOfferError(msg);
+    }
+    const url = URL.createObjectURL(await res.blob());
+    window.open(url, '_blank');
+    // Freed once the tab has had it; revoking straight away closes it on them.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } finally { done(); }
+}
+
+async function saveHrmOffer(btn){
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = await api('/api/hrm/candidates/' + HRM_OFFER.id + '/offer', 'POST', hrmOfferBody());
+    if (r.error) return hrmOfferError(r.error);
+    closeModal('hrmOfferModal');
+    showToast('✅ Saved — nothing sent');
+  } finally { done(); }
+}
+
+async function sendHrmOffer(btn){
+  const b = hrmOfferBody();
+  if (!b.joiningDate || !b.validTill || !b.signatoryName) {
+    return hrmOfferError('The letter needs a joining date, a valid-till date and the signatory’s name.');
+  }
+  if (!confirm('Send the offer letter to the candidate? This also moves them to Offer Sent.')) return;
+  const done = hrmBusy(btn, 'Sending…');
+  try {
+    const r = await api('/api/hrm/candidates/' + HRM_OFFER.id + '/offer/send', 'POST', b);
+    if (r.error) return hrmOfferError(r.error);
+    closeModal('hrmOfferModal');
+    showToast(r.ok ? '✅ Offer letter sent'
+      : '⚠️ Saved and status moved, but the email failed — ' + (r.reason || 'see Sent mail'),
+      r.ok ? 'success' : 'error', r.ok ? 3000 : 10000);
     loadHrm();
   } finally { done(); }
 }

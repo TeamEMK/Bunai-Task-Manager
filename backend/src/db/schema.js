@@ -284,6 +284,35 @@ const TABLES = [
   // missing quietly — a wrong address, SMTP refusing, credentials expired — and
   // without a record the first anybody hears of it is a candidate who never
   // turned up.
+  // What went on a candidate's offer letter. Kept because the letter is
+  // regenerated on every send - a re-send after a typo has to produce the same
+  // document, not today's guess at it - and because the last one answers what
+  // the next one should start filled in with.
+  //
+  // The signatory is stored per offer rather than in a settings screen: it is
+  // whoever signed that letter, which is a fact about the letter, and the form
+  // pre-fills from the most recent one so nobody types it twice.
+  ['hrm_offers', `CREATE TABLE hrm_offers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    candidate_id INT NOT NULL,
+    department VARCHAR(255) DEFAULT '',
+    location VARCHAR(255) DEFAULT '',
+    offer_date DATE DEFAULT NULL,
+    joining_date DATE DEFAULT NULL,
+    valid_till DATE DEFAULT NULL,
+    address1 VARCHAR(500) DEFAULT '',
+    address2 VARCHAR(500) DEFAULT '',
+    signatory_name VARCHAR(255) DEFAULT '',
+    signatory_designation VARCHAR(255) DEFAULT '',
+    signatory_email VARCHAR(255) DEFAULT '',
+    signatory_phone VARCHAR(50) DEFAULT '',
+    sent_at TIMESTAMP NULL DEFAULT NULL,
+    sent_by INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_hrm_offer_candidate (candidate_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // The documents themselves, bytes and all.
   //
   // They were on disk once, which is the better place for a file - until you

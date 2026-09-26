@@ -187,6 +187,48 @@ function buildRejectedEmail(c) {
   return { subject: 'Update on your application', html, text: stripTags(body) };
 }
 
+// The mail the offer letter travels in. Short on purpose: the document is the
+// message, and everything that matters is inside it. What this adds is the two
+// things a PDF cannot say for itself - by when to reply, and that a signed copy
+// is what comes back.
+function buildOfferEmail(c, offer) {
+  const role = c.profile_position || offer.position || '';
+  const body = para(`Dear ${esc(c.name)},`)
+    + para(`We are pleased to offer you a position${role ? ` of <b>${esc(role)}</b>` : ''} at `
+        + `Bunai Private Limited. Your offer letter is attached to this email.`)
+    + detail([
+        ['Position', esc(role)],
+        ['Joining date', longDate(offer.joiningDate)],
+        ['Offer valid till', longDate(offer.validTill)],
+      ])
+    + para('Please read it, sign the acknowledgement on the last page, and send a scanned copy '
+        + 'back to us by the date above.')
+    + para('If anything in it needs explaining, reply to this email and we will go through it '
+        + 'with you.')
+    + para('Congratulations, and welcome.');
+  const html = email.shell({
+    preheader: `Your offer letter${role ? ' \u2014 ' + role : ''}`,
+    eyebrow: 'OFFER LETTER', eyebrowColor: '#059669',
+    headline: 'Your offer letter is attached', body,
+    tag: TAG, footer: FOOTER,
+  });
+  return {
+    subject: `Offer letter \u2014 Bunai Private Limited${role ? ` (${role})` : ''}`,
+    html, text: stripTags(body),
+  };
+}
+
+// Its own path again, because it carries a file.
+async function sendOfferLetter(candidate, offer, pdf, fileName) {
+  const { subject, html, text } = buildOfferEmail(candidate, offer);
+  if (!candidate.email) return { ok: false, reason: 'candidate has no email address', subject };
+  const r = await email.sendMail(candidate.email, subject, {
+    text, html,
+    attachments: [{ filename: fileName, content: pdf, contentType: 'application/pdf' }],
+  });
+  return { ...r, subject };
+}
+
 // Sent once a candidate is selected: the link to the form where they hand over
 // the details the office needs before they can start. The link is the whole
 // point of the letter, so it is a button as well as a line of text - a plain
@@ -295,5 +337,6 @@ async function sendToCandidate(kind, candidate) {
 module.exports = {
   BUILDERS, sendToCandidate, sendToInterviewer, buildInterviewerEmail,
   buildOnboardingEmail, sendOnboardingForm,
+  buildOfferEmail, sendOfferLetter,
   longDate, niceTime,
 };

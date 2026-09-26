@@ -65,7 +65,7 @@ function recipientFor(user) {
   return preferred || fallback || null;
 }
 
-async function sendMail(to, subject, { text, html }) {
+async function sendMail(to, subject, { text, html, attachments }) {
   const t = transport();
   if (!t) return { ok: false, reason: 'disabled — SMTP_USER/SMTP_PASS not set' };
   if (!to) return { ok: false, reason: 'no recipient address' };
@@ -73,9 +73,12 @@ async function sendMail(to, subject, { text, html }) {
     // Only attached when the body actually shows it, so a plain-text-only mail
     // does not arrive carrying a stray picture.
     const logo = String(html || '').includes(`cid:${LOGO_CID}`) ? logoAttachment() : null;
+    // The brand mark rides in the same list as anything the caller is sending -
+    // an offer letter, say - and goes first so it stays the inline one.
+    const files = [...(logo ? [logo] : []), ...(Array.isArray(attachments) ? attachments : [])];
     const info = await t.sendMail({
       from: cfg.from, to, subject, text, html,
-      ...(logo ? { attachments: [logo] } : {}),
+      ...(files.length ? { attachments: files } : {}),
     });
     return { ok: true, messageId: info.messageId, accepted: info.accepted };
   } catch (err) {
