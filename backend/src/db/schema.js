@@ -306,6 +306,10 @@ const TABLES = [
     signatory_designation VARCHAR(255) DEFAULT '',
     signatory_email VARCHAR(255) DEFAULT '',
     signatory_phone VARCHAR(50) DEFAULT '',
+    -- Who else was copied in. Kept so a re-send goes to the same people, and
+    -- deliberately NOT inherited by the next candidate's letter: who sees an
+    -- offer is a decision about that offer.
+    cc_emails VARCHAR(1000) DEFAULT '',
     sent_at TIMESTAMP NULL DEFAULT NULL,
     sent_by INT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -457,6 +461,9 @@ const COLUMNS = [
   // only for their own form.
   ['hrm_candidates', 'joining_form_token', `VARCHAR(64) DEFAULT NULL`],
   ['hrm_candidates', 'joining_form_sent_at', `DATETIME DEFAULT NULL`],
+  // hrm_offers existed before this column did, and CREATE TABLE IF NOT EXISTS
+  // does nothing to a table that is already there.
+  ['hrm_offers', 'cc_emails', `VARCHAR(1000) DEFAULT '' AFTER signatory_phone`],
 
   ['users', 'notification_email', `VARCHAR(255) DEFAULT '' AFTER email`],
   // user_role — separate from app `role`. Decides leave-approval hierarchy

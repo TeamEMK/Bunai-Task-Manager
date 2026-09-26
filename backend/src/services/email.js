@@ -65,7 +65,7 @@ function recipientFor(user) {
   return preferred || fallback || null;
 }
 
-async function sendMail(to, subject, { text, html, attachments }) {
+async function sendMail(to, subject, { text, html, attachments, cc }) {
   const t = transport();
   if (!t) return { ok: false, reason: 'disabled — SMTP_USER/SMTP_PASS not set' };
   if (!to) return { ok: false, reason: 'no recipient address' };
@@ -78,6 +78,9 @@ async function sendMail(to, subject, { text, html, attachments }) {
     const files = [...(logo ? [logo] : []), ...(Array.isArray(attachments) ? attachments : [])];
     const info = await t.sendMail({
       from: cfg.from, to, subject, text, html,
+      // Copied in openly rather than blind: a candidate should be able to see
+      // who else has their offer letter.
+      ...(cc && cc.length ? { cc } : {}),
       ...(files.length ? { attachments: files } : {}),
     });
     return { ok: true, messageId: info.messageId, accepted: info.accepted };

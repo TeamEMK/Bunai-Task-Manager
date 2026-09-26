@@ -72,6 +72,7 @@ async function prefill(id) {
       signatoryDesignation: mine?.signatory_designation || last?.signatory_designation || '',
       signatoryEmail: mine?.signatory_email || last?.signatory_email || '',
       signatoryPhone: mine?.signatory_phone || last?.signatory_phone || '',
+      cc: mine?.cc_emails || '',
     },
     sentAt: mine?.sent_at || null,
     // Whether the signatory came from this candidate's own draft or was
@@ -99,6 +100,9 @@ function fromBody(b, candidate) {
     signatoryDesignation: clean(b.signatoryDesignation),
     signatoryEmail: clean(b.signatoryEmail),
     signatoryPhone: clean(b.signatoryPhone, 50),
+    // Split on commas or spaces, since people type both, and only what looks
+    // like an address survives - a typo should not silently become a recipient.
+    cc: String(b.cc || '').split(/[,;\s]+/).map(x => x.trim()).filter(looksLikeEmail).slice(0, 10),
   };
 }
 
@@ -119,6 +123,7 @@ async function remember(id, offer, userId, sent) {
     address1: offer.address1, address2: offer.address2,
     signatory_name: offer.signatoryName, signatory_designation: offer.signatoryDesignation,
     signatory_email: offer.signatoryEmail, signatory_phone: offer.signatoryPhone,
+    cc_emails: (offer.cc || []).join(', '),
   };
   const keys = Object.keys(cols);
   const set = keys.map(k => `${k}=VALUES(${k})`).join(', ');
@@ -168,7 +173,7 @@ router.post('/hrm/candidates/:id/offer/send', requireAuth, requireAdmin, asyncRo
   await remember(id, offer, req.session.userId, true);
   await db.query("UPDATE hrm_candidates SET status='Offer Sent' WHERE id=?", [id]);
 
-  const result = await hrmEmail.sendOfferLetter(c, offer, pdf, fileName)
+  const result = await hrmEmail.sendOfferLetter(c, offer, pdf, fileName, offer.cc)
     .catch(e => ({ ok: false, reason: e.message }));
 
   await db.query(
@@ -183,6 +188,7 @@ router.post('/hrm/candidates/:id/offer/send', requireAuth, requireAdmin, asyncRo
     // The status moved either way; the letter is what may not have arrived.
     status: 'Offer Sent',
     fileName,
+    cc: offer.cc,
   });
 }));
 

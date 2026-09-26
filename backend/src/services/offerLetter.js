@@ -125,7 +125,11 @@ function build(offer) {
   para('You are required to bring the following documents at the time of joining:', { after: 0.4 });
 
   doc.font(FONT).fontSize(BODY_SIZE).fillColor(INK);
-  doc.list(DOCUMENTS, { width: width - 14, bulletRadius: 1.7, textIndent: 14, lineGap: LINE_GAP, bulletIndent: 8 });
+  // Numbered rather than bulleted: these get checked off one by one at a desk,
+  // and "you are missing number 4" is a thing somebody can say on the phone.
+  doc.list(DOCUMENTS, {
+    width: width - 16, listType: 'numbered', textIndent: 16, bulletIndent: 8, lineGap: LINE_GAP,
+  });
   doc.moveDown(0.6);
 
   para('The originals of the above documents shall be returned after verification.');

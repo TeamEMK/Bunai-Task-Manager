@@ -219,11 +219,11 @@ function buildOfferEmail(c, offer) {
 }
 
 // Its own path again, because it carries a file.
-async function sendOfferLetter(candidate, offer, pdf, fileName) {
+async function sendOfferLetter(candidate, offer, pdf, fileName, cc) {
   const { subject, html, text } = buildOfferEmail(candidate, offer);
   if (!candidate.email) return { ok: false, reason: 'candidate has no email address', subject };
   const r = await email.sendMail(candidate.email, subject, {
-    text, html,
+    text, html, cc,
     attachments: [{ filename: fileName, content: pdf, contentType: 'application/pdf' }],
   });
   return { ...r, subject };

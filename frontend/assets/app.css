@@ -1083,3 +1083,12 @@ tbody tr:last-child td{border-bottom:none;}
   .drp-months{flex-direction:column;gap:14px;}
   .drp-cal{width:100%;}
 }
+
+
+/* The offer dialog reads as two columns on a desk, and one on a laptop too
+   narrow to give the letter room to be legible. */
+@media (max-width: 1100px) {
+  .offer-split { flex-direction: column; overflow: auto; }
+  .offer-split > div { flex: 0 0 auto !important; }
+  #hrmOfferFrame { min-height: 520px; }
+}

@@ -4555,6 +4555,9 @@ function dismissModal(ov) {
     const b = inp.parentNode.querySelector('.pw-toggle');
     if (b) { b.classList.remove('is-on'); b.setAttribute('aria-pressed','false'); b.setAttribute('aria-label','Show password'); }
   });
+  // The offer letter's live preview holds a PDF in memory behind a blob URL.
+  // Released here, so ×, Esc and Cancel all let go of it.
+  if (ov.id === 'hrmOfferModal') hrmOfferRelease();
 }
 
 // Modals close only via Cancel/Close/Esc — not by clicking outside, so a stray
@@ -8306,7 +8309,64 @@ async function openHrmOffer(id){
     note.style.display = 'block';
   } else note.style.display = 'none';
 
+  set('hrmOfferCc', o.cc);
+
   document.getElementById('hrmOfferModal').classList.add('open');
+  hrmOfferWatch();
+  hrmOfferRedraw();
+}
+
+// Every field redraws the letter, once they stop typing. Bound once - the
+// dialog is built with the page, so the inputs outlive any one candidate.
+let HRM_OFFER_WATCHED = false;
+let HRM_OFFER_TIMER = null;
+let HRM_OFFER_URL = null;
+function hrmOfferWatch(){
+  if (HRM_OFFER_WATCHED) return;
+  HRM_OFFER_WATCHED = true;
+  document.querySelectorAll('#hrmOfferBody input').forEach(el => {
+    // Typing waits for a pause; picking a date should not have to.
+    el.addEventListener('input', () => hrmOfferRedrawSoon(650));
+    el.addEventListener('change', () => hrmOfferRedrawSoon(120));
+  });
+}
+
+function hrmOfferRedrawSoon(ms){
+  clearTimeout(HRM_OFFER_TIMER);
+  const note = document.getElementById('hrmOfferDrawing');
+  if (note) note.style.display = 'inline';
+  HRM_OFFER_TIMER = setTimeout(hrmOfferRedraw, ms);
+}
+
+// The letter as the server builds it, not a guess at it in HTML: what is on
+// screen is the file that would be attached, down to the page breaks.
+async function hrmOfferRedraw(){
+  clearTimeout(HRM_OFFER_TIMER);
+  const frame = document.getElementById('hrmOfferFrame');
+  const note = document.getElementById('hrmOfferDrawing');
+  if (!frame || !HRM_OFFER) return;
+  try {
+    const token = localStorage.getItem('authToken');
+    const res = await fetch('/api/hrm/candidates/' + HRM_OFFER.id + '/offer/preview', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      credentials: 'include',
+      body: JSON.stringify(hrmOfferBody()),
+    });
+    if (!res.ok) return;
+    const url = URL.createObjectURL(await res.blob());
+    // The old one is released only after the new one is showing, or the frame
+    // blanks for a moment on every keystroke.
+    const old = HRM_OFFER_URL;
+    HRM_OFFER_URL = url;
+    frame.src = url + '#toolbar=0&navpanes=0&view=FitH';
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 1500);
+  } catch (e) {
+    // A redraw that fails is not worth interrupting the form for; the send
+    // still checks, and the next keystroke tries again.
+  } finally {
+    if (note) note.style.display = 'none';
+  }
 }
 
 function hrmOfferBody(){
@@ -8317,6 +8377,7 @@ function hrmOfferBody(){
     address1: val('hrmOfferAddr1'), address2: val('hrmOfferAddr2'),
     signatoryName: val('hrmOfferSigName'), signatoryDesignation: val('hrmOfferSigRole'),
     signatoryEmail: val('hrmOfferSigEmail'), signatoryPhone: val('hrmOfferSigPhone'),
+    cc: val('hrmOfferCc'),
   };
 }
 
@@ -8351,6 +8412,15 @@ async function previewHrmOffer(btn){
     // Freed once the tab has had it; revoking straight away closes it on them.
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } finally { done(); }
+}
+
+// A blob URL holds the PDF in memory until it is revoked, and this dialog is
+// opened again and again over an afternoon.
+function hrmOfferRelease(){
+  clearTimeout(HRM_OFFER_TIMER);
+  if (HRM_OFFER_URL) { URL.revokeObjectURL(HRM_OFFER_URL); HRM_OFFER_URL = null; }
+  const frame = document.getElementById('hrmOfferFrame');
+  if (frame) frame.removeAttribute('src');
 }
 
 async function saveHrmOffer(btn){
