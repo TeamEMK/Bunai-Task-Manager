@@ -15,7 +15,51 @@
 // at a glance, and a page count at the foot so a two-page letter is visibly
 // two pages and nobody signs a stray first sheet.
 // ══════════════════════════════════════════════════════
+const fs = require('fs');
+const path = require('path');
 const PDFDocument = require('pdfkit');
+const config = require('../config');
+
+// ── The company's letterhead ──────────────────────────
+// Three images out of the Word letterhead the client sent: the banner across
+// the top, the band across the bottom, and the pale yarn-ball mark the page is
+// written over. They live in frontend/ beside the email logo, because that is
+// the folder the production build is told to carry.
+//
+// Read once and kept. If any of them is missing the letter still goes out —
+// with the name and address set as type instead, which is what it looked like
+// before the client sent this.
+const ART = {
+  top: 'letterhead-top.png',
+  bottom: 'letterhead-bottom.png',
+  mark: 'letterhead-watermark.png',
+};
+let _art;
+function letterhead() {
+  if (_art === undefined) {
+    _art = {};
+    for (const [key, file] of Object.entries(ART)) {
+      try {
+        _art[key] = fs.readFileSync(path.join(config.publicDir, file));
+      } catch (err) {
+        console.warn('⚠️ Offer letter: ' + file + ' is missing — falling back to a typed letterhead');
+        _art = null;
+        break;
+      }
+    }
+  }
+  return _art;
+}
+
+// What each band takes up once it is drawn the full width of an A4 page, and
+// where inside it the printing stops — measured off the images themselves
+// rather than guessed, because the text has to clear both and a letter whose
+// date sits on the letterhead rule looks like a mistake.
+//
+//   top:    ink runs from the very top down to 65.7% of the band
+//   bottom: ink starts at 70% of the band and runs to the foot
+const ART_RATIO = { top: 836 / 2476, bottom: 726 / 2476 };
+const ART_INK = { top: 0.657, bottom: 0.70 };
 
 // The template's own list, in its own order. Kept as data because it is the
 // part most likely to be edited, and editing a list should not mean editing
@@ -61,11 +105,22 @@ const FONT = 'Times-Roman';
 const BOLD = 'Times-Bold';
 
 function build(offer) {
+  const art = letterhead();
+
+  // A4 is 595pt across. The bands are drawn edge to edge, so their height
+  // follows from that, and the text starts under the banner's rule and stops
+  // above the footer's address rather than at an arbitrary inch.
+  const PAGE_W = 595.28;
+  const artTop = art ? PAGE_W * ART_RATIO.top : 0;
+  const artBottom = art ? PAGE_W * ART_RATIO.bottom : 0;
+  const topMargin = art ? Math.round(artTop * ART_INK.top) + 26 : MARGIN;
+  const bottomMargin = art ? Math.round(artBottom * (1 - ART_INK.bottom)) + 30 : MARGIN + FOOT;
+
   const doc = new PDFDocument({
     size: 'A4',
     // Held open so the page count can be written once the page count is known.
     bufferPages: true,
-    margins: { top: MARGIN, bottom: MARGIN + FOOT, left: MARGIN, right: MARGIN },
+    margins: { top: topMargin, bottom: bottomMargin, left: MARGIN, right: MARGIN },
     info: {
       Title: `Offer Letter — ${offer.name || ''}`,
       Author: offer.company || COMPANY,
@@ -74,6 +129,20 @@ function build(offer) {
   });
 
   const width = doc.page.width - MARGIN * 2;
+
+  // Drawn before anything else on every page, so the letter is written on top
+  // of the mark rather than the other way round. Explicit coordinates, which
+  // leave the text cursor where it was.
+  const dressPage = () => {
+    if (!art) return;
+    const { width: pw, height: ph } = doc.page;
+    // The watermark, at the size and centring the Word file gives it.
+    doc.image(art.mark, (pw - 365.15) / 2, (ph - 338.4) / 2, { width: 365.15, height: 338.4 });
+    doc.image(art.top, 0, 0, { width: pw });
+    doc.image(art.bottom, 0, ph - pw * ART_RATIO.bottom, { width: pw });
+  };
+  doc.on('pageAdded', dressPage);
+  dressPage();
 
   const para = (text, opts = {}) => {
     doc.font(opts.bold ? BOLD : FONT).fontSize(opts.size || BODY_SIZE).fillColor(INK)
@@ -113,15 +182,20 @@ function build(offer) {
       .font(plain ? FONT : BOLD).text(String(value));
   };
 
-  // ── the letterhead ──
-  doc.font(BOLD).fontSize(16).fillColor(INK)
-    .text(offer.company || COMPANY, { width, align: 'left' });
-  [offer.companyAddress1, offer.companyAddress2].filter(Boolean).forEach((line) => {
-    doc.font(FONT).fontSize(9).fillColor(QUIET).text(line, { width, align: 'left', lineGap: 1 });
-  });
-  doc.moveDown(0.6);
-  doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + width, doc.y).lineWidth(0.8).strokeColor(RULE).stroke();
-  doc.moveDown(1);
+  // ── the letterhead, where the banner could not be loaded ──
+  // The printed one carries the name, the address and a rule; this is the same
+  // information set as type, so a missing image costs the letter its look and
+  // not its contents.
+  if (!art) {
+    doc.font(BOLD).fontSize(16).fillColor(INK)
+      .text(offer.company || COMPANY, { width, align: 'left' });
+    [offer.companyAddress1, offer.companyAddress2].filter(Boolean).forEach((line) => {
+      doc.font(FONT).fontSize(9).fillColor(QUIET).text(line, { width, align: 'left', lineGap: 1 });
+    });
+    doc.moveDown(0.6);
+    doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + width, doc.y).lineWidth(0.8).strokeColor(RULE).stroke();
+    doc.moveDown(1);
+  }
 
   // ── the date, then who it is addressed to ──
   doc.font(FONT).fontSize(BODY_SIZE).fillColor(INK)
@@ -179,10 +253,12 @@ function build(offer) {
     { t: '. You are required to communicate your acceptance of the Offer on or before this date.' },
   ]);
 
-  // The list is checked off as one thing, so it should not be torn in half by
-  // a page break. If the rest of this page cannot hold it, it starts the next.
-  const listHeight = DOCUMENTS.length * (BODY_SIZE + LINE_GAP + 3) + 40;
-  if (doc.y + listHeight > doc.page.height - doc.page.margins.bottom) doc.addPage();
+  // The list may run over a page break — it is numbered, so it picks itself up
+  // again — but it should not leave an orphan of one or two items behind. If
+  // fewer than five would fit here, the whole thing starts on the next page.
+  const lineH = BODY_SIZE + LINE_GAP + 3;
+  const room = doc.page.height - doc.page.margins.bottom - doc.y - 40;
+  if (room < lineH * 5) doc.addPage();
 
   para('You are required to bring the following documents at the time of joining:', { after: 0.4 });
 
@@ -243,10 +319,13 @@ function build(offer) {
     // per page. Dropping the margin for the one line stops that.
     const keep = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
+    // Above the printed band, not over it: the band has its own address and
+    // phone number, and a page count sitting on top of them reads as a smudge.
+    const y = art
+      ? doc.page.height - doc.page.width * ART_RATIO.bottom * (1 - ART_INK.bottom) - 24
+      : doc.page.height - MARGIN - 4;
     doc.font(FONT).fontSize(8.5).fillColor(QUIET)
-      .text(`Page ${i + 1} of ${range.count}`,
-        MARGIN, doc.page.height - MARGIN - 4,
-        { width, align: 'center', lineBreak: false });
+      .text(`Page ${i + 1} of ${range.count}`, MARGIN, y, { width, align: 'center', lineBreak: false });
     doc.page.margins.bottom = keep;
   }
   doc.flushPages();

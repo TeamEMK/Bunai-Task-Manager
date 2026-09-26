@@ -8310,8 +8310,6 @@ async function openHrmOffer(id){
   } else note.style.display = 'none';
 
   set('hrmOfferCompany', o.company);
-  set('hrmOfferCoAddr1', o.companyAddress1);
-  set('hrmOfferCoAddr2', o.companyAddress2);
   set('hrmOfferCc', o.cc);
 
   document.getElementById('hrmOfferModal').classList.add('open');
@@ -8381,7 +8379,6 @@ function hrmOfferBody(){
     signatoryName: val('hrmOfferSigName'), signatoryDesignation: val('hrmOfferSigRole'),
     signatoryEmail: val('hrmOfferSigEmail'), signatoryPhone: val('hrmOfferSigPhone'),
     company: val('hrmOfferCompany'),
-    companyAddress1: val('hrmOfferCoAddr1'), companyAddress2: val('hrmOfferCoAddr2'),
     cc: val('hrmOfferCc'),
   };
 }
