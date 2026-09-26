@@ -144,33 +144,99 @@ function build(offer) {
   doc.on('pageAdded', dressPage);
   dressPage();
 
-  const para = (text, opts = {}) => {
-    doc.font(opts.bold ? BOLD : FONT).fontSize(opts.size || BODY_SIZE).fillColor(INK)
-      .text(text, { width, align: opts.align || 'justify', lineGap: LINE_GAP, ...opts });
-    doc.moveDown(opts.after ?? 0.55);
+  // ── Setting a paragraph ───────────────────────────────
+  // Laid out a word at a time rather than handed to pdfkit's own justify.
+  //
+  // pdfkit justifies each `continued` run on its own, as though that run had
+  // to fill the line by itself. In a sentence that switches weight mid-line —
+  // and every sentence here does, because the role and the dates are bold —
+  // that spreads one run's words across the whole measure and leaves
+  //
+  //     ...02/11/2026(the        "Joining        Date"),
+  //
+  // which is the same fault the letter this one is modelled on has. Measuring
+  // the words and placing them is the only way to get one even line out of two
+  // fonts, and it fixes the swallowed space at a run boundary for free.
+  const LINE_H = BODY_SIZE + LINE_GAP;
+  const SPACE = () => doc.widthOfString(' ');
+
+  const setParagraph = (runs, opts = {}) => {
+    const justify = (opts.align || 'justify') === 'justify';
+    const size = opts.size || BODY_SIZE;
+
+    // Every word, as the pieces it is made of. A word can change weight in the
+    // middle of itself — the comma after a bold name is set plain, and it has
+    // to stay hard against the name rather than become a word of its own — so
+    // a word is a list of segments, not a string.
+    const words = [];
+    let open = false;          // does the previous run end mid-word?
+    runs.filter(r => r && r.t !== '').forEach((run) => {
+      const text = String(run.t);
+      const startsMidWord = open && !/^\s/.test(text);
+      text.split(/\s+/).filter(Boolean).forEach((w, i) => {
+        if (i === 0 && startsMidWord && words.length) words[words.length - 1].push({ w, b: !!run.b });
+        else words.push([{ w, b: !!run.b }]);
+      });
+      open = !/\s$/.test(text);
+    });
+    if (!words.length) return;
+
+    doc.fontSize(size).fillColor(INK);
+    const widthOf = (word) => word.reduce((sum, seg) => {
+      doc.font(seg.b ? BOLD : FONT);
+      return sum + doc.widthOfString(seg.w);
+    }, 0);
+    doc.font(FONT);
+    const spaceW = SPACE();
+
+    // Greedy line filling, the way any typesetter does it.
+    const lines = [];
+    let line = [], used = 0;
+    for (const word of words) {
+      const w = widthOf(word);
+      const need = line.length ? used + spaceW + w : w;
+      if (line.length && need > width) {
+        lines.push({ words: line, used });
+        line = [word];
+        used = w;
+      } else {
+        line.push(word);
+        used = need;
+      }
+    }
+    if (line.length) lines.push({ words: line, used });
+
+    lines.forEach((ln, i) => {
+      // A paragraph that runs off the bottom carries on over the page, and the
+      // new page brings its letterhead with it.
+      if (doc.y + LINE_H > doc.page.height - doc.page.margins.bottom) doc.addPage();
+      const last = i === lines.length - 1;
+      // The last line of a justified paragraph is set normally — stretching it
+      // is what makes a letter look broken.
+      const gap = (justify && !last && ln.words.length > 1)
+        ? (width - (ln.used - spaceW * (ln.words.length - 1))) / (ln.words.length - 1)
+        : spaceW;
+      let x = MARGIN;
+      const y = doc.y;
+      ln.words.forEach((word) => {
+        word.forEach((seg) => {
+          doc.font(seg.b ? BOLD : FONT).fontSize(size).fillColor(INK)
+            .text(seg.w, x, y, { lineBreak: false });
+          x += doc.widthOfString(seg.w);
+        });
+        x += gap;
+      });
+      doc.y = y + LINE_H;
+    });
+    doc.y += (opts.after ?? 0.55) * LINE_H;
+    // Drawing at an explicit x leaves the cursor at the last word. Anything
+    // that lays itself out afterwards — the numbered list does — starts from
+    // doc.x, and would begin wherever this paragraph happened to end.
+    doc.x = MARGIN;
   };
 
-  // A sentence made of alternating plain and bold runs. Everything a reader
-  // checks first — the role, the dates — is the bold half, and the runs are
-  // written continued so the line still justifies as one paragraph.
-  //
-  // The space AFTER a bold word has to live inside the bold run. While
-  // justifying, pdfkit trims a plain run's leading space at a continued
-  // boundary — which is how the letter this one follows ended up reading
-  // "JaipurOffice" — and a space carried inside the bold run survives it. A
-  // space looks the same in either weight, so nothing is lost by moving it.
-  const rich = (runs, opts = {}) => {
-    doc.fontSize(BODY_SIZE).fillColor(INK);
-    const parts = runs.filter(r => r && r.t !== '');
-    parts.forEach((run, i) => {
-      doc.font(run.b ? BOLD : FONT)
-        .text(run.t, {
-          width, align: opts.align || 'justify', lineGap: LINE_GAP,
-          continued: i < parts.length - 1,
-        });
-    });
-    doc.moveDown(opts.after ?? 0.55);
-  };
+  const para = (text, opts = {}) => setParagraph([{ t: text, b: opts.bold }], opts);
+  const rich = (runs, opts = {}) => setParagraph(runs, opts);
 
   // A label and its value on one line. The candidate's own details are set in
   // bold and the signatory's plain, the way the letter this one follows does
