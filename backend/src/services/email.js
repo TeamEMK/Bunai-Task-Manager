@@ -60,7 +60,10 @@ function transport() {
       // request that was only trying to say a candidate had been added.
       connectionTimeout: 10000,
       greetingTimeout: 10000,
-      socketTimeout: 20000,
+      // The socket carries the attachment, and the offer letter is a few
+      // hundred kilobytes of letterhead - on a slow uplink twenty seconds was
+      // enough to lose a letter that was most of the way there.
+      socketTimeout: 60000,
     });
   }
   return _transport;
