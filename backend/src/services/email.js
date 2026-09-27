@@ -40,8 +40,8 @@ function logoAttachment() {
   return _logo;
 }
 
-// Built on first use, then reused: nodemailer pools connections per transport,
-// so making a new one per email would open a fresh TLS handshake every time.
+// Built on first use, then reused. The transport object is cheap to keep; what
+// is deliberately not kept is a connection - see pool below.
 let _transport = null;
 function transport() {
   if (!cfg.pass || !cfg.user) return null;
@@ -51,6 +51,16 @@ function transport() {
       port: cfg.port,
       secure: cfg.port === 465,   // 465 is implicit TLS; 587 upgrades via STARTTLS
       auth: { user: cfg.user, pass: cfg.pass },
+      // No pooling. This deploys to Vercel, where the container is frozen
+      // between requests - a held-open connection is dead by the time the next
+      // request thaws it, and the send fails on a socket that looks fine.
+      pool: false,
+      // And a cap on every stage of it. Without these a silent SMTP host holds
+      // the connection until the function itself is killed, which loses the
+      // request that was only trying to say a candidate had been added.
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
     });
   }
   return _transport;

@@ -11,6 +11,7 @@
 // wrote them.
 // ══════════════════════════════════════════════════════
 const email = require('./email');
+const { OFFICE } = require('./office');
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
@@ -76,6 +77,29 @@ function note(text) {
       font-family:${FONT};font-size:14.5px;line-height:1.6;color:#334155">${linkify(esc(t)).replace(/\r?\n/g, '<br>')}</td></tr></table>`;
 }
 
+// Where the interview is held — the same block in every letter that needs it.
+//
+// Set apart from the paragraphs, because it is the one thing in the letter
+// somebody will come back to on their phone on the way over, and a map link
+// they can tap beats an address they have to copy out. It comes from
+// office.js, so nobody has to type it into the note box for every candidate.
+function whereToCome() {
+  const lines = String(OFFICE.address || '').split(/\r?\n/)
+    .map(l => esc(l.trim())).filter(Boolean).join('<br>');
+  if (!lines) return '';
+  const map = OFFICE.map
+    ? `<div style="margin-top:10px"><a href="${esc(OFFICE.map)}" target="_blank"
+         style="font-family:${FONT};font-size:13.5px;font-weight:600;color:#1a56db;text-decoration:underline"
+         >Open in Google Maps</a></div>`
+    : '';
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 18px">
+    <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:13px 16px">
+      <div style="font-family:${FONT};font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#64748b;margin-bottom:7px">Where to come</div>
+      <div style="font-family:${FONT};font-size:14px;line-height:1.6;color:#0f172a;font-weight:600">${lines}</div>
+      ${map}
+    </td></tr></table>`;
+}
+
 // A plain-text twin of every letter. Some clients never render the HTML, and a
 // candidate reading the fallback should still get the date and the link.
 //
@@ -128,7 +152,8 @@ function buildInterviewEmail(c) {
     + para(`Thank you for your interest in Bunai. Your interview${c.profile_position ? ` for the role of <b>${esc(c.profile_position)}</b>` : ''} has been scheduled. The details are below.`)
     + detail([['Date & time', when], ['Position', esc(c.profile_position)]])
     + note(c.notes)
-    + para('The interview is held at our office. Please arrive a few minutes early.')
+    + whereToCome()
+    + para('Please arrive a few minutes early.')
     + para('If you cannot make this time, reply to this email and we will arrange another.')
     + para('We look forward to meeting you.');
   const html = email.shell({
@@ -148,6 +173,7 @@ function buildRescheduleEmail(c) {
     + detail([['New date & time', when], ['Position', esc(c.profile_position)],
               ['Reason', esc(c.reschedule_reason)]])
     + note(c.notes)
+    + whereToCome()
     + para('Apologies for the change, and thank you for your patience.');
   const html = email.shell({
     preheader: `Interview moved${when ? ' to ' + when : ''}`,

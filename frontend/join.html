@@ -292,14 +292,64 @@ for (const id of ['emp_mobile', 'guardian1_mobile', 'guardian2_mobile', 'pincode
   $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
 }
 
+// What is actually sent for each box, which is not always the file that was
+// picked — see shrink() below.
+const PICKED = {};
+
+// A photograph of an Aadhaar card off a phone is three or four megabytes, and
+// this app runs as a serverless function whose whole request body has to stay
+// under about four and a half. Five such photos would never arrive at all —
+// the request would be refused before a line of our code ran, and the person
+// filling the form would be told nothing useful.
+//
+// So the picture is drawn into a canvas at 1600px first — wide enough that the
+// number on the card is still readable — and what leaves the browser is a few
+// hundred kilobytes. A PDF cannot be shrunk this way and goes as it is.
+function shrink(file) {
+  return new Promise((resolve) => {
+    // HEIC is a photo, but not one this browser can draw.
+    if (!/^image\//.test(file.type) || file.type === 'image/heic') return resolve(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1600;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          // Only if it actually helped. A small clean scan should not be
+          // re-encoded into something larger and blurrier than it started.
+          if (!blob || blob.size >= file.size) return resolve(file);
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.82);
+      };
+      // A file the browser cannot decode never fires onload — send the
+      // original rather than silently dropping somebody's document.
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
 // A chosen file should be visibly chosen. The browser's own label is easy to
 // miss on a phone, and a form that silently lost an upload is the worst kind.
 document.querySelectorAll('.file input[type=file]').forEach(inp => {
   inp.addEventListener('change', () => {
     const box = inp.closest('.file');
+    const picked = box.querySelector('.picked');
     const f = inp.files[0];
-    box.classList.toggle('has', !!f);
-    box.querySelector('.picked').textContent = f ? `✓ ${f.name} (${Math.round(f.size / 1024)} KB)` : '';
+    if (!f) { delete PICKED[inp.id]; box.classList.remove('has'); picked.textContent = ''; return; }
+    picked.textContent = 'Reading…';
+    shrink(f).then((out) => {
+      PICKED[inp.id] = out;
+      box.classList.add('has');
+      picked.textContent = `✓ ${f.name} (${Math.round(out.size / 1024)} KB)`;
+    });
   });
 });
 
@@ -368,8 +418,9 @@ $('form').addEventListener('submit', async (e) => {
     pan_no: $('pan_no').value.trim().toUpperCase(),
   };
   for (const [k, v] of Object.entries(text)) fd.append(k, v);
+  // The shrunk copy, not the original off the camera roll.
   for (const id of ['resume_file', 'aadhaar_file', 'aadhaar_file_2', 'pan_file', 'pan_file_2']) {
-    const f = $(id).files[0];
+    const f = PICKED[id] || $(id).files[0];
     if (f) fd.append(id, f);
   }
 

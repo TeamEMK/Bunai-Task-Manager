@@ -152,11 +152,15 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
      candidate.salary, candidate.notes, req.session.userId]);
   candidate.id = r.insertId;
 
-  // The letters go out after the reply, not before it. SMTP takes about six
-  // seconds for the two of them, and holding the dialog open for that made the
-  // app look stuck. The candidate is saved either way, and neither letter is
-  // lost by being sent late: every one of them, sent or failed, lands in
-  // hrm_message_log, which is what the page reads back a moment later.
+  // The letters go out BEFORE the reply, not after it.
+  //
+  // Sending afterwards is the kinder thing on a server that stays up: SMTP
+  // takes a few seconds and the dialog need not wait for it. This app runs as
+  // a Vercel function, and a function is frozen the moment its response is
+  // flushed — a letter still in flight at that point is never sent, and
+  // nothing anywhere says so. So the wait goes back on the dialog, which says
+  // what it is doing and refuses a second click, and the reply reports what
+  // actually happened.
   //
   // The invitation goes only when there is a time to invite them to; a record
   // created to be filled in later should not email somebody an empty date.
@@ -167,19 +171,23 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
   // see, and it is worth sending even when the candidate's fails.
   const tellInterviewer = willSend && looksLikeEmail(candidate.interviewer_email);
 
-  // How many letters the page should wait for before it decides they are all in.
-  res.json({ id: candidate.id, sending: willSend, letters: (willSend ? 1 : 0) + (tellInterviewer ? 1 : 0) });
-
+  let mail = null;
+  let intv = null;
   if (willSend) {
-    (async () => {
-      await mailCandidate(candidate, 'interview', 'Interview invitation');
-      if (tellInterviewer) {
-        const intv = await hrmEmail.sendToInterviewer(candidate).catch(e => ({ ok: false, reason: e.message }));
-        await logEmail({ ...candidate, name: 'Interviewer', email: candidate.interviewer_email },
-          'Interviewer notified', intv);
-      }
-    })().catch(err => console.error('⚠️ Recruitment mail failed after the reply:', err.message));
+    mail = await mailCandidate(candidate, 'interview', 'Interview invitation');
+    if (tellInterviewer) {
+      intv = await hrmEmail.sendToInterviewer(candidate).catch(e => ({ ok: false, reason: e.message }));
+      await logEmail({ ...candidate, name: 'Interviewer', email: candidate.interviewer_email },
+        'Interviewer notified', intv);
+    }
   }
+
+  res.json({
+    id: candidate.id,
+    sending: willSend,
+    emailed: !!mail?.ok, emailError: mail && !mail.ok ? mail.reason : null,
+    interviewerEmailed: !!intv?.ok, interviewerError: intv && !intv.ok ? intv.reason : null,
+  });
 }));
 
 // ── Update ────────────────────────────────────────────
@@ -245,24 +253,31 @@ router.put('/hrm/candidates/:id/status', requireAuth, requireAdmin, asyncRoute(a
   const kind = EMAIL_FOR_STATUS[status];
   const willSend = !!kind && b.sendEmail !== false && !justSent;
 
-  res.json({ success: true, status, duplicate: !!justSent, sending: willSend, letters: willSend ? 1 : 0 });
-
-  if (willSend) {
-    mailCandidate(updated, kind, action)
-      .catch(err => console.error('⚠️ Status letter failed after the reply:', err.message));
-  }
+  // Sent before the reply, for the same reason as the invitation: this runs as
+  // a serverless function, and anything still in flight when it answers is
+  // simply never sent.
+  let mail = null;
+  if (willSend) mail = await mailCandidate(updated, kind, action);
 
   // Moving somebody to Onboarding is the moment the form is due - being
   // selected only means they have been chosen, and the two often happen days
   // apart while an offer is agreed. Sent once: if it has gone before, or they
   // have already filled it in, the button on the candidate's row is there to
   // send it again deliberately.
+  let form = null;
   if (status === 'Onboarding' && b.sendEmail !== false && !c.joining_form_sent_at) {
-    (async () => {
-      const done = await db.one('SELECT id FROM hrm_joining_details WHERE candidate_id=?', [id]);
-      if (!done) await joining.mailForm({ ...c, ...fields, id });
-    })().catch(err => console.error('⚠️ Onboarding form failed after the reply:', err.message));
+    const done = await db.one('SELECT id FROM hrm_joining_details WHERE candidate_id=?', [id]);
+    if (!done) {
+      form = await joining.mailForm({ ...c, ...fields, id })
+        .catch(e => ({ ok: false, reason: e.message }));
+    }
   }
+
+  res.json({
+    success: true, status, duplicate: !!justSent, sending: willSend || !!form,
+    emailed: !!mail?.ok || !!justSent, emailError: mail && !mail.ok ? mail.reason : null,
+    formSent: form ? !!form.ok : null, formError: form && !form.ok ? form.reason : null,
+  });
 }));
 
 // What became of one candidate's letters. The dialog closes before they are
