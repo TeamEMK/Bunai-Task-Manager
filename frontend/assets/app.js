@@ -7963,6 +7963,8 @@ async function loadHrm(){
         <td>
           <b>${dtEscape(c.name)}</b>${moved}
           <div style="font-size:11.5px;color:var(--faint)">${dtEscape(c.email)}${c.phone ? ' · ' + dtEscape(c.phone) : ''}</div>
+          ${c.cv_name ? `<a href="/api/hrm/joining-file/${c.id}/cv" target="_blank"
+              style="font-size:11.5px;color:var(--brand-deep);text-decoration:none">⬇ CV</a>` : ''}
         </td>
         <td style="font-size:13px">${dtEscape(c.profile_position || '—')}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(d)}${t ? `<div style="font-size:11.5px;color:var(--faint)">${hrmTime(t)}</div>` : ''}</td>
@@ -7986,6 +7988,15 @@ async function loadHrm(){
 function openHrmCandidate(idx){
   const c = (idx === undefined || idx === null) ? null : HRM_ROWS[idx];
   document.getElementById('hrmModalTitle').textContent = c ? 'Edit Candidate' : 'Schedule Interview';
+  // A file input cannot be filled in from here, so say what is already on file
+  // and let a new pick replace it.
+  const cvBox = document.getElementById('hrmCv');
+  if (cvBox) cvBox.value = '';
+  const have = document.getElementById('hrmCvHave');
+  if (have) {
+    have.textContent = c && c.cv_name ? '\u2713 on file: ' + c.cv_name + ' \u2014 choosing another replaces it' : '';
+    have.style.display = c && c.cv_name ? 'block' : 'none';
+  }
   document.getElementById('hrmEditId').value = c ? c.id : '';
   const set = (id, v) => { document.getElementById(id).value = v || ''; };
   set('hrmName', c?.name); set('hrmEmail', c?.email); set('hrmPhone', c?.phone);
@@ -7997,6 +8008,10 @@ function openHrmCandidate(idx){
   // Editing never emails — only adding, and only then because an invitation is
   // the point of adding somebody.
   document.getElementById('hrmSendWrap').style.display = c ? 'none' : 'flex';
+  // The line under it explains that tick and nothing else, so it goes too -
+  // on the edit form it was left behind, explaining a box that was not there.
+  const sendHint = document.getElementById('hrmSendHint');
+  if (sendHint) sendHint.style.display = c ? 'none' : 'block';
   // Salary and joining date have no answer yet when the first interview is
   // being booked — asking for them there is asking somebody to guess.
   document.getElementById('hrmLaterFields').style.display = c ? 'grid' : 'none';
@@ -8041,8 +8056,29 @@ async function hrmWriteCandidate(){
   };
   if (!body.name) { err.textContent = 'Name is required'; err.style.display = 'block'; return; }
 
-  const r = id ? await api('/api/hrm/candidates/' + id, 'PUT', body)
-               : await api('/api/hrm/candidates', 'POST', body);
+  // Sent as a form rather than JSON: there may be a CV with it, and a file
+  // does not fit down a JSON request without being turned into text first.
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(body)) fd.append(k, v === null || v === undefined ? '' : v);
+  const cvFile = document.getElementById('hrmCv')?.files?.[0];
+  if (cvFile) {
+    if (cvFile.size > 4 * 1024 * 1024) {
+      err.textContent = `That CV is ${Math.round(cvFile.size / 1024 / 1024)} MB. The limit is 4 MB \u2014 `
+        + 'save it as a PDF and try again.';
+      err.style.display = 'block';
+      return;
+    }
+    fd.append('cv', cvFile);
+  }
+  const token = localStorage.getItem('authToken');
+  const res = await fetch('/api/hrm/candidates' + (id ? '/' + id : ''), {
+    method: id ? 'PUT' : 'POST',
+    headers: token ? { Authorization: 'Bearer ' + token } : {},
+    credentials: 'include',
+    body: fd,
+  });
+  let r;
+  try { r = await res.json(); } catch (e) { r = { error: 'HTTP ' + res.status }; }
   if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
   closeModal('hrmModal');
   // The server recognised this as the same save arriving twice. Nothing was

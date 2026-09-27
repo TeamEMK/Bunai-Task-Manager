@@ -1312,13 +1312,19 @@
       <div class="form-group"><label>Expected joining</label>
         <input type="date" id="hrmJoining"/></div>
     </div>
+    <div class="form-group"><label>Candidate's CV
+        <span style="font-weight:400;color:var(--faint);font-size:11px">(attached to the interviewer's email — PDF, Word or a photo, up to 4 MB)</span></label>
+      <input type="file" id="hrmCv" accept=".pdf,.doc,.docx,image/*"
+        style="width:100%;font-size:13px;color:var(--muted-foreground);padding:8px 0"/>
+      <div id="hrmCvHave" style="display:none;font-size:12px;color:var(--faint);margin-top:4px"></div></div>
+
     <div class="form-group"><label>Notes <span style="font-weight:400;color:var(--muted)">(goes to the candidate)</span></label>
       <textarea id="hrmNotes" rows="3" placeholder="Office address, floor, map link — whatever the candidate needs to get there"></textarea></div>
     <label id="hrmSendWrap" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:4px">
       <input type="checkbox" id="hrmSendEmail" checked style="width:15px;height:15px;accent-color:var(--brand-deep);cursor:pointer"/>
       Email the invitation now
     </label>
-    <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">
+    <div id="hrmSendHint" style="font-size:11.5px;color:var(--faint);margin-bottom:6px">
       Only sent when an interview date is set. Untick to add the candidate quietly and invite them later.
     </div>
     <div class="modal-footer" style="justify-content:space-between">

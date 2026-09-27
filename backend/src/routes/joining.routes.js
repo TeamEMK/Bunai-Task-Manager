@@ -33,6 +33,12 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 
 
 const FILE_FIELDS = ['resume_file', 'aadhaar_file', 'aadhaar_file_2', 'pan_file', 'pan_file_2'];
 
+// The joining form fills the five above. 'cv' is the odd one out: it arrives
+// months earlier, with the interview, and is sent on to the interviewer - but
+// it is a document about the same person, so it lives in the same table and
+// comes back through the same route.
+const STORED_FIELDS = [...FILE_FIELDS, 'cv'];
+
 // A CV is a document; an ID card is usually a photo of one. Anything else is
 // refused rather than stored — this folder is read back by people, not by a
 // sandbox.
@@ -237,13 +243,20 @@ router.get('/hrm/candidates/:id/joining-details', requireAuth, requireAdmin, asy
     `SELECT *, DATE_FORMAT(dob,'%Y-%m-%d') AS dob,
             DATE_FORMAT(submitted_at,'%Y-%m-%d %H:%i') AS submitted_at
        FROM hrm_joining_details WHERE candidate_id=?`, [id]);
+  const cv = await db.one(
+    "SELECT id FROM hrm_joining_files WHERE candidate_id=? AND field='cv'", [id]);
   res.json({
     candidate: { id: c.id, name: c.name, email: c.email },
     sent_at: c.joining_form_sent_at,
     link: c.joining_form_token ? formUrl(c.joining_form_token) : null,
     details: row || null,
     // Which documents actually exist, so the page shows five buttons or two.
-    files: row ? FILE_FIELDS.filter(f => row[f]) : [],
+    // The CV is not on that row - it came in with the interview - so it is
+    // looked up separately and listed first, the way a file is read.
+    files: [
+      ...(cv ? ['cv'] : []),
+      ...(row ? FILE_FIELDS.filter(f => row[f]) : []),
+    ],
   });
 }));
 
@@ -252,7 +265,7 @@ router.get('/hrm/candidates/:id/joining-details', requireAuth, requireAdmin, asy
 router.get('/hrm/joining-file/:id/:field', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const field = String(req.params.field);
-  if (!FILE_FIELDS.includes(field)) throw httpError(400, 'Unknown document');
+  if (!STORED_FIELDS.includes(field)) throw httpError(400, 'Unknown document');
 
   const doc = await db.one(
     'SELECT file_name, mime, content FROM hrm_joining_files WHERE candidate_id=? AND field=?', [id, field]);
@@ -274,4 +287,20 @@ router.get('/hrm/joining-file/:id/:field', requireAuth, requireAdmin, asyncRoute
   res.sendFile(file);
 }));
 
-module.exports = { router, mailForm, formUrl, ensureToken };
+// One document, in or replaced. Shared with the recruitment routes, which
+// take a CV when the interview is booked.
+async function storeFile(candidateId, field, file) {
+  if (!file) return null;
+  const ext = ALLOWED[file.mimetype];
+  if (!ext) return { error: `${file.originalname}: only PDF, Word or a photo (JPG, PNG, HEIC)` };
+  const name = clean(file.originalname, 255) || field + ext;
+  await db.query(
+    `INSERT INTO hrm_joining_files (candidate_id, field, file_name, mime, bytes, content)
+     VALUES (?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE file_name=VALUES(file_name), mime=VALUES(mime),
+       bytes=VALUES(bytes), content=VALUES(content), uploaded_at=NOW()`,
+    [candidateId, field, name, file.mimetype, file.size, file.buffer]);
+  return { name };
+}
+
+module.exports = { router, mailForm, formUrl, ensureToken, storeFile, STORED_FIELDS };

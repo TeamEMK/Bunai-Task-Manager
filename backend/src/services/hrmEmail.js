@@ -307,7 +307,7 @@ async function sendOnboardingForm(candidate, url) {
 // The Notes box is deliberately absent. What gets typed there is written for
 // the candidate - which floor, what to bring - so it belongs in their letter,
 // and repeating it here only pads a page somebody is skimming for a number.
-function buildInterviewerEmail(c) {
+function buildInterviewerEmail(c, hasCv) {
   const when = [longDate(c.reschedule_date || c.interview_date),
                 niceTime(c.reschedule_time || c.interview_time)].filter(Boolean).join(', ');
   const body = para('Hello,')
@@ -319,7 +319,9 @@ function buildInterviewerEmail(c) {
         ['Candidate phone', esc(c.phone)],
         ['Candidate email', esc(c.email)],
       ])
-    + para('The candidate has been sent the date and time separately.');
+    + para(hasCv
+      ? 'Their CV is attached. The candidate has been sent the date and time separately.'
+      : 'The candidate has been sent the date and time separately.');
   const html = email.shell({
     preheader: `Interview with ${c.name}${when ? ' — ' + when : ''}`,
     eyebrow: 'INTERVIEW SCHEDULED', eyebrowColor: '#1a56db',
@@ -334,10 +336,13 @@ function buildInterviewerEmail(c) {
 
 // Sent to the interviewer, not the candidate, so it has its own path rather
 // than a `kind` in sendToCandidate — the address it goes to is different.
-async function sendToInterviewer(candidate) {
-  const { subject, html, text } = buildInterviewerEmail(candidate);
+async function sendToInterviewer(candidate, cv) {
+  const { subject, html, text } = buildInterviewerEmail(candidate, !!cv);
   if (!candidate.interviewer_email) return { ok: false, reason: 'no interviewer email', subject };
-  const r = await email.sendMail(candidate.interviewer_email, subject, { text, html });
+  const r = await email.sendMail(candidate.interviewer_email, subject, {
+    text, html,
+    attachments: cv ? [{ filename: cv.name, content: cv.content, contentType: cv.mime }] : undefined,
+  });
   return { ...r, subject };
 }
 

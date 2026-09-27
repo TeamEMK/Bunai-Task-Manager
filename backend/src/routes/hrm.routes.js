@@ -16,8 +16,18 @@ const express = require('express');
 const { db } = require('../db/pool');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
+const multer = require('multer');
 const hrmEmail = require('../services/hrmEmail');
 const joining = require('./joining.routes');
+
+// The Schedule Interview form may carry one file: the candidate's CV. Held in
+// memory and written to the database, the same as the joining documents - the
+// production host has no disk worth writing to.
+//
+// Four megabytes rather than twelve: this request is a form post, and the host
+// refuses a body much past four and a half before any of this runs. A CV is a
+// document, not a photo album.
+const cvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
 
 const router = express.Router();
 
@@ -33,6 +43,15 @@ const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim()) ? 
 // Deliberately forgiving: this only stops obvious typos, and a real address
 // that trips a stricter pattern would block a hire for no good reason.
 const looksLikeEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+
+// The stored CV, as an attachment. Read at the moment of sending rather than
+// held from the upload, so a re-sent letter carries whatever is on file now.
+async function cvFor(candidateId) {
+  const row = await db.one(
+    "SELECT file_name, mime, content FROM hrm_joining_files WHERE candidate_id=? AND field='cv'",
+    [candidateId]);
+  return row?.content ? { name: row.file_name, mime: row.mime, content: row.content } : null;
+}
 
 // Records what was sent, or why it was not. Never throws — a failure to write
 // the log must not take down the action it was describing.
@@ -97,7 +116,9 @@ router.get('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req, 
             -- Where the onboarding form has got to, so the row can say so
             -- without a request per candidate.
             DATE_FORMAT(c.joining_form_sent_at,'%Y-%m-%d %H:%i') AS joining_form_sent_at,
-            DATE_FORMAT(j.submitted_at,'%Y-%m-%d %H:%i') AS joining_submitted_at
+            DATE_FORMAT(j.submitted_at,'%Y-%m-%d %H:%i') AS joining_submitted_at,
+            (SELECT f.file_name FROM hrm_joining_files f
+              WHERE f.candidate_id = c.id AND f.field = 'cv') AS cv_name
        FROM hrm_candidates c
        LEFT JOIN users u ON u.id = c.created_by
        LEFT JOIN hrm_joining_details j ON j.candidate_id = c.id
@@ -108,7 +129,7 @@ router.get('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req, 
 }));
 
 // ── Create ────────────────────────────────────────────
-router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.post('/hrm/candidates', requireAuth, requireAdmin, cvUpload.single('cv'), asyncRoute(async (req, res) => {
   const b = req.body || {};
   const name = clean(b.name);
   const email = clean(b.email);
@@ -171,12 +192,19 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
   // see, and it is worth sending even when the candidate's fails.
   const tellInterviewer = willSend && looksLikeEmail(candidate.interviewer_email);
 
+  // The CV goes in before the letters, because the interviewer's copy carries
+  // it. A file we cannot store is worth saying so about rather than sending a
+  // letter that claims an attachment nobody attached.
+  const stored = await joining.storeFile(candidate.id, 'cv', req.file);
+  if (stored?.error) return res.status(400).json({ error: stored.error, id: candidate.id });
+
   let mail = null;
   let intv = null;
   if (willSend) {
     mail = await mailCandidate(candidate, 'interview', 'Interview invitation');
     if (tellInterviewer) {
-      intv = await hrmEmail.sendToInterviewer(candidate).catch(e => ({ ok: false, reason: e.message }));
+      const cv = await cvFor(candidate.id);
+      intv = await hrmEmail.sendToInterviewer(candidate, cv).catch(e => ({ ok: false, reason: e.message }));
       await logEmail({ ...candidate, name: 'Interviewer', email: candidate.interviewer_email },
         'Interviewer notified', intv);
     }
@@ -185,13 +213,14 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req,
   res.json({
     id: candidate.id,
     sending: willSend,
+    cv: stored ? stored.name : null,
     emailed: !!mail?.ok, emailError: mail && !mail.ok ? mail.reason : null,
     interviewerEmailed: !!intv?.ok, interviewerError: intv && !intv.ok ? intv.reason : null,
   });
 }));
 
 // ── Update ────────────────────────────────────────────
-router.put('/hrm/candidates/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.put('/hrm/candidates/:id', requireAuth, requireAdmin, cvUpload.single('cv'), asyncRoute(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const existing = await db.one('SELECT * FROM hrm_candidates WHERE id=?', [id]);
   if (!existing) throw httpError(404, 'Candidate not found');
@@ -210,7 +239,13 @@ router.put('/hrm/candidates/:id', requireAuth, requireAdmin, asyncRoute(async (r
      clean(b.interviewer_email),
      dateOrNull(b.interview_date), clean(b.interview_time, 20),
      clean(b.salary, 100), clean(b.notes, 5000), dateOrNull(b.joining_date), id]);
-  res.json({ success: true });
+
+  // A CV that turns up after the interview was booked still belongs on the
+  // candidate; it is simply too late for the letter that has already gone.
+  const stored = await joining.storeFile(id, 'cv', req.file);
+  if (stored?.error) return res.status(400).json({ error: stored.error });
+
+  res.json({ success: true, cv: stored ? stored.name : null });
 }));
 
 // ── Status ────────────────────────────────────────────
