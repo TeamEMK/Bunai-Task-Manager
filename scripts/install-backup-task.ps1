@@ -16,7 +16,14 @@ param(
   [string] $At = '19:00',
   [int]    $EveryDays = 3,
   [int]    $Keep = 12,
-  [string] $Destination = ''
+  [string] $Destination = '',
+  # Which database to copy. Blank means the app's own .env, which is the local
+  # MySQL. Point it at .env.production.local to register the live one instead.
+  [string] $EnvFile = '',
+  # Dumping the local database takes seconds. The live one comes over Railway's
+  # public proxy and took 21 minutes on first run, so 30 would leave it being
+  # killed part way through the moment the data grows a little.
+  [int]    $TimeLimitMinutes = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,6 +34,10 @@ if (-not (Test-Path $backup)) { throw "backup-db.ps1 is not next to this script 
 
 $argLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Keep {1}' -f $backup, $Keep
 if ($Destination) { $argLine += ' -Destination "{0}"' -f $Destination }
+if ($EnvFile) {
+  if (-not (Test-Path $EnvFile)) { throw "EnvFile not found: $EnvFile" }
+  $argLine += ' -EnvFile "{0}"' -f (Resolve-Path $EnvFile).Path
+}
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argLine -WorkingDirectory (Split-Path $scriptDir -Parent)
 $trigger = New-ScheduledTaskTrigger -Daily -DaysInterval $EveryDays -At $At
@@ -38,7 +49,7 @@ $settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
   -DontStopIfGoingOnBatteries `
   -AllowStartIfOnBatteries `
-  -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
+  -ExecutionTimeLimit (New-TimeSpan -Minutes $TimeLimitMinutes) `
   -MultipleInstances IgnoreNew
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
