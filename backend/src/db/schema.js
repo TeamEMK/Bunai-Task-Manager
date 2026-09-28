@@ -345,6 +345,38 @@ const TABLES = [
     UNIQUE KEY uniq_hrm_join_file (candidate_id, field)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Influencers the marketing team is working with, and how far each one has
+  // got: approved, messaged, shipped, received, posted.
+  //
+  // The client's team fills this in the app and the same row is written to
+  // their Google Sheet, which is where they read it. sheet_row remembers which
+  // line of that sheet a record owns, so an update rewrites its own line
+  // rather than appending a second copy of the same influencer.
+  //
+  // The three dates arrive days apart - one on shipping, one when it lands,
+  // one when the post goes up - so a row is created early and finished later.
+  // That is why this is a record with edits, not a form that is submitted.
+  ['influencers', `CREATE TABLE influencers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    profile_link VARCHAR(500) DEFAULT '',
+    status VARCHAR(40) DEFAULT '',
+    message_sent_on DATE DEFAULT NULL,
+    collaboration_type VARCHAR(40) DEFAULT '',
+    shipping_address VARCHAR(1000) DEFAULT '',
+    email VARCHAR(255) DEFAULT '',
+    phone VARCHAR(50) DEFAULT '',
+    shipped_on DATE DEFAULT NULL,
+    received_on DATE DEFAULT NULL,
+    post_date DATE DEFAULT NULL,
+    -- Which line of the Google Sheet this row owns. Null until the sheet is
+    -- configured, or when a write to it failed - the record is kept either way.
+    sheet_row INT DEFAULT NULL,
+    created_by INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // What a selected candidate fills in before they join: who they are, who to
   // call if something happens, where they live, and the documents payroll and
   // the office need on day one. One row per candidate - the form can be sent
@@ -579,6 +611,7 @@ const INDEXES = [
   ['hrm_candidates', 'idx_hrm_status', 'status'],
   ['hrm_candidates', 'idx_hrm_interview', 'interview_date'],
   ['hrm_candidates', 'idx_hrm_join_token', 'joining_form_token'],
+  ['influencers', 'idx_influencer_status', 'status'],
   ['hrm_message_log', 'idx_hrm_msg_candidate', 'candidate_id'],
   ['hrm_message_log', 'idx_hrm_msg_status', 'status'],
   // ── hr_employees ──

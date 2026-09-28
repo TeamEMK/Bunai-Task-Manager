@@ -104,6 +104,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
       <span class="nav-label-text">Recruitment</span>
     </div>
+    <div class="nav-item" id="nav-influencers" onclick="navigate('influencers',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 8a3 3 0 10-6 0 3 3 0 006 0zM4.5 19.5a7.5 7.5 0 0115 0M19 4l1.5 1.5L19 7M5 4L3.5 5.5 5 7"/></svg>
+      <span class="nav-label-text">Influencers</span>
+    </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
       <span class="nav-label-text">Leave Tracker</span>
@@ -1130,6 +1134,35 @@
     </div>
   </div>
 
+  <div id="page-influencers" class="page">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <div style="position:relative;flex:1 1 260px;max-width:380px">
+        <input type="text" id="infSearch" placeholder="🔍 Search name, email, phone, profile…"
+          oninput="infDebounced()" style="width:100%"/>
+      </div>
+      <select id="infStatusFilter" onchange="loadInfluencers()" style="width:auto;min-width:150px">
+        <option value="">All statuses</option>
+        <option value="Approved">Approved</option>
+        <option value="Not Approved">Not Approved</option>
+      </select>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="openInfluencer()">+ Add Influencer</button>
+    </div>
+
+    <div id="infTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:8px"></div>
+    <div id="infNote" style="display:none;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;border-radius:9px"></div>
+
+    <div class="table-container">
+      <table>
+        <thead><tr>
+          <th>Influencer</th><th>Status</th><th>Collaboration</th><th>Messaged</th>
+          <th>Shipped</th><th>Received</th><th>Posted</th><th>Action</th>
+        </tr></thead>
+        <tbody id="infBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div id="page-leaves" class="page">
     <div class="lv-card">
       <div class="lv-header">
@@ -1280,6 +1313,70 @@
 
 <!-- ── HR: add / edit employee ── -->
 <!-- ── Recruitment: add / edit a candidate ── -->
+<div class="modal-overlay" id="infModal">
+  <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="infModalTitle">Add Influencer</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      Saved here and written to the team's sheet. The shipping and post dates can be filled in later.
+    </div>
+    <div id="infErr" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
+      border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <input type="hidden" id="infEditId"/>
+
+    <div class="form-row">
+      <div class="form-group"><label>Influencer name <span style="color:var(--brand-mid)">*</span></label>
+        <input type="text" id="infName" placeholder="As they are known"/></div>
+      <div class="form-group"><label>Profile link</label>
+        <input type="text" id="infProfile" placeholder="https://instagram.com/…"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Status</label>
+        <select id="infStatus">
+          <option value="">—</option>
+          <option value="Approved">Approved</option>
+          <option value="Not Approved">Not Approved</option>
+        </select></div>
+      <div class="form-group"><label>Collaboration type</label>
+        <select id="infType">
+          <option value="">—</option>
+          <option value="Barter">Barter</option>
+          <option value="Paid">Paid</option>
+          <option value="Sourcing">Sourcing</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email ID</label>
+        <input type="text" id="infEmail" placeholder="name@example.com"/></div>
+      <div class="form-group"><label>Phone number</label>
+        <input type="text" id="infPhone" placeholder="9876543210"/></div>
+    </div>
+    <div class="form-group"><label>Shipping address</label>
+      <textarea id="infAddress" rows="2" placeholder="Where the product goes"></textarea></div>
+
+    <div style="margin:16px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">
+      As it happens <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">— fill these in when each one does</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Message sent on Instagram</label>
+        <input type="date" id="infMessaged"/></div>
+      <div class="form-group"><label>Shipped on</label>
+        <input type="date" id="infShipped"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Received on</label>
+        <input type="date" id="infReceived"/></div>
+      <div class="form-group"><label>Post date</label>
+        <input type="date" id="infPosted"/></div>
+    </div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('infModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveInfluencer(this)">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="hrmModal">
   <div class="modal" style="width:620px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="hrmModalTitle">Schedule Interview</h3>

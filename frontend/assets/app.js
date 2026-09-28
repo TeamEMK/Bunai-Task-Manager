@@ -280,7 +280,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -372,6 +372,7 @@ function navigate(page, el, fromHash) {
   if (page==='users') loadUsers();
   if (page==='hr') loadHr();
   if (page==='hrm') loadHrm();
+  if (page==='influencers') loadInfluencers();
   if (page==='approvals') loadApprovals();
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
@@ -8600,6 +8601,168 @@ async function deleteHrmMail(id){
   if (r.error) return showToast('⚠️ ' + r.error);
   openHrmLog();
   loadHrm();
+}
+
+// ══════════════════════════════════════════════════════
+// 📣 INFLUENCERS
+// The marketing team's tracker. A row is started when an influencer is first
+// approached and finished weeks later, as the product ships, lands and the
+// post goes up — so this is a list you come back to, not a form you submit.
+//
+// Every save also writes the row into the team's Google Sheet, which is where
+// they read it. When that write fails the record is still saved here and the
+// page says so, because a tracker that silently loses half its rows is worse
+// than one that admits it.
+// ══════════════════════════════════════════════════════
+let INF_ROWS = [];
+let _infSearchTimer = null;
+function infDebounced(){ clearTimeout(_infSearchTimer); _infSearchTimer = setTimeout(loadInfluencers, 300); }
+
+const infDate = (d) => {
+  if (!d) return '—';
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
+  if (isNaN(dt)) return dtEscape(String(d));
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const INF_PILL = {
+  'Approved': ['#dcfce7', '#15803d'],
+  'Not Approved': ['#fee2e2', '#b91c1c'],
+};
+const infPill = (status) => {
+  if (!status) return '<span style="color:var(--faint);font-size:12.5px">—</span>';
+  const [bg, fg] = INF_PILL[status] || ['#f1f5f9', '#334155'];
+  return `<span style="background:${bg};color:${fg};font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap">${dtEscape(status)}</span>`;
+};
+
+async function loadInfluencers(){
+  const body = document.getElementById('infBody');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+
+  const params = new URLSearchParams();
+  const q = document.getElementById('infSearch').value.trim();
+  const st = document.getElementById('infStatusFilter').value;
+  if (q) params.set('q', q);
+  if (st) params.set('status', st);
+
+  try {
+    const [rows, meta] = await Promise.all([
+      api('/api/influencers' + (params.toString() ? '?' + params : '')),
+      api('/api/influencers/meta'),
+    ]);
+    if (rows.error) { body.innerHTML = `<tr><td colspan="8" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    INF_ROWS = Array.isArray(rows) ? rows : [];
+
+    const tile = (label, value, sub, tone) => {
+      const col = tone === 'warn' ? '#dc2626' : tone === 'good' ? '#16a34a' : 'var(--foreground)';
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:8px">${label}</div>
+        <div style="font-size:23px;font-weight:800;line-height:1;color:${col}">${value}</div>
+        ${sub ? `<div style="font-size:11.5px;color:var(--faint);margin-top:6px">${sub}</div>` : ''}
+      </div>`;
+    };
+    const m = meta || {};
+    document.getElementById('infTiles').innerHTML =
+      tile('Influencers', Number(m.total || 0), 'on the list') +
+      tile('Approved', Number((m.byStatus || {})['Approved'] || 0), null, 'good') +
+      tile('Awaiting delivery', Number(m.awaitingDelivery || 0), 'shipped, not confirmed', m.awaitingDelivery ? 'warn' : null) +
+      tile('Posted', Number(m.posted || 0), 'post is live');
+
+    // The sheet is half the point of this page, so its absence is said out
+    // loud rather than left for somebody to notice a week later.
+    const note = document.getElementById('infNote');
+    if (note) {
+      if (m.sheet === false) {
+        note.innerHTML = `⚠ Nothing is being written to a Google Sheet yet — records are saved here only. `
+          + `Share the sheet with <b>${dtEscape(m.serviceAccount || 'the service account')}</b> as an Editor `
+          + `and set INFLUENCER_SHEET_ID, and every row will go to both.`;
+        note.style.cssText = 'display:block;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;'
+          + 'border-radius:9px;background:#fef9c3;border:1px solid #fde68a;color:#92400e';
+      } else note.style.display = 'none';
+    }
+
+    if (!INF_ROWS.length) {
+      body.innerHTML = `<tr><td colspan="8" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
+      return;
+    }
+    body.innerHTML = INF_ROWS.map((r, i) => `<tr>
+      <td>
+        <b>${dtEscape(r.name)}</b>
+        <div style="font-size:11.5px;color:var(--faint)">${[r.email, r.phone].filter(Boolean).map(dtEscape).join(' · ') || '—'}</div>
+        ${r.profile_link ? `<a href="${dtEscape(r.profile_link)}" target="_blank"
+            style="font-size:11.5px;color:var(--brand-deep);text-decoration:none">↗ profile</a>` : ''}
+      </td>
+      <td>${infPill(r.status)}</td>
+      <td style="font-size:13px">${dtEscape(r.collaboration_type || '—')}</td>
+      <td style="font-size:13px;white-space:nowrap">${infDate(r.message_sent_on)}</td>
+      <td style="font-size:13px;white-space:nowrap">${infDate(r.shipped_on)}</td>
+      <td style="font-size:13px;white-space:nowrap">${infDate(r.received_on)}</td>
+      <td style="font-size:13px;white-space:nowrap">${infDate(r.post_date)}</td>
+      <td style="white-space:nowrap">
+        <button class="action-btn" onclick="openInfluencer(${i})">Edit</button>
+        <button class="action-btn delete" style="margin-left:6px" onclick="deleteInfluencer(${r.id})">Delete</button>
+      </td>
+    </tr>`).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+  }
+}
+
+function openInfluencer(idx){
+  const r = (idx === undefined || idx === null) ? null : INF_ROWS[idx];
+  document.getElementById('infModalTitle').textContent = r ? 'Edit Influencer' : 'Add Influencer';
+  document.getElementById('infErr').style.display = 'none';
+  const set = (el, v) => { document.getElementById(el).value = v || ''; };
+  document.getElementById('infEditId').value = r ? r.id : '';
+  set('infName', r?.name);
+  set('infProfile', r?.profile_link);
+  set('infStatus', r?.status);
+  set('infType', r?.collaboration_type);
+  set('infEmail', r?.email);
+  set('infPhone', r?.phone);
+  set('infAddress', r?.shipping_address);
+  set('infMessaged', r?.message_sent_on);
+  set('infShipped', r?.shipped_on);
+  set('infReceived', r?.received_on);
+  set('infPosted', r?.post_date);
+  document.getElementById('infModal').classList.add('open');
+}
+
+async function saveInfluencer(btn){
+  const err = document.getElementById('infErr');
+  err.style.display = 'none';
+  const val = (id) => document.getElementById(id).value.trim();
+  const id = document.getElementById('infEditId').value;
+  const body = {
+    name: val('infName'), profile_link: val('infProfile'), status: val('infStatus'),
+    collaboration_type: val('infType'), email: val('infEmail'), phone: val('infPhone'),
+    shipping_address: val('infAddress'), message_sent_on: val('infMessaged'),
+    shipped_on: val('infShipped'), received_on: val('infReceived'), post_date: val('infPosted'),
+  };
+  if (!body.name) { err.textContent = 'The influencer’s name is required'; err.style.display = 'block'; return; }
+
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = id ? await api('/api/influencers/' + id, 'PUT', body)
+                 : await api('/api/influencers', 'POST', body);
+    if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+    closeModal('infModal');
+    // Saved either way; whether it reached the sheet is a separate fact and is
+    // reported as one.
+    if (r.sheet) showToast('✅ Saved — and written to the sheet');
+    else showToast('⚠️ Saved here, but not to the sheet — ' + (r.sheetError || 'no sheet configured'),
+      'error', 9000);
+    loadInfluencers();
+  } finally { done(); }
+}
+
+async function deleteInfluencer(id){
+  if (!confirm('Remove this influencer from the list? Their line in the sheet is left where it is.')) return;
+  const r = await api('/api/influencers/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  showToast('✅ Removed');
+  loadInfluencers();
 }
 
 // ══════════════════════════════════════════════════════

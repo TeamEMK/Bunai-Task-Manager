@@ -82,6 +82,13 @@ module.exports = {
       gid: num(process.env.MERCH_FMS_22GODAM_GID, 0),
       startRow: num(process.env.MERCH_FMS_22GODAM_START_ROW, 2),
     },
+    // The influencer tracker. The team fills it in the app; this is where the
+    // same row is written for them to read.
+    influencer: {
+      id: process.env.INFLUENCER_SHEET_ID || '',
+      gid: num(process.env.INFLUENCER_GID, 0),
+      startRow: num(process.env.INFLUENCER_START_ROW, 2),
+    },
     processFms: {
       id: process.env.PROCESS_FMS_SHEET_ID || '',
       gid: num(process.env.PROCESS_FMS_GID, 0),
