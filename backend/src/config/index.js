@@ -89,6 +89,13 @@ module.exports = {
       gid: num(process.env.INFLUENCER_GID, 0),
       startRow: num(process.env.INFLUENCER_START_ROW, 2),
     },
+    // Bunai B2B - the wholesale order book. Entered in the app, written here
+    // too, because this sheet is the copy the client reads.
+    b2b: {
+      id: process.env.B2B_SHEET_ID || '',
+      gid: num(process.env.B2B_GID, 0),
+      startRow: num(process.env.B2B_START_ROW, 2),
+    },
     processFms: {
       id: process.env.PROCESS_FMS_SHEET_ID || '',
       gid: num(process.env.PROCESS_FMS_GID, 0),

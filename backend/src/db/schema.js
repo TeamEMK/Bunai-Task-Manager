@@ -356,6 +356,45 @@ const TABLES = [
   // The three dates arrive days apart - one on shipping, one when it lands,
   // one when the post goes up - so a row is created early and finished later.
   // That is why this is a record with edits, not a form that is submitted.
+  // Bunai B2B - the wholesale order book, kept by hand. The online orders in
+  // vin_orders come from Vinculum and nobody types them; these are the ones
+  // sold party to party, so a person enters each and edits it as the money
+  // arrives and the goods move.
+  //
+  // Money is DECIMAL, never FLOAT: a rupee that cannot be stored exactly is a
+  // balance that never quite reaches zero.
+  //
+  // total_order_value is stored rather than always recomputed from pieces x
+  // rate, because a negotiated price is a fact about the order that the two
+  // multiplied together cannot express. balance_amount is stored for the same
+  // reason the sheet has a column for it - it is written out to that sheet.
+  ['b2b_orders', `CREATE TABLE b2b_orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    party_name VARCHAR(255) NOT NULL,
+    contact_person VARCHAR(255) DEFAULT '',
+    email VARCHAR(255) DEFAULT '',
+    phone VARCHAR(50) DEFAULT '',
+    city VARCHAR(160) DEFAULT '',
+    what_was_sold VARCHAR(1000) DEFAULT '',
+    pieces INT DEFAULT NULL,
+    rate_per_piece DECIMAL(12,2) DEFAULT NULL,
+    total_order_value DECIMAL(14,2) DEFAULT NULL,
+    payment_status VARCHAR(20) DEFAULT '',
+    amount_received DECIMAL(14,2) DEFAULT NULL,
+    balance_amount DECIMAL(14,2) DEFAULT NULL,
+    order_date DATE DEFAULT NULL,
+    dispatch_date DATE DEFAULT NULL,
+    delivery_date DATE DEFAULT NULL,
+    order_status VARCHAR(20) DEFAULT '',
+    remarks VARCHAR(1000) DEFAULT '',
+    -- Which line of the Google Sheet this order owns, so an edit rewrites that
+    -- line instead of leaving a second copy of the same order underneath.
+    sheet_row INT DEFAULT NULL,
+    created_by INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['influencers', `CREATE TABLE influencers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -611,6 +650,11 @@ const INDEXES = [
   ['hrm_candidates', 'idx_hrm_status', 'status'],
   ['hrm_candidates', 'idx_hrm_interview', 'interview_date'],
   ['hrm_candidates', 'idx_hrm_join_token', 'joining_form_token'],
+  // ── b2b_orders ──
+  // The page filters by either status; the Sales roll-up sums a date window.
+  ['b2b_orders', 'idx_b2b_order_status', 'order_status'],
+  ['b2b_orders', 'idx_b2b_payment_status', 'payment_status'],
+  ['b2b_orders', 'idx_b2b_order_date', 'order_date'],
   ['influencers', 'idx_influencer_status', 'status'],
   ['hrm_message_log', 'idx_hrm_msg_candidate', 'candidate_id'],
   ['hrm_message_log', 'idx_hrm_msg_status', 'status'],

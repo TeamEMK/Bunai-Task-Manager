@@ -280,7 +280,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -373,6 +373,7 @@ function navigate(page, el, fromHash) {
   if (page==='hr') loadHr();
   if (page==='hrm') loadHrm();
   if (page==='influencers') loadInfluencers();
+  if (page==='b2b') loadB2B();
   if (page==='approvals') loadApprovals();
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
@@ -3863,6 +3864,82 @@ function salesFilterBy(dim, val) {
 
 // A professional KPI card. With `filter`, it becomes clickable and filters the
 // recent-orders table to that subset.
+// The Sales page has only ever counted the orders Vinculum syncs in. The
+// wholesale ones are typed by hand on the Bunai B2B page, and the client's
+// question is the obvious one: what did we sell altogether? So the total is
+// stated once at the top, and each half keeps its own section below it.
+//
+// The date window and the cancelled-orders rule are the same on both sides, so
+// the two numbers being added really are comparable. Net mode is the exception
+// and says so: returns come from Vinculum, and a B2B return is a credit note
+// that nobody has entered anywhere.
+function salesCombinedBand(d) {
+  const online = Number(d && d.totals && d.totals.revenue) || 0;
+  const b2b = Number(d && d.b2b && d.b2b.revenue) || 0;
+  const total = online + b2b;
+  if (!total) return '';
+  const pct = (n) => (total ? Math.round(n / total * 100) : 0);
+
+  const half = (label, value, share, note) => `
+    <div style="flex:1 1 180px;min-width:150px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:6px">${label}</div>
+      <div style="font-size:18px;font-weight:800;line-height:1">${value}</div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:5px">${share}% of total${note ? ' \u00b7 ' + note : ''}</div>
+    </div>`;
+
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px">
+    <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 220px;min-width:190px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:7px">Total sales</div>
+        <div style="font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1;color:#16a34a">${inr(total)}</div>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:6px">online + wholesale, this window</div>
+      </div>
+      ${half('Online (Vinculum)', inr(online), pct(online), d && d.net ? 'net of returns' : '')}
+      ${half('Bunai B2B', inr(b2b), pct(b2b), `${Number((d && d.b2b && d.b2b.liveOrders) || 0).toLocaleString('en-IN')} orders`)}
+    </div>
+  </div>`;
+}
+
+// The wholesale section: what was sold, what has actually been collected, and
+// who still owes. Outstanding is the figure worth looking at here - a B2B order
+// is delivered long before it is paid for.
+function salesB2BSection(b) {
+  const head = (text, sub) => `<div style="display:flex;align-items:baseline;gap:10px;margin:0 2px 10px;flex-wrap:wrap">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">${text}</div>
+      ${sub ? `<div style="font-size:12px;color:var(--faint)">${sub}</div>` : ''}
+    </div>`;
+
+  if (!b || !b.orders) {
+    return head('Bunai B2B', 'wholesale orders, entered on the Bunai B2B page')
+      + `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;
+           padding:18px 20px;font-size:13px;color:var(--faint)">
+           No wholesale orders in this window.</div>`;
+  }
+
+  const collected = Number(b.revenue) ? Math.round(Number(b.received) / Number(b.revenue) * 100) : 0;
+  const tiles = `<div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:12px">`
+    + salesKpi('B2B sales', inr(b.revenue), `${Number(b.liveOrders || 0).toLocaleString('en-IN')} orders \u00b7 ${Number(b.units || 0).toLocaleString('en-IN')} pieces`, 'good')
+    + salesKpi('Received', inr(b.received), collected + '% of B2B sales')
+    + salesKpi('Outstanding', inr(b.outstanding), 'still to come in', Number(b.outstanding) > 0 ? 'warn' : null)
+    + `</div>`;
+
+  const parties = (b.parties || []).length ? `<div class="table-container">
+      <table>
+        <thead><tr><th>Party</th><th style="text-align:right">Orders</th>
+          <th style="text-align:right">Sales</th><th style="text-align:right">Outstanding</th></tr></thead>
+        <tbody>${b.parties.map(p => `<tr>
+          <td><b>${dtEscape(p.party_name || '\u2014')}</b></td>
+          <td style="text-align:right;font-size:13px">${Number(p.n || 0).toLocaleString('en-IN')}</td>
+          <td style="text-align:right;font-size:13px">${inr(p.revenue)}</td>
+          <td style="text-align:right;font-size:13px;color:${Number(p.outstanding) > 0 ? '#b45309' : 'var(--faint)'}">
+            ${Number(p.outstanding) > 0 ? inr(p.outstanding) : 'settled'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>` : '';
+
+  return head('Bunai B2B', 'wholesale orders, entered on the Bunai B2B page') + tiles + parties;
+}
+
 function salesKpi(label, value, sub, tone, filter) {
   const col = tone === 'good' ? '#16a34a' : tone === 'warn' ? '#dc2626' : 'var(--foreground)';
   const attr = filter ? ` class="sales-kpi" data-filter="${filter}" onclick="salesFilter('${filter}',this)"` : '';
@@ -4017,6 +4094,10 @@ async function loadSales() {
   const body = document.getElementById('salesRecentBody');
   const spanEl = document.getElementById('salesSpan');
   tilesEl.innerHTML = ''; trendEl.innerHTML = ''; breakdownEl.innerHTML = ''; topEl.innerHTML = '';
+  const combinedEl = document.getElementById('salesCombined');
+  const b2bEl = document.getElementById('salesB2B');
+  if (combinedEl) combinedEl.innerHTML = '';
+  if (b2bEl) b2bEl.innerHTML = '';
   body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
 
   const params = new URLSearchParams();
@@ -4070,6 +4151,8 @@ async function loadSales() {
     salesPanel('Payment', (d.byPayment || []).map(p => ({ label: p.payment, n: p.n, sub: inr(p.revenue) })), 'payment') +
     salesPanel('Top ship-to states', (d.topStates || []).map(s => ({ label: s.state, n: s.n, sub: inr(s.revenue) })), 'state');
 
+  if (combinedEl) combinedEl.innerHTML = salesCombinedBand(d);
+  if (b2bEl) b2bEl.innerHTML = salesB2BSection(d.b2b);
   topEl.innerHTML = salesTopSkus(d.topSkus);
 
   // Echo the chosen filter range so the side text matches what was picked; fall
@@ -8763,6 +8846,237 @@ async function deleteInfluencer(id){
   if (r.error) return showToast('⚠️ ' + r.error);
   showToast('✅ Removed');
   loadInfluencers();
+}
+
+// ══════════════════════════════════════════════════════
+// 🧾 BUNAI B2B
+// The wholesale order book. Unlike the Sales page, which reads orders Vinculum
+// syncs in, every one of these is typed by a person and then edited for weeks
+// as the money arrives and the goods move — so this is a list you come back to.
+//
+// Every save also writes the order into the client's Google Sheet, which is the
+// copy they read. When that write fails the order is still saved here and the
+// page says so, because a book that silently loses half its orders is worse
+// than one that admits it.
+// ══════════════════════════════════════════════════════
+let B2B_ROWS = [];
+let _b2bSearchTimer = null;
+function b2bDebounced(){ clearTimeout(_b2bSearchTimer); _b2bSearchTimer = setTimeout(loadB2B, 300); }
+
+const b2bNum = (v) => {
+  const n = Number(String(v ?? '').trim().replace(/[, ]/g, ''));
+  return Number.isFinite(n) && String(v ?? '').trim() !== '' ? n : null;
+};
+// Indian grouping, no decimals unless there are paise worth showing.
+const b2bMoney = (v, dash = '—') => {
+  const n = Number(v);
+  if (v === null || v === undefined || v === '' || !Number.isFinite(n)) return dash;
+  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: Math.round(n) === n ? 0 : 2 });
+};
+const b2bDate = (d) => {
+  if (!d) return '—';
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
+  if (isNaN(dt)) return dtEscape(String(d));
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const B2B_PAY_PILL = {
+  'Paid': ['#dcfce7', '#15803d'],
+  'Partial': ['#fef3c7', '#b45309'],
+  'Pending': ['#fee2e2', '#b91c1c'],
+};
+const B2B_STATUS_PILL = {
+  'Delivered': ['#dcfce7', '#15803d'],
+  'Dispatched': ['#dbeafe', '#1d4ed8'],
+  'Processing': ['#fef3c7', '#b45309'],
+  'New': ['#f1f5f9', '#334155'],
+  'Cancelled': ['#fee2e2', '#b91c1c'],
+};
+const b2bPill = (value, map) => {
+  if (!value) return '<span style="color:var(--faint);font-size:12.5px">—</span>';
+  const [bg, fg] = map[value] || ['#f1f5f9', '#334155'];
+  return `<span style="background:${bg};color:${fg};font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap">${dtEscape(value)}</span>`;
+};
+
+// The dialog's two worked-out figures. The total follows pieces × rate until
+// somebody types their own number, and then it stops arguing with them — a
+// negotiated price is a fact the multiplication does not know about.
+function b2bRecalc(totalWasTyped){
+  const pieces = b2bNum(document.getElementById('b2bPieces').value);
+  const rate = b2bNum(document.getElementById('b2bRate').value);
+  const totalEl = document.getElementById('b2bTotal');
+  const hint = document.getElementById('b2bTotalHint');
+
+  if (totalWasTyped) totalEl.dataset.typed = '1';
+  const computed = (pieces !== null && rate !== null) ? Math.round(pieces * rate * 100) / 100 : null;
+  if (!totalEl.dataset.typed && computed !== null) totalEl.value = computed;
+
+  const total = b2bNum(totalEl.value);
+  const received = b2bNum(document.getElementById('b2bReceived').value);
+  document.getElementById('b2bBalance').value =
+    total === null ? '' : b2bMoney(Math.round((total - (received || 0)) * 100) / 100, '');
+
+  if (hint) {
+    hint.textContent = (computed !== null && total !== null && total !== computed)
+      ? `Pieces × rate comes to ${b2bMoney(computed)} — this order is saved at ${b2bMoney(total)}.`
+      : 'Filled in from pieces × rate. Type over it if the agreed price is different.';
+  }
+}
+
+async function loadB2B(){
+  const body = document.getElementById('b2bBody');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+
+  const params = new URLSearchParams();
+  const q = document.getElementById('b2bSearch').value.trim();
+  const os = document.getElementById('b2bOrderFilter').value;
+  const ps = document.getElementById('b2bPayFilter').value;
+  if (q) params.set('q', q);
+  if (os) params.set('order_status', os);
+  if (ps) params.set('payment_status', ps);
+
+  try {
+    const [rows, meta] = await Promise.all([
+      api('/api/b2b' + (params.toString() ? '?' + params : '')),
+      api('/api/b2b/meta'),
+    ]);
+    if (rows.error) { body.innerHTML = `<tr><td colspan="9" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    B2B_ROWS = Array.isArray(rows) ? rows : [];
+
+    const tile = (label, value, sub, tone) => {
+      const col = tone === 'warn' ? '#dc2626' : tone === 'good' ? '#16a34a' : 'var(--foreground)';
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:8px">${label}</div>
+        <div style="font-size:22px;font-weight:800;line-height:1;color:${col}">${value}</div>
+        ${sub ? `<div style="font-size:11.5px;color:var(--faint);margin-top:6px">${sub}</div>` : ''}
+      </div>`;
+    };
+    const m = meta || {};
+    const cancelled = Number((m.byOrderStatus || {})['Cancelled'] || 0);
+    document.getElementById('b2bTiles').innerHTML =
+      tile('Orders', Number(m.liveOrders || 0), cancelled ? `${cancelled} cancelled, not counted` : 'on the book') +
+      tile('Total sales', b2bMoney(m.revenue, '₹0'), `${Number(m.pieces || 0).toLocaleString('en-IN')} pieces`) +
+      tile('Received', b2bMoney(m.received, '₹0'), null, 'good') +
+      tile('Outstanding', b2bMoney(m.outstanding, '₹0'), 'still to come in', Number(m.outstanding) > 0 ? 'warn' : null);
+
+    // The sheet is half the point of this page, so its absence is said out
+    // loud rather than left for somebody to notice a week later.
+    const note = document.getElementById('b2bNote');
+    if (note) {
+      if (m.sheet === false) {
+        note.innerHTML = `⚠ Nothing is being written to the Bunai B2B Google Sheet yet — orders are saved here only. `
+          + `Share the sheet with <b>${dtEscape(m.serviceAccount || 'the service account')}</b> as an Editor `
+          + `and set B2B_SHEET_ID, and every order will go to both.`;
+        note.style.cssText = 'display:block;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;'
+          + 'border-radius:9px;background:#fef9c3;border:1px solid #fde68a;color:#92400e';
+      } else note.style.display = 'none';
+    }
+
+    if (!B2B_ROWS.length) {
+      body.innerHTML = `<tr><td colspan="9" class="empty">No B2B orders yet — use <b>+ Add Order</b>.</td></tr>`;
+      return;
+    }
+    body.innerHTML = B2B_ROWS.map((r, i) => {
+      const bal = Number(r.balance_amount);
+      const owes = Number.isFinite(bal) && bal > 0;
+      return `<tr>
+      <td>
+        <b>${dtEscape(r.party_name)}</b>
+        <div style="font-size:11.5px;color:var(--faint)">${[r.contact_person, r.city].filter(Boolean).map(dtEscape).join(' · ') || '—'}</div>
+        ${r.phone ? `<div style="font-size:11.5px;color:var(--faint)">${dtEscape(r.phone)}</div>` : ''}
+      </td>
+      <td style="font-size:13px;max-width:220px">
+        ${dtEscape(r.what_was_sold || '—')}
+        ${(r.pieces !== null && r.pieces !== undefined) ? `<div style="font-size:11.5px;color:var(--faint)">${Number(r.pieces).toLocaleString('en-IN')} pcs${r.rate_per_piece !== null && r.rate_per_piece !== undefined ? ` × ${b2bMoney(r.rate_per_piece)}` : ''}</div>` : ''}
+      </td>
+      <td style="text-align:right;white-space:nowrap">
+        <b style="font-size:13.5px">${b2bMoney(r.total_order_value)}</b>
+        <div style="font-size:11.5px;color:${owes ? '#b45309' : 'var(--faint)'}">
+          ${owes ? `${b2bMoney(r.balance_amount)} due` : 'settled'}</div>
+      </td>
+      <td>${b2bPill(r.payment_status, B2B_PAY_PILL)}</td>
+      <td style="font-size:13px;white-space:nowrap">${b2bDate(r.order_date)}</td>
+      <td style="font-size:13px;white-space:nowrap">${b2bDate(r.dispatch_date)}</td>
+      <td style="font-size:13px;white-space:nowrap">${b2bDate(r.delivery_date)}</td>
+      <td>${b2bPill(r.order_status, B2B_STATUS_PILL)}</td>
+      <td style="white-space:nowrap">
+        <button class="action-btn" onclick="openB2B(${i})">Edit</button>
+        <button class="action-btn delete" style="margin-left:6px" onclick="deleteB2B(${r.id})">Delete</button>
+      </td>
+    </tr>`; }).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="9" class="empty">Could not load B2B orders — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+  }
+}
+
+function openB2B(idx){
+  const r = (idx === undefined || idx === null) ? null : B2B_ROWS[idx];
+  document.getElementById('b2bModalTitle').textContent = r ? 'Edit B2B Order' : 'Add B2B Order';
+  document.getElementById('b2bErr').style.display = 'none';
+  const set = (el, v) => { document.getElementById(el).value = (v === null || v === undefined) ? '' : v; };
+  document.getElementById('b2bEditId').value = r ? r.id : '';
+  set('b2bParty', r?.party_name);
+  set('b2bContact', r?.contact_person);
+  set('b2bEmail', r?.email);
+  set('b2bPhone', r?.phone);
+  set('b2bCity', r?.city);
+  set('b2bSold', r?.what_was_sold);
+  set('b2bPieces', r?.pieces);
+  set('b2bRate', r?.rate_per_piece);
+  set('b2bTotal', r?.total_order_value);
+  set('b2bPayStatus', r?.payment_status);
+  set('b2bReceived', r?.amount_received);
+  set('b2bOrdered', r?.order_date);
+  set('b2bDispatched', r?.dispatch_date);
+  set('b2bDelivered', r?.delivery_date);
+  set('b2bStatus', r?.order_status);
+  set('b2bRemarks', r?.remarks);
+  // A saved order's total is its own; only a blank form lets pieces × rate
+  // fill it in as you type.
+  const totalEl = document.getElementById('b2bTotal');
+  if (r && r.total_order_value !== null && r.total_order_value !== undefined) totalEl.dataset.typed = '1';
+  else delete totalEl.dataset.typed;
+  b2bRecalc();
+  document.getElementById('b2bModal').classList.add('open');
+}
+
+async function saveB2B(btn){
+  const err = document.getElementById('b2bErr');
+  err.style.display = 'none';
+  const val = (id) => document.getElementById(id).value.trim();
+  const id = document.getElementById('b2bEditId').value;
+  const body = {
+    party_name: val('b2bParty'), contact_person: val('b2bContact'), email: val('b2bEmail'),
+    phone: val('b2bPhone'), city: val('b2bCity'), what_was_sold: val('b2bSold'),
+    pieces: val('b2bPieces'), rate_per_piece: val('b2bRate'), total_order_value: val('b2bTotal'),
+    payment_status: val('b2bPayStatus'), amount_received: val('b2bReceived'),
+    order_date: val('b2bOrdered'), dispatch_date: val('b2bDispatched'),
+    delivery_date: val('b2bDelivered'), order_status: val('b2bStatus'), remarks: val('b2bRemarks'),
+  };
+  if (!body.party_name) { err.textContent = 'The party name is required'; err.style.display = 'block'; return; }
+
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = id ? await api('/api/b2b/' + id, 'PUT', body)
+                 : await api('/api/b2b', 'POST', body);
+    if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+    closeModal('b2bModal');
+    // Saved either way; whether it reached the sheet is a separate fact and is
+    // reported as one.
+    if (r.sheet) showToast('✅ Saved — and written to the sheet');
+    else showToast('⚠️ Saved here, but not to the sheet — ' + (r.sheetError || 'no sheet configured'),
+      'error', 9000);
+    loadB2B();
+  } finally { done(); }
+}
+
+async function deleteB2B(id){
+  if (!confirm('Remove this order from the book? Its line in the sheet is left where it is.')) return;
+  const r = await api('/api/b2b/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  showToast('✅ Removed');
+  loadB2B();
 }
 
 // ══════════════════════════════════════════════════════

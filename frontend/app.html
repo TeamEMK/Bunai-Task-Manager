@@ -104,6 +104,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
       <span class="nav-label-text">Recruitment</span>
     </div>
+    <div class="nav-item" id="nav-b2b" onclick="navigate('b2b',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7V5a1 1 0 011-1h12a1 1 0 011 1v2M4 7l1 12a1 1 0 001 1h12a1 1 0 001-1l1-12M9 11v5M15 11v5"/></svg>
+      <span class="nav-label-text">Bunai B2B</span>
+    </div>
     <div class="nav-item" id="nav-influencers" onclick="navigate('influencers',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 8a3 3 0 10-6 0 3 3 0 006 0zM4.5 19.5a7.5 7.5 0 0115 0M19 4l1.5 1.5L19 7M5 4L3.5 5.5 5 7"/></svg>
       <span class="nav-label-text">Influencers</span>
@@ -507,6 +511,9 @@
 
     <div id="salesNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
 
+    <!-- Online and wholesale added together, then named separately. The
+         sections for each follow below. -->
+    <div id="salesCombined" style="margin-bottom:16px"></div>
     <div id="salesTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:8px"></div>
     <div id="salesReturnsNote" style="display:none;font-size:12px;color:var(--faint);margin:0 2px 16px"></div>
 
@@ -515,6 +522,9 @@
     <div id="salesBreakdown" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
 
     <div id="salesTopSkus" style="margin-bottom:16px"></div>
+
+    <!-- The wholesale half: its own figures and the parties behind them. -->
+    <div id="salesB2B" style="margin-bottom:16px"></div>
 
     <div style="display:flex;align-items:center;gap:10px;margin:0 2px 8px;flex-wrap:wrap">
       <div id="salesOrdersLabel" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Orders</div>
@@ -1134,6 +1144,46 @@
     </div>
   </div>
 
+  <!-- BUNAI B2B - the wholesale order book, kept by hand -->
+  <div id="page-b2b" class="page">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <div style="position:relative;flex:1 1 240px;max-width:340px">
+        <input type="text" id="b2bSearch" placeholder="Search party, contact, city, item…"
+          oninput="b2bDebounced()" style="width:100%"/>
+      </div>
+      <select id="b2bOrderFilter" onchange="loadB2B()" style="width:auto;min-width:140px">
+        <option value="">All order statuses</option>
+        <option value="New">New</option>
+        <option value="Processing">Processing</option>
+        <option value="Dispatched">Dispatched</option>
+        <option value="Delivered">Delivered</option>
+        <option value="Cancelled">Cancelled</option>
+      </select>
+      <select id="b2bPayFilter" onchange="loadB2B()" style="width:auto;min-width:140px">
+        <option value="">All payments</option>
+        <option value="Pending">Pending</option>
+        <option value="Partial">Partial</option>
+        <option value="Paid">Paid</option>
+      </select>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="openB2B()">+ Add Order</button>
+    </div>
+
+    <div id="b2bTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:8px"></div>
+    <div id="b2bNote" style="display:none;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;border-radius:9px"></div>
+
+    <div class="table-container">
+      <table>
+        <thead><tr>
+          <th>Party</th><th>What was sold</th><th style="text-align:right">Order value</th>
+          <th>Payment</th><th>Ordered</th><th>Dispatched</th><th>Delivered</th>
+          <th>Status</th><th>Action</th>
+        </tr></thead>
+        <tbody id="b2bBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div id="page-influencers" class="page">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
       <div style="position:relative;flex:1 1 260px;max-width:380px">
@@ -1313,6 +1363,97 @@
 
 <!-- ── HR: add / edit employee ── -->
 <!-- ── Recruitment: add / edit a candidate ── -->
+<div class="modal-overlay" id="b2bModal">
+  <div class="modal" style="width:780px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="b2bModalTitle">Add B2B Order</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      Saved here and written to the Bunai B2B sheet. The dispatch and delivery dates can be filled in later.
+    </div>
+    <div id="b2bErr" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
+      border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <input type="hidden" id="b2bEditId"/>
+
+    <div style="margin:0 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">Who bought</div>
+    <div class="form-row">
+      <div class="form-group"><label>Party name <span style="color:var(--brand-mid)">*</span></label>
+        <input type="text" id="b2bParty" placeholder="The buying company or store"/></div>
+      <div class="form-group"><label>Contact person</label>
+        <input type="text" id="b2bContact" placeholder="Who you speak to"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email ID</label>
+        <input type="text" id="b2bEmail" placeholder="name@example.com"/></div>
+      <div class="form-group"><label>Phone number</label>
+        <input type="text" id="b2bPhone" placeholder="9876543210"/></div>
+    </div>
+    <div class="form-group"><label>City</label>
+      <input type="text" id="b2bCity" placeholder="Jaipur"/></div>
+
+    <div style="margin:16px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">What was sold</div>
+    <div class="form-group"><label>What was sold</label>
+      <textarea id="b2bSold" rows="2" placeholder="The items in this order"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>No. of pieces</label>
+        <input type="number" id="b2bPieces" min="0" step="1" oninput="b2bRecalc()" placeholder="0"/></div>
+      <div class="form-group"><label>Rate / piece (₹)</label>
+        <input type="number" id="b2bRate" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
+    </div>
+    <div class="form-group"><label>Total order value (₹)</label>
+      <input type="number" id="b2bTotal" min="0" step="0.01" oninput="b2bRecalc(true)" placeholder="0.00"/>
+      <div id="b2bTotalHint" style="font-size:11.5px;color:var(--faint);margin-top:4px">
+        Filled in from pieces × rate. Type over it if the agreed price is different.</div></div>
+
+    <div style="margin:16px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">Money</div>
+    <div class="form-row">
+      <div class="form-group"><label>Payment status</label>
+        <select id="b2bPayStatus">
+          <option value="">—</option>
+          <option value="Pending">Pending</option>
+          <option value="Partial">Partial</option>
+          <option value="Paid">Paid</option>
+        </select></div>
+      <div class="form-group"><label>Amount received (₹)</label>
+        <input type="number" id="b2bReceived" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
+    </div>
+    <div class="form-group"><label>Balance amount (₹)</label>
+      <input type="text" id="b2bBalance" readonly
+        style="background:#f1f5f9;cursor:not-allowed" placeholder="—"/>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:4px">
+        Order value minus what has come in - worked out, not typed.</div></div>
+
+    <div style="margin:16px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">
+      Dates <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">— fill these in as each one happens</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Order date</label><input type="date" id="b2bOrdered"/></div>
+      <div class="form-group"><label>Dispatch date</label><input type="date" id="b2bDispatched"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Delivery date</label><input type="date" id="b2bDelivered"/></div>
+      <div class="form-group"><label>Order status</label>
+        <select id="b2bStatus">
+          <option value="">—</option>
+          <option value="New">New</option>
+          <option value="Processing">Processing</option>
+          <option value="Dispatched">Dispatched</option>
+          <option value="Delivered">Delivered</option>
+          <option value="Cancelled">Cancelled</option>
+        </select></div>
+    </div>
+    <div class="form-group"><label>Remarks</label>
+      <textarea id="b2bRemarks" rows="2" placeholder="Anything worth remembering about this order"></textarea></div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('b2bModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveB2B(this)">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="infModal">
   <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="infModalTitle">Add Influencer</h3>

@@ -137,6 +137,34 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
       `SELECT started_at, ended_at, orders_seen, ok FROM vin_order_sync_log
         WHERE ok=1 ORDER BY id DESC LIMIT 1`).catch(() => null);
 
+    // ── Bunai B2B ──
+    // The wholesale orders, typed in on their own page, summed over the same
+    // window. b2b_orders has an order_date too, so the window expression above
+    // fits it unchanged.
+    //
+    // Netting is deliberately not applied: returns come from vin_returns, which
+    // is an online idea. A B2B return is a credit note nobody has entered, so
+    // subtracting nothing and calling it net would be a lie about this half.
+    //
+    // Missing table means the migration has not run on this database yet, which
+    // is a reason to show the online half rather than fail the whole page.
+    const LIVE_B = "COALESCE(order_status,'') <> 'Cancelled'";
+    const b2b = await db.one(
+      `SELECT COUNT(*) orders,
+              SUM(CASE WHEN ${LIVE_B} THEN 1 ELSE 0 END) live_orders,
+              ROUND(SUM(CASE WHEN ${LIVE_B} THEN COALESCE(total_order_value,0) ELSE 0 END)) revenue,
+              ROUND(SUM(CASE WHEN ${LIVE_B} THEN COALESCE(amount_received,0) ELSE 0 END)) received,
+              ROUND(SUM(CASE WHEN ${LIVE_B} THEN COALESCE(balance_amount,0) ELSE 0 END)) outstanding,
+              SUM(CASE WHEN ${LIVE_B} THEN COALESCE(pieces,0) ELSE 0 END) units
+         FROM b2b_orders WHERE ${dc}`, A).catch(() => null);
+    // Who the wholesale money actually came from, biggest first.
+    const b2bParties = await db.rows(
+      `SELECT party_name, COUNT(*) n,
+              ROUND(SUM(COALESCE(total_order_value,0))) revenue,
+              ROUND(SUM(COALESCE(balance_amount,0))) outstanding
+         FROM b2b_orders WHERE ${dc} AND ${LIVE_B}
+        GROUP BY party_name ORDER BY revenue DESC LIMIT 10`, A).catch(() => []);
+
     res.json({
       range: ranged ? { from, to } : null,
       net,
@@ -150,6 +178,17 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
         unlinked: { orders: Number(unlinked?.n) || 0, amount: Number(unlinked?.amount) || 0 },
       },
       byChannel, byStatus, byPayment, daily, topSkus: products, topStates, recent, span, lastSync,
+      // The wholesale half, kept as its own block so the page can show the two
+      // side by side and a combined figure above them.
+      b2b: {
+        orders: Number(b2b?.orders) || 0,
+        liveOrders: Number(b2b?.live_orders) || 0,
+        revenue: Number(b2b?.revenue) || 0,
+        received: Number(b2b?.received) || 0,
+        outstanding: Number(b2b?.outstanding) || 0,
+        units: Number(b2b?.units) || 0,
+        parties: b2bParties || [],
+      },
     });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });
