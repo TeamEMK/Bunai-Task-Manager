@@ -8921,6 +8921,41 @@ function b2bRecalc(totalWasTyped){
       ? `Pieces × rate comes to ${b2bMoney(computed)} — this order is saved at ${b2bMoney(total)}.`
       : 'Filled in from pieces × rate. Type over it if the agreed price is different.';
   }
+
+  // Whether an order is paid is not an opinion - it is what the two amounts say.
+  // So the status follows them, exactly as the total follows pieces x rate, and
+  // stops arguing once somebody picks one for themselves. What it will not do is
+  // let "Paid" sit quietly above a balance of thirty-four thousand rupees.
+  const payEl = document.getElementById('b2bPayStatus');
+  const payHint = document.getElementById('b2bPayHint');
+  if (!payEl) return;
+  const bal = total === null ? null : Math.round((total - (received || 0)) * 100) / 100;
+  const says = total === null ? ''
+    : (received === null || received <= 0) ? 'Pending'
+    : (bal > 0) ? 'Partial' : 'Paid';
+  if (!payEl.dataset.typed && says) payEl.value = says;
+
+  let warn = '';
+  const chosen = payEl.value;
+  if (chosen && says && chosen !== says) {
+    if (chosen === 'Paid') warn = `${b2bMoney(bal)} is still outstanding — that is ${says}, not Paid.`;
+    else if (chosen === 'Pending') warn = `${b2bMoney(received)} has already come in — that is ${says}.`;
+    else if (chosen === 'Partial' && (received === null || received <= 0)) warn = 'Nothing has come in yet — that is Pending.';
+    else if (chosen === 'Partial') warn = 'The whole amount has come in — that is Paid.';
+    else warn = `The amounts say ${says}.`;
+  }
+  if (payHint) {
+    payHint.textContent = warn;
+    payHint.style.display = warn ? 'block' : 'none';
+    payHint.style.color = '#b45309';
+  }
+}
+
+// Once it is picked by hand it stays picked - but the warning above still has
+// its say, so a contradiction is visible rather than merely permitted.
+function b2bPayChosen(){
+  document.getElementById('b2bPayStatus').dataset.typed = '1';
+  b2bRecalc();
 }
 
 async function loadB2B(){
@@ -9037,6 +9072,9 @@ function openB2B(idx){
   const totalEl = document.getElementById('b2bTotal');
   if (r && r.total_order_value !== null && r.total_order_value !== undefined) totalEl.dataset.typed = '1';
   else delete totalEl.dataset.typed;
+  const payEl = document.getElementById('b2bPayStatus');
+  if (r && r.payment_status) payEl.dataset.typed = '1';
+  else delete payEl.dataset.typed;
   b2bRecalc();
   document.getElementById('b2bModal').classList.add('open');
 }
