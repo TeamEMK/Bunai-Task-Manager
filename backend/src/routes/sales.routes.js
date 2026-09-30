@@ -355,7 +355,12 @@ router.get('/sales/order', requireAuth, requireAdmin, async (req, res) => {
     const order = await db.one('SELECT * FROM vin_orders WHERE order_id = ?', [id]);
     if (!order) return res.json({ notFound: true });
     let raw = null;
-    try { raw = JSON.parse(order.raw_json || 'null'); } catch (_) {}
+    // The payload lives in vin_orders_raw now. The column is still read as a
+    // fallback so this keeps working against a database where the move has not
+    // happened yet - and it costs one indexed lookup for one order.
+    const side = await db.one('SELECT raw_json FROM vin_orders_raw WHERE order_id = ?', [id])
+      .catch(() => null);
+    try { raw = JSON.parse((side && side.raw_json) || order.raw_json || 'null'); } catch (_) {}
     delete order.raw_json;
     const items = await db.rows(
       `SELECT sku, sku_name, brand, status, order_qty, shipped_qty, cancelled_qty,

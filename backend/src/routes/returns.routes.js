@@ -139,7 +139,11 @@ router.get('/returns/detail', requireAuth, requireAdmin, async (req, res) => {
     const ret = await db.one('SELECT * FROM vin_returns WHERE return_no = ?', [id]);
     if (!ret) return res.json({ notFound: true });
     let raw = null;
-    try { raw = JSON.parse(ret.raw_json || 'null'); } catch (_) {}
+    // As with orders: the payload has its own table, and the old column is
+    // still consulted so nothing breaks before the move has run.
+    const side = await db.one('SELECT raw_json FROM vin_returns_raw WHERE return_no = ?', [id])
+      .catch(() => null);
+    try { raw = JSON.parse((side && side.raw_json) || ret.raw_json || 'null'); } catch (_) {}
     delete ret.raw_json;
     const items = await db.rows(
       `SELECT line_no, sku, sku_name, brand, status, order_qty, return_qty, received_qty,

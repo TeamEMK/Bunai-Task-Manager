@@ -134,7 +134,12 @@ async function runMigrations({ verbose = true } = {}) {
 
   // ── 4) Backfills ─────────────────────────────────────
   for (const [sql, label] of BACKFILLS) {
-    if (!hasTable(sql.match(/UPDATE\s+(\w+)/i)[1])) continue;
+    // Every table the statement names, not just the first word after UPDATE:
+    // a backfill may insert into one table by reading another, and both have
+    // to exist before it can run.
+    const named = [...sql.matchAll(/(?:UPDATE|INSERT\s+INTO|FROM|JOIN)\s+`?(\w+)`?/gi)]
+      .map(m => m[1]);
+    if (!named.length || !named.every(hasTable)) continue;
     await exec(sql, label);
   }
 

@@ -522,6 +522,29 @@ const TABLES = [
     return_reason VARCHAR(20) DEFAULT NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Vinculum's own words, kept verbatim, one row per order.
+  //
+  // This used to be a column on vin_orders itself, where it was 88% of the
+  // table: 2.7 KB of JSON on every row, beside the dozen small columns the
+  // Sales page actually reads. Every count, every revenue sum and every channel
+  // breakdown dragged all of it through memory to reach an order_amount.
+  //
+  // It is read in exactly one place - the detail panel for a single order - so
+  // it belongs where a single order can fetch it and nothing else has to step
+  // over it. vin_orders drops from 23.5 MB to about 3 MB by moving it here.
+  ['vin_orders_raw', `CREATE TABLE vin_orders_raw (
+    order_id  VARCHAR(60) NOT NULL PRIMARY KEY,
+    raw_json  LONGTEXT NULL,
+    synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  // The same arrangement for returns, where the payload was 85% of the table.
+  ['vin_returns_raw', `CREATE TABLE vin_returns_raw (
+    return_no VARCHAR(60) NOT NULL PRIMARY KEY,
+    raw_json  LONGTEXT NULL,
+    synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
 ];
 
 // Columns added after a table first shipped. [table, column, DDL fragment]
@@ -815,6 +838,32 @@ const BACKFILLS = [
   [`UPDATE delegation_tasks SET last_reminder_at = UTC_TIMESTAMP()
      WHERE last_reminder_at IS NULL AND created_at < '2026-08-27 00:00:00'`,
    'mute pre-launch tasks for overdue reminders'],
+
+  // ── raw_json, out of the hot tables and into its own ──
+  //
+  // Copy first, and only let go of what is provably copied: the UPDATE below
+  // joins the side table, so a row whose payload did not make it across keeps
+  // the one it has. Both statements match nothing on the second run.
+  //
+  // Emptying the column does not shrink the file on disk - InnoDB keeps those
+  // pages for reuse until someone runs OPTIMIZE TABLE - but it does stop them
+  // being read into memory, which is the part that was costing anything.
+  [`INSERT INTO vin_orders_raw (order_id, raw_json)
+     SELECT o.order_id, o.raw_json FROM vin_orders o
+      LEFT JOIN vin_orders_raw r ON r.order_id = o.order_id
+      WHERE o.raw_json IS NOT NULL AND r.order_id IS NULL`,
+   'move order payloads into vin_orders_raw'],
+  [`INSERT INTO vin_returns_raw (return_no, raw_json)
+     SELECT o.return_no, o.raw_json FROM vin_returns o
+      LEFT JOIN vin_returns_raw r ON r.return_no = o.return_no
+      WHERE o.raw_json IS NOT NULL AND r.return_no IS NULL`,
+   'move return payloads into vin_returns_raw'],
+  [`UPDATE vin_orders o JOIN vin_orders_raw r ON r.order_id = o.order_id
+      SET o.raw_json = NULL WHERE o.raw_json IS NOT NULL`,
+   'release order payloads from vin_orders'],
+  [`UPDATE vin_returns o JOIN vin_returns_raw r ON r.return_no = o.return_no
+      SET o.raw_json = NULL WHERE o.raw_json IS NOT NULL`,
+   'release return payloads from vin_returns'],
 ];
 
 module.exports = { TABLES, COLUMNS, WIDENINGS, INDEXES, BACKFILLS };

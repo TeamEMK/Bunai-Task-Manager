@@ -90,6 +90,17 @@ async function ensureTables() {
       KEY idx_ord_channel (channel_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+  // Vinculum's own words, kept verbatim and kept out of the way. This was a
+  // column on vin_orders and 88% of its weight, dragged through memory by every
+  // count and every revenue sum to reach an order_amount beside it. It is read
+  // in one place only - the detail panel for a single order.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vin_orders_raw (
+      order_id  VARCHAR(60) NOT NULL PRIMARY KEY,
+      raw_json  LONGTEXT NULL,
+      synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS vin_order_items (
       order_id      VARCHAR(60)  NOT NULL,
@@ -175,7 +186,8 @@ function truthy(v) {
   return (s === 'yes' || s === 'true' || s === '1' || v === true || v === 1) ? 1 : 0;
 }
 
-// Column → extractor. Every meaningful order field is kept, and raw_json holds
+// Column → extractor. Every meaningful order field is kept; the payload itself
+// goes to vin_orders_raw rather than to a column here. What follows describes
 // the full order object (minus items, which live in vin_order_items) so nothing
 // the API returns is ever lost.
 const ORDER_COLS = [
@@ -224,20 +236,33 @@ const ORDER_COLS = [
   ['cancel_remark', o => (o.cancelRemark || '').slice(0, 500) || null],
   ['pickup_location', o => o.pickupLocation || null],
   ['distribution_type', o => o.distributionType || null],
-  ['raw_json', o => { const { items, ...rest } = o; return JSON.stringify(rest); }],
 ];
+
+// The payload, as it arrives, minus the line items - those have a table of
+// their own. Kept next to the column list it used to live in.
+const rawOf = (o) => { const { items, ...rest } = o; return JSON.stringify(rest); };
 
 async function storeOrders(orders) {
   if (!orders.length) return 0;
   const cols = ORDER_COLS.map(c => c[0]);
   const orderRows = orders.map(o => ORDER_COLS.map(c => c[1](o)));
   const updates = cols.slice(1).map(c => `${c}=VALUES(${c})`).join(', ') + ', synced_at=CURRENT_TIMESTAMP';
-  // raw_json makes each row large, so upsert in modest chunks.
+  // Modest chunks: a few hundred rows per statement keeps the packet small.
   const CH = 200;
   for (let i = 0; i < orderRows.length; i += CH) {
     await pool.query(
       `INSERT INTO vin_orders (${cols.join(', ')}) VALUES ? ON DUPLICATE KEY UPDATE ${updates}`,
       [orderRows.slice(i, i + CH)]);
+  }
+
+  // And the payload, to its own table. Smaller chunks because these rows are
+  // the large ones now.
+  const rawRows = orders.map(o => [o.orderId, rawOf(o)]);
+  for (let i = 0; i < rawRows.length; i += 100) {
+    await pool.query(
+      `INSERT INTO vin_orders_raw (order_id, raw_json) VALUES ?
+       ON DUPLICATE KEY UPDATE raw_json=VALUES(raw_json)`,
+      [rawRows.slice(i, i + 100)]);
   }
 
   // Re-pull replaces an order's lines wholesale so quantities/status stay right.

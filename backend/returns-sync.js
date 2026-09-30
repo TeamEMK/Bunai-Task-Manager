@@ -76,6 +76,15 @@ async function ensureTables() {
       KEY idx_ret_order (eretail_order_no)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+  // The payload, in its own table rather than 85% of the weight of the one the
+  // Returns page reads. See vin_orders_raw for the same arrangement.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vin_returns_raw (
+      return_no VARCHAR(60) NOT NULL PRIMARY KEY,
+      raw_json  LONGTEXT NULL,
+      synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS vin_return_items (
       return_no      VARCHAR(60)  NOT NULL,
@@ -165,7 +174,8 @@ async function pullRange(fromDate, toDate, onProgress) {
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
-// Column → extractor. raw_json keeps the whole return object (minus items) so
+// Column → extractor. The whole return object (minus items) is kept in
+// vin_returns_raw rather than in a column here, so
 // nothing the API returns is lost.
 const RETURN_COLS = [
   ['return_no', o => o.return_no],
@@ -202,8 +212,10 @@ const RETURN_COLS = [
   ['ext_return_no', o => o.extReturnNo || null],
   ['ext_invoice_no', o => o.extInvoiceNo || null],
   ['total_lines', o => Array.isArray(o.items) ? o.items.length : 0],
-  ['raw_json', o => { const { items, ...rest } = o; return JSON.stringify(rest); }],
 ];
+
+// The payload as it arrives, minus the line items, which have their own table.
+const rawOf = (o) => { const { items, ...rest } = o; return JSON.stringify(rest); };
 
 async function storeReturns(returns) {
   if (!returns.length) return 0;
@@ -215,6 +227,15 @@ async function storeReturns(returns) {
     await pool.query(
       `INSERT INTO vin_returns (${cols.join(', ')}) VALUES ? ON DUPLICATE KEY UPDATE ${updates}`,
       [rows.slice(i, i + CH)]);
+  }
+
+  // And the payload, to its own table.
+  const rawRows = returns.map(o => [o.return_no, rawOf(o)]);
+  for (let i = 0; i < rawRows.length; i += 100) {
+    await pool.query(
+      `INSERT INTO vin_returns_raw (return_no, raw_json) VALUES ?
+       ON DUPLICATE KEY UPDATE raw_json=VALUES(raw_json)`,
+      [rawRows.slice(i, i + 100)]);
   }
 
   // Re-pull replaces a return's lines wholesale.
