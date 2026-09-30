@@ -207,11 +207,10 @@ async function init() {
     // Restore whatever page the URL points at instead of always opening the
     // dashboard. Runs after the role checks above, so nav visibility is settled.
     openFromHash();
+    // Just the one: loadApprovalBadge ends by refreshing the transfer badge
+    // too, so asking for both fetched the transfer count twice every time.
     loadApprovalBadge();
-    loadTransferBadge();
-    // Refresh badges every 30 seconds
-    setInterval(loadApprovalBadge, 30000);
-    setInterval(loadTransferBadge, 30000);
+    startBadgePolling();
   } catch(e) { console.error('Init error:', e); window.location.replace('/'); }
 }
 
@@ -346,7 +345,15 @@ function openFromHash() {
 
 window.addEventListener('hashchange', openFromHash);
 
+// The page navigate() last opened. Setting location.hash below fires a
+// hashchange, which calls navigate() a second time for the page it has just
+// opened - so without this, one sidebar click loaded every page twice and asked
+// the server for everything twice. Going back or forward still lands on a
+// different page, so it still gets through.
+let _navCurrent = null;
+
 function navigate(page, el, fromHash) {
+  if (fromHash && page === _navCurrent) return;
   // MIS page — admin and HOD (App Role) only
   if (page === 'mis' && ME.role !== 'admin' && ME.role !== 'hod') return;
   // IMS page — admin only
@@ -359,6 +366,7 @@ function navigate(page, el, fromHash) {
   if (page === 'returns' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
+  _navCurrent = page;
   if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -2560,6 +2568,34 @@ async function uploadUsersCSV() {
 
 
 // ══════════════════════════════════════════════════════
+// Three counts used to be fetched every 30 seconds for as long as the tab
+// existed - 360 requests an hour from a window nobody was even looking at, and
+// a server bill for answering them.
+//
+// Now they stop while the tab is in the background and are fetched once, fresh,
+// the moment it is looked at again. Somebody coming back to the tab still sees
+// a current number; a tab left open all afternoon costs nothing.
+let _badgeTimer = null;
+const BADGE_EVERY = 120000;
+
+function refreshBadges() {
+  // This refreshes the transfer badge as well, on its way out.
+  loadApprovalBadge();
+}
+
+function startBadgePolling() {
+  const tick = () => {
+    clearInterval(_badgeTimer);
+    if (document.visibilityState !== 'visible') { _badgeTimer = null; return; }
+    _badgeTimer = setInterval(refreshBadges, BADGE_EVERY);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshBadges();
+    tick();
+  });
+  tick();
+}
+
 async function loadApprovalBadge() {
   const [d, lv] = await Promise.all([
     api('/api/approvals/count'),
