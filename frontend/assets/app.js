@@ -794,9 +794,15 @@ async function loadDashboard() {
   const baseUrl = (isAdmin || isHod || isPC)
     ? `/api/dashboard?employee=${empVal}${hodParam}${dateParams}&taskType=`
     : `/api/dashboard?taskType=`;
-  const [dDel, dChl] = await Promise.all([
+  // FMS goes out with the other two. It counts towards Total and Pending, so
+  // fetching it afterwards meant the cards were drawn once without it and then
+  // again with it, and the numbers visibly jumped a second after the page
+  // settled. Three requests either way - they just travel together now.
+  const fmsUrl = `/api/fms-dashboard${(isAdmin || isHod || isPC) ? `?employee=${empVal}` : ''}`;
+  const [dDel, dChl, dFms] = await Promise.all([
     api(baseUrl + 'delegation'),
-    api(baseUrl + 'checklist')
+    api(baseUrl + 'checklist'),
+    api(fmsUrl)
   ]);
 
   // Error check: show error to user if DB or API fails
@@ -812,6 +818,8 @@ async function loadDashboard() {
 
   // Keep raw per-type stats so the count cards can update per selected tab.
   window._dashStats = { del: dDel, chl: dChl };
+  // Before the cards are drawn, not after.
+  await loadDashFMS(dFms);
   renderDashStats(dashType);
 
   if (isAdmin || isHod || isPC) {
@@ -864,8 +872,7 @@ async function loadDashboard() {
   // Keep sort state across reloads (don't reset)
   renderDashTable(allTodayPending, dashType);
 
-  // Load FMS section — respects same employee filter
-  loadDashFMS();
+  // FMS was loaded above, with the other two, before anything was drawn.
 }
 
 // Update the three count cards + chart for the currently selected dashboard tab.
@@ -998,7 +1005,9 @@ function dashTab(type, el) {
 }
 
 // FMS Dashboard loader — fetches FMS rows used by the unified pending table
-async function loadDashFMS() {
+// Takes the payload loadDashboard already fetched. Called without one it
+// fetches its own, so it still stands on its own feet.
+async function loadDashFMS(prefetched) {
   // Keep the separate section hidden — FMS rows now render inside the main pending table
   const isAdmin = ME.role === 'admin';
   const isHod   = ME.role === 'hod';
@@ -1008,8 +1017,8 @@ async function loadDashFMS() {
   const empVal = empFilter ? empFilter.value : 'all';
   const url = `/api/fms-dashboard${(isAdmin||isHod||isPC) ? `?employee=${empVal}` : ''}`;
 
-  const data = await api(url);
-  if (data.error) {
+  const data = prefetched || await api(url);
+  if (!data || data.error) {
     window._lastDashFMS = [];
     // Re-render unified table without FMS
     renderDashStats(dashType);
