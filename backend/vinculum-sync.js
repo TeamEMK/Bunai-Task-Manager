@@ -261,6 +261,25 @@ async function raiseLowStockTasks({
   if (!assignTo) throw new Error('raiseLowStockTasks needs assignTo (a user id)');
   await ensureAlertTable();
 
+  // A feed in which NOTHING has stock is a broken feed, not a warehouse that
+  // sold out to the last unit. Vin eRetail started answering availableQty 0 for
+  // every SKU once the client began moving to Unicommerce — including SKUs that
+  // were shipping orders that same week. Taken at face value that reads as 936
+  // simultaneous stockouts, and the alert rule would hand the reorder owner 25
+  // tasks (the per-run cap) every single morning for about five weeks.
+  //
+  // So: refuse to raise anything while the whole table is zero. A genuine
+  // total stockout is indistinguishable from this, but it is also not a real
+  // scenario for a live catalogue — and staying quiet is recoverable, whereas
+  // 900 junk tasks in someone's queue is not.
+  const [[stocked]] = await pool.query(
+    'SELECT COUNT(*) AS n FROM vin_inventory WHERE qty > 0');
+  if (!stocked.n) {
+    log('  stock feed reads zero for every SKU — raising nothing ' +
+        '(looks like the feed is empty, not a real stockout)');
+    return { raised: 0, recovered: 0, skipped: 'empty-feed' };
+  }
+
   // Clear alerts whose SKU has recovered, so a future dip can alert again.
   const [recovered] = await pool.query(
     `UPDATE vin_stock_alerts a
