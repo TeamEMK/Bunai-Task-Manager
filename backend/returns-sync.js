@@ -151,6 +151,25 @@ async function pullPage(fromDate, toDate, pageNumber) {
   return json;
 }
 
+// Code 13 is Vin eRetail's hit quota, not a failure — the account allows a
+// limited number of calls in a window and then refuses until it resets. The
+// stock sync has always waited it out (see vinculum.js); returns did not, so a
+// long backfill would die part-way through and lose the whole run. Waiting is
+// nearly free compared with re-walking the span.
+const QUOTA_WAIT_MS  = Number(process.env.VIN_QUOTA_WAIT_MS  || 60000);
+const QUOTA_RETRIES  = Number(process.env.VIN_QUOTA_RETRIES  || 5);
+
+async function withQuotaRetry(fn, note = console.log) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await fn(); }
+    catch (e) {
+      if (!/\b13\b.*quota|quota exceeded/i.test(e.message) || attempt >= QUOTA_RETRIES) throw e;
+      note(`  quota hit — ${QUOTA_WAIT_MS / 1000}s rukkar dobara (${attempt + 1}/${QUOTA_RETRIES})`);
+      await sleep(QUOTA_WAIT_MS);
+    }
+  }
+}
+
 // Pull every page for a date range.
 async function pullRange(fromDate, toDate, onProgress) {
   const all = [];
@@ -285,8 +304,10 @@ async function syncReturns({ fromDate, toDate } = {}) {
       let we = new Date(ws.getTime() + 6 * 86400000);
       if (we > end) we = new Date(end);
       const f = fmtUTC(ws), tt = fmtUTC(we);
-      const returns = await pullRange(`${f} 00:00:01`, `${tt} 23:59:59`,
-        (pg, tp, n) => log(`  ${f}–${tt}: page ${pg}/${tp}, ${n} returns`));
+      const returns = await withQuotaRetry(
+        () => pullRange(`${f} 00:00:01`, `${tt} 23:59:59`,
+          (pg, tp, n) => log(`  ${f}–${tt}: page ${pg}/${tp}, ${n} returns`)),
+        log);
       total += await storeReturns(returns);
       await sleep(PAGE_GAP_MS);
     }
