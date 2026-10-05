@@ -558,7 +558,7 @@ async function loadStock() {
 
     if (d.notConfigured) {
       document.getElementById('stockTiles').innerHTML = '';
-      body.innerHTML = `<tr><td colspan="6" class="empty">Stock sync isn't set up on this server yet — run <code>node vinculum-sync.js sync</code>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="empty">Stock sync hasn't run on this server yet — run <code>npm run sync</code>.</td></tr>`;
       tiles.textContent = '';
       return;
     }
@@ -727,7 +727,7 @@ async function stockOrders(i) {
   }
 }
 
-// Live check — asks Vinculum for the current stock of the SKUs on screen
+// Live check — asks Unicommerce for the current stock of the SKUs on screen
 // (up to 20, the API's per-call cap) right now, updates the snapshot, and
 // re-renders. This is the genuinely-live path: a single fast call, so it works
 // even on Vercel where the full sync cannot. Narrow the search first to check
@@ -3916,7 +3916,7 @@ function salesFilterBy(dim, val) {
 //
 // The date window and the cancelled-orders rule are the same on both sides, so
 // the two numbers being added really are comparable. Net mode is the exception
-// and says so: returns come from Vinculum, and a B2B return is a credit note
+// and says so: returns come from the marketplaces, and a B2B return is a credit note
 // that nobody has entered anywhere.
 function salesCombinedBand(d) {
   const online = Number(d && d.totals && d.totals.revenue) || 0;
@@ -3939,7 +3939,7 @@ function salesCombinedBand(d) {
         <div style="font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1;color:#16a34a">${inr(total)}</div>
         <div style="font-size:11.5px;color:var(--faint);margin-top:6px">online + wholesale, this window</div>
       </div>
-      ${half('Online (Vinculum)', inr(online), pct(online), d && d.net ? 'net of returns' : '')}
+      ${half('Online', inr(online), pct(online), d && d.net ? 'net of returns' : '')}
       ${half('Bunai B2B', inr(b2b), pct(b2b), `${Number((d && d.b2b && d.b2b.liveOrders) || 0).toLocaleString('en-IN')} orders`)}
     </div>
   </div>`;
@@ -4151,7 +4151,7 @@ async function loadSales() {
   if (netSel && netSel.value === '1') params.set('net', '1');
   const d = await api('/api/sales' + (params.toString() ? '?' + params : ''));
   if (d.notConfigured) {
-    salesNotice('busy', 'No orders synced on this server yet — run the Vin order sync to populate this page.');
+    salesNotice('busy', 'No orders synced on this server yet — run the daily sync to populate this page.');
     body.innerHTML = `<tr><td colspan="7" class="empty">No orders synced yet.</td></tr>`;
     return;
   }
