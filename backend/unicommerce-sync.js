@@ -199,7 +199,14 @@ async function syncItems() {
 // dekhne mein taaza lagti hai.
 async function syncStock() {
   const runId = await startRun('stock');
-  const started = new Date();
+  // Ghadi DATABASE ki, Node ki nahi. synced_at MySQL apne CURRENT_TIMESTAMP se
+  // likhta hai, aur neeche ka "jo dikha nahi use zero karo" us hi se tulna
+  // karta hai. Production ka MySQL UTC par chalta hai jabki yeh process IST
+  // par — to JS ka new Date() saadhe paanch ghante aage hota hai, har row
+  // "purani" lagti hai, aur POORA stock zero ho jaata hai. Dev par ghadiyan
+  // milti thi isliye yeh chhupa raha; prod par pehli hi run mein 61,030 units
+  // mit gaye.
+  const [[{ started }]] = await pool.query('SELECT NOW() AS started');
   try {
     const [skuRows] = await pool.query('SELECT sku FROM uni_items WHERE enabled = 1 ORDER BY sku');
     const skus = skuRows.map(r => r.sku);

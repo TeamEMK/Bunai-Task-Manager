@@ -20,21 +20,21 @@
 //  DO CALL PER RETURN, orders jaisa hi:
 //    return/search  → sirf { code, created, updated }
 //    return/get     → poora detail, reversePickupCode ya shipmentCode se
-//  Search ka `code` reversePickupCode maana gaya hai — yeh sabse badi
-//  anumaan wali baat hai aur pehle asli return par yahi sabse pehle jaanchni
-//  hai.
+//  Search ka `code` SHIPMENT code hai, reversePickupCode nahi. Yeh pehle hi
+//  asli return par pakad mein aa gaya: reversePickupCode bhejne par Uniware
+//  90009 INVALID_REVERSE_PICKUP_CODE deta hai, aur RTO mein woh field null
+//  hi rehti hai. shipmentCode se detail aa jaata hai.
 //
 //  returnType MANDATORY hai aur enum sirf CIR aur RTO leta hai (confirmed —
 //  COURIER_RETURN/VENDOR_RETURN par enum error aata hai). Date filter
 //  createdFrom/createdTo hai, fromDate NAHI, aur 30 din se bada range mana
 //  hai.
 //
-//  JO PAYLOAD MEIN NAHI HAI: koi rakam. returnSaleOrderValue mein return
-//  amount jaisa koi field documented nahi hai, aur items mein price nahi hai.
-//  Vin eRetail yeh deta tha aur Returns page use dikhata hai. Isliye
-//  return_amount yahan NULL rehta hai; asli return aane par ya to woh kahin
-//  milega, ya use order se jodkar nikalna padega. Jab tak yeh tay na ho,
-//  Returns page jaan-boojh kar vin_* par hi chhoda gaya hai.
+//  RAKAM PAYLOAD MEIN HAI HI NAHI — asli return par ginkar dekh liya: items
+//  par sirf GST ke field hain (woh bhi null), koi price nahi. Par har item
+//  `saleOrderItemCode` leke aata hai, aur wahi uni_order_items ka primary key
+//  hai. Isliye return_amount wahan se jod kar nikala jaata hai. Yeh andaaza
+//  nahi hai: woh us order ki asli line value hai jo wapas aa rahi hai.
 // ════════════════════════════════════════════════════════════════════════
 require('dotenv').config();
 const path = require('path');
@@ -76,9 +76,12 @@ async function ensureTables() {
       return_type       VARCHAR(20)  NULL,
       status            VARCHAR(60)  NULL,
       facility          VARCHAR(80)  NULL,
+      channel           VARCHAR(80)  NULL,
       order_code        VARCHAR(120) NULL,
       shipment_code     VARCHAR(120) NULL,
       reverse_pickup    VARCHAR(120) NULL,
+      challan_no        VARCHAR(120) NULL,
+      challan_date      DATETIME NULL,
       return_date       DATETIME NULL,
       channel_return_date DATETIME NULL,
       delivery_date     DATETIME NULL,
@@ -154,16 +157,17 @@ async function storeReturn(code, returnType, facility, json) {
 
   await pool.query(
     `INSERT INTO uni_returns
-       (code, return_type, status, facility, order_code, shipment_code,
-        reverse_pickup, return_date, channel_return_date, delivery_date,
+       (code, return_type, status, facility, channel, order_code, shipment_code,
+        reverse_pickup, challan_no, challan_date, return_date, channel_return_date, delivery_date,
         received_date, completed_date, tracking_number, courier,
         shipping_provider, rto_tracking, rto_courier, rto_reason, invoice_code,
         putaway_code, customer_name, customer_phone, customer_city,
         customer_state, customer_pincode, total_lines, created_at_uni, updated_at_uni)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON DUPLICATE KEY UPDATE
-       status=VALUES(status), facility=VALUES(facility),
+       status=VALUES(status), facility=VALUES(facility), channel=VALUES(channel),
        order_code=VALUES(order_code), shipment_code=VALUES(shipment_code),
+       reverse_pickup=VALUES(reverse_pickup), challan_no=VALUES(challan_no),
        delivery_date=VALUES(delivery_date), received_date=VALUES(received_date),
        completed_date=VALUES(completed_date),
        tracking_number=VALUES(tracking_number), courier=VALUES(courier),
@@ -171,9 +175,10 @@ async function storeReturn(code, returnType, facility, json) {
        invoice_code=VALUES(invoice_code), putaway_code=VALUES(putaway_code),
        total_lines=VALUES(total_lines), updated_at_uni=VALUES(updated_at_uni),
        synced_at=CURRENT_TIMESTAMP`,
-    [code, returnType, v.returnStatus || null, facility,
+    [code, returnType, v.returnStatus || null, facility, v.channel || null,
      v.saleOrderCode || (items[0] || {}).saleOrderCode || null,
-     v.shipmentCode || null, v.reversePickupCode || code,
+     v.shipmentCode || code, v.reversePickupCode || null,
+     v.deliveryChallanNumber || null, dt(v.deliveryChallanDate),
      dt(v.returnCreatedDate), dt(v.channelReturnCreatedDate), dt(v.returnDeliveryDate),
      dt(v.inventoryReceivedDate), dt(v.returnCompletedDate),
      v.trackingNumber || null, v.courierName || null, v.shippingProviderCode || null,
@@ -204,6 +209,20 @@ async function storeReturn(code, returnType, facility, json) {
          remarks=VALUES(remarks), courier_status=VALUES(courier_status),
          tracking_status=VALUES(tracking_status)`,
       [rows]);
+
+    // Rakam order se. saleOrderItemCode seedha uni_order_items ka primary key
+    // hai, to yeh wahi line value hai jo wapas aa rahi hai — ginee hui, maani
+    // hui nahi. Agar woh order abhi sync nahi hua (returns ka window orders se
+    // lamba ho sakta hai) to SUM null rehta hai, aur agli baar order aane par
+    // apne aap bhar jaata hai.
+    await pool.query(
+      `UPDATE uni_returns r
+          SET r.return_amount = (
+            SELECT SUM(oi.total_price)
+              FROM uni_return_items ri
+              JOIN uni_order_items oi ON oi.code = ri.sale_order_item
+             WHERE ri.return_code = r.code)
+        WHERE r.code = ?`, [code]);
   }
 }
 
@@ -245,7 +264,7 @@ async function syncReturns({ fromDate, toDate } = {}) {
 
     let done = 0, failed = 0;
     for (const [code, meta] of found) {
-      const g = await uni.uniCall('RETURN_GET', { reversePickupCode: code }, { facility: meta.facility });
+      const g = await uni.uniCall('RETURN_GET', { shipmentCode: code }, { facility: meta.facility });
       if (!g.successful || !g.json) {
         failed++;
         log(`  ⚠ ${code}: ${uni.explain(g) || 'detail nahi mila'}`);

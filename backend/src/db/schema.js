@@ -701,9 +701,12 @@ const TABLES = [
       return_type       VARCHAR(20)  NULL,
       status            VARCHAR(60)  NULL,
       facility          VARCHAR(80)  NULL,
+      channel           VARCHAR(80)  NULL,
       order_code        VARCHAR(120) NULL,
       shipment_code     VARCHAR(120) NULL,
       reverse_pickup    VARCHAR(120) NULL,
+      challan_no        VARCHAR(120) NULL,
+      challan_date      DATETIME NULL,
       return_date       DATETIME NULL,
       channel_return_date DATETIME NULL,
       delivery_date     DATETIME NULL,
@@ -767,6 +770,13 @@ const TABLES = [
 // A database created from TABLES above already has all of them — the lookup in
 // migrations.js skips every one of these on a modern schema.
 const COLUMNS = [
+  // uni_returns pehli deploy par in teeno ke bina bani thi. Yeh fields
+  // documentation mein nahi hain — pehle asli return ke payload mein mile.
+  // CREATE TABLE IF NOT EXISTS maujooda table par kuch nahi karta, isliye
+  // inhe yahan se jodna padta hai.
+  ['uni_returns', 'channel', `VARCHAR(80) DEFAULT NULL`],
+  ['uni_returns', 'challan_no', `VARCHAR(120) DEFAULT NULL`],
+  ['uni_returns', 'challan_date', `DATETIME DEFAULT NULL`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.
