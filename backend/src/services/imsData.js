@@ -84,8 +84,8 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
                    GROUP BY it.sku) sold
               ON sold.sku = u.sku
        LEFT JOIN (SELECT ri.sku, SUM(ri.return_qty) qty
-                    FROM vin_return_items ri
-                    JOIN vin_returns rr ON rr.return_no = ri.return_no
+                    FROM ims_return_items ri
+                    JOIN ims_returns rr ON rr.return_no = ri.return_no
                     JOIN ims_orders o   ON o.order_id = rr.eretail_order_no
                    WHERE o.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
                      AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)

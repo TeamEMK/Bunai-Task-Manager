@@ -1173,6 +1173,71 @@ const BACKFILLS = [
              it.selling_price, it.discount, it.total_gst, 'unicommerce'
         FROM uni_order_items it`, 'view ims_order_items'],
 
+  // ── Returns: a union as well, and for the same reason as orders ──
+  // Both systems are producing returns at once and will be for weeks: orders
+  // placed in Vin eRetail before 1 October are still coming back, while the
+  // October orders in Unicommerce are only starting to. Reading one source
+  // would mean the page quietly stops counting half of them.
+  //
+  // Vin eRetail's own return_type values are 'RTO' and 'Delivered Return', and
+  // the page groups on exactly those, so Unicommerce's CIR is mapped across
+  // rather than introducing a third label nothing counts.
+  //
+  // The dedup is narrow on purpose. Only the 1-3 October handover could put the
+  // same order in both systems, so only a return whose order already has a Vin
+  // eRetail return is dropped — and Vin eRetail wins, because its amount is
+  // recorded rather than derived.
+  [`CREATE OR REPLACE VIEW ims_returns AS
+      SELECT v.return_no, v.return_type, v.status, v.return_date, v.return_amount,
+             v.channel_name, v.eretail_order_no, v.order_no, v.customer_name,
+             v.customer_phone, v.customer_city, v.customer_state, v.refund_status,
+             v.tracking_no, v.return_tracking_no, v.invoice_no, v.return_location,
+             v.total_lines, v.synced_at, 'vinculum' AS source
+        FROM vin_returns v
+      UNION ALL
+      SELECT r.code,
+             CASE WHEN r.return_type = 'RTO' THEN 'RTO' ELSE 'Delivered Return' END,
+             r.status, r.return_date, r.return_amount,
+             r.channel, r.order_code, r.order_code, r.customer_name,
+             r.customer_phone, r.customer_city, r.customer_state, NULL,
+             r.tracking_number, r.rto_tracking, r.invoice_code, r.facility,
+             r.total_lines, r.synced_at, 'unicommerce'
+        FROM uni_returns r
+       WHERE NOT EXISTS (
+               SELECT 1 FROM vin_returns vr
+                 JOIN vin_orders vo ON vo.order_id = vr.eretail_order_no
+                WHERE vo.ext_order_no = r.order_code OR vo.order_id = r.order_code)`,
+   'view ims_returns'],
+
+  // A Unicommerce return carries no money of its own — no amount on the header,
+  // no price on the items, only GST fields that come back null. What it does
+  // carry is saleOrderItemCode, which is uni_order_items' primary key, so the
+  // price is read off the order line being sent back. Counted, not guessed.
+  // Quantities are 1 because a Uniware return item, like an order item, is one
+  // unit; several units of a SKU arrive as several rows.
+  [`CREATE OR REPLACE VIEW ims_return_items AS
+      SELECT i.return_no, i.line_no, i.sku, i.sku_name, i.brand, i.status,
+             i.order_qty, i.return_qty, i.received_qty, i.unit_price, i.line_amount,
+             i.discount_amt, i.tax_amount, i.taxable_amount, i.hsn_code,
+             i.return_reason, 'vinculum' AS source
+        FROM vin_return_items i
+      UNION ALL
+      SELECT ri.return_code, NULL, ri.sku, ri.item_name, oi.brand, ri.item_status,
+             1, 1,
+             CASE WHEN ri.item_status IN ('RECEIVED','PUTAWAY_DONE','QC_DONE') THEN 1 ELSE 0 END,
+             oi.selling_price, oi.total_price,
+             oi.discount, oi.total_gst, NULL, oi.hsn_code,
+             ri.return_reason, 'unicommerce'
+        FROM uni_return_items ri
+        LEFT JOIN uni_order_items oi ON oi.code = ri.sale_order_item`,
+   'view ims_return_items'],
+
+  [`CREATE OR REPLACE VIEW ims_return_sync_log AS
+      SELECT id, started_at, ended_at, returns_seen, ok FROM vin_return_sync_log
+      UNION ALL
+      SELECT id + 1000000, started_at, ended_at, returns_seen, ok
+        FROM uni_return_sync_log`, 'view ims_return_sync_log'],
+
   // The Sales page asks "how fresh is this?". Orders came from Vin eRetail
   // until 1 October and from Unicommerce after, so the honest answer is
   // whichever of the two ran last. The id offset only keeps the two id spaces
