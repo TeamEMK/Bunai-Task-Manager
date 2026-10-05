@@ -273,6 +273,23 @@ async function syncStock() {
   }
 }
 
+// Ek sync chalte hue doosra shuru karna nuksaandeh hai — dono ek hi catalogue
+// par likhte hain aur "jo dikha nahi use zero karo" wala kadam ek-doosre ka
+// kaam ulat sakta hai. Log table hi record hai ki kya chal raha hai, to wahi
+// lock ka kaam bhi karti hai. STALE_RUN_MS iski hadd hai: beech mein mara hua
+// process ended_at hamesha NULL chhod jaata, aur bina cutoff ke woh har agle
+// sync ko rok deta.
+const STALE_RUN_MS = Number(process.env.UNI_STALE_RUN_MS || 30 * 60 * 1000);
+
+async function runInProgress(kind = 'stock') {
+  const [[row]] = await pool.query(
+    `SELECT id, started_at FROM uni_sync_log
+      WHERE kind = ? AND ended_at IS NULL
+        AND started_at > (NOW() - INTERVAL ? SECOND)
+      ORDER BY id DESC LIMIT 1`, [kind, Math.round(STALE_RUN_MS / 1000)]);
+  return row || null;
+}
+
 async function status() {
   const [[items]] = await pool.query('SELECT COUNT(*) n FROM uni_items');
   const [byFac] = await pool.query(
@@ -285,7 +302,7 @@ async function status() {
   return { items: items.n, byFacility: byFac, historyDays: days.n, recent: last };
 }
 
-module.exports = { pool, ensureTables, facilityCodes, syncItems, syncStock, status };
+module.exports = { pool, ensureTables, facilityCodes, syncItems, syncStock, runInProgress, status };
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 if (require.main === module) {

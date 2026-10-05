@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════
 // SALES — live order analytics from Vin eRetail (admin only).
-// Reads vin_orders / vin_order_items, filled by orders-sync.js (v2/order/
+// Reads ims_orders / ims_order_items, filled by orders-sync.js (v2/order/
 // orderPullV2, read-only). Accepts an optional ?from=YYYY-MM-DD&to=YYYY-MM-DD
 // window; without it, every order is counted.
 // ══════════════════════════════════════════════════════
@@ -49,45 +49,45 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
                   SUM(CASE WHEN LOWER(o.status)='cancelled' THEN 1 ELSE 0 END) cancelled,
                   ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue,
                   ROUND(AVG(CASE WHEN ${LIVE_O} THEN ${REV} END)) aov
-             FROM vin_orders o ${RET} WHERE ${dcO}`, A),
+             FROM ims_orders o ${RET} WHERE ${dcO}`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(o.channel_name,''),'Other') channel, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
-             FROM vin_orders o ${RET} WHERE ${dcO} GROUP BY channel ORDER BY n DESC`, A),
+             FROM ims_orders o ${RET} WHERE ${dcO} GROUP BY channel ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(status,''),'(blank)') status, COUNT(*) n
-             FROM vin_orders WHERE ${dc} GROUP BY status ORDER BY n DESC`, A),
+             FROM ims_orders WHERE ${dc} GROUP BY status ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(o.payment_method,''),'(blank)') payment, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
-             FROM vin_orders o ${RET} WHERE ${dcO} GROUP BY payment ORDER BY n DESC`, A),
+             FROM ims_orders o ${RET} WHERE ${dcO} GROUP BY payment ORDER BY n DESC`, A),
         db.rows(
           `SELECT DATE(o.order_date) d, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
-             FROM vin_orders o ${RET} WHERE o.order_date IS NOT NULL AND ${dcO}
+             FROM ims_orders o ${RET} WHERE o.order_date IS NOT NULL AND ${dcO}
             GROUP BY DATE(o.order_date) ORDER BY d`, A),
         // Deliberately more than the fifteen shown: netting reorders the list, so
         // trimming first would rank by gross and then relabel it net.
         db.rows(
           `SELECT i.sku, COALESCE(NULLIF(MAX(i.sku_name),''), i.sku) sku_name,
                   ROUND(SUM(i.order_qty)) qty, ROUND(SUM(i.order_qty * i.unit_price)) value
-             FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+             FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
             WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'
             GROUP BY i.sku ORDER BY qty DESC LIMIT 80`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(o.ship_state,''),'(unknown)') state, COUNT(*) n,
                   ROUND(SUM(CASE WHEN ${LIVE_O} THEN ${REV} ELSE 0 END)) revenue
-             FROM vin_orders o ${RET} WHERE ${dcO} GROUP BY state ORDER BY n DESC LIMIT 12`, A),
+             FROM ims_orders o ${RET} WHERE ${dcO} GROUP BY state ORDER BY n DESC LIMIT 12`, A),
         db.rows(
           `SELECT order_id, ext_order_no, order_date, payment_method, status, order_amount,
                   channel_name, ship_city, ship_state, customer_name, customer_phone
-             FROM vin_orders WHERE ${dc} ORDER BY order_date DESC, order_id DESC LIMIT 100`, A),
+             FROM ims_orders WHERE ${dc} ORDER BY order_date DESC, order_id DESC LIMIT 100`, A),
         db.one(
           `SELECT MIN(order_date) first_order, MAX(order_date) last_order, MAX(synced_at) synced_at
-             FROM vin_orders WHERE ${dc}`, A),
+             FROM ims_orders WHERE ${dc}`, A),
         db.one(
           `SELECT ROUND(SUM(i.order_qty)) units
-             FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+             FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
             WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'`, A),
         // What netting takes out, reported whichever mode is on — a net figure
         // nobody can reconcile against the gross one is not worth showing.
@@ -95,19 +95,19 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
           `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount,
                   ROUND(SUM(CASE WHEN rr.return_type='RTO' THEN rr.return_amount ELSE 0 END)) rto,
                   ROUND(SUM(CASE WHEN rr.return_type<>'RTO' THEN rr.return_amount ELSE 0 END)) delivered
-             FROM vin_returns rr JOIN vin_orders o ON o.order_id = rr.eretail_order_no
+             FROM vin_returns rr JOIN ims_orders o ON o.order_id = rr.eretail_order_no
             WHERE ${dcO} AND ${LIVE_O}`, A).catch(() => null),
         db.rows(
           `SELECT ri.sku, ROUND(SUM(ri.line_amount)) amount, ROUND(SUM(ri.return_qty)) qty
              FROM vin_return_items ri
              JOIN vin_returns rr ON rr.return_no = ri.return_no
-             JOIN vin_orders o ON o.order_id = rr.eretail_order_no
+             JOIN ims_orders o ON o.order_id = rr.eretail_order_no
             WHERE ${dcO} AND ${LIVE_O} GROUP BY ri.sku`, A).catch(() => []),
         // Returns whose order is not on file cannot be put in any window. They
         // are named rather than quietly dropped, so the totals can be argued with.
         db.one(
           `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount
-             FROM vin_returns rr LEFT JOIN vin_orders o ON o.order_id = rr.eretail_order_no
+             FROM vin_returns rr LEFT JOIN ims_orders o ON o.order_id = rr.eretail_order_no
             WHERE o.order_id IS NULL`).catch(() => null),
       ]);
 
@@ -134,8 +134,8 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
 
     // Freshness is about the sync, not the chosen window — always global.
     const lastSync = await db.one(
-      `SELECT started_at, ended_at, orders_seen, ok FROM vin_order_sync_log
-        WHERE ok=1 ORDER BY id DESC LIMIT 1`).catch(() => null);
+      `SELECT started_at, ended_at, orders_seen, ok FROM ims_order_sync_log
+        WHERE ok=1 ORDER BY started_at DESC LIMIT 1`).catch(() => null);
 
     // ── Bunai B2B ──
     // The wholesale orders, typed in on their own page, summed over the same
@@ -232,12 +232,12 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
       db.one(
         `SELECT MAX(i.sku_name) name, ROUND(SUM(i.order_qty)) qty,
                 ROUND(SUM(i.order_qty * i.unit_price)) value, COUNT(DISTINCT o.order_id) orders
-           FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+           FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
           WHERE ${inSku} AND LOWER(i.status) <> 'cancelled' ${dc}`, [...list, ...A]),
       db.rows(
         `SELECT DISTINCT o.order_id, o.ext_order_no, o.order_date, o.payment_method, o.status,
                 o.order_amount, o.channel_name, o.ship_city, o.ship_state, o.customer_name, o.customer_phone
-           FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+           FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
           WHERE ${inSku} ${dc}
           ORDER BY o.order_date DESC LIMIT 200`, [...list, ...A]),
       // The same figures per member SKU. A clubbed product with no orders at all
@@ -246,7 +246,7 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
       db.rows(
         `SELECT i.sku, ROUND(SUM(i.order_qty)) qty,
                 ROUND(SUM(i.order_qty * i.unit_price)) value, COUNT(DISTINCT o.order_id) orders
-           FROM vin_order_items i JOIN vin_orders o ON o.order_id = i.order_id
+           FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
           WHERE ${inSku} AND LOWER(i.status) <> 'cancelled' ${dc}
           GROUP BY i.sku`, [...list, ...A]),
     ]);
@@ -256,7 +256,7 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
     const stockBySku = new Map();
     try {
       const rows = await db.rows(
-        `SELECT sku, ROUND(SUM(qty)) qty FROM vin_inventory
+        `SELECT sku, ROUND(SUM(qty)) qty FROM ims_inventory
           WHERE sku IN (${list.map(() => '?').join(',')})${warehouse ? ' AND warehouse = ?' : ''}
           GROUP BY sku`, warehouse ? [...list, warehouse] : list);
       for (const r of rows) stockBySku.set(r.sku, Number(r.qty) || 0);
@@ -330,12 +330,12 @@ router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
     const cnt = await db.one(
-      `SELECT COUNT(*) n, ROUND(SUM(order_amount)) revenue FROM vin_orders ${whereSql}`, args);
+      `SELECT COUNT(*) n, ROUND(SUM(order_amount)) revenue FROM ims_orders ${whereSql}`, args);
     const total = cnt ? cnt.n : 0;
     const orders = await db.rows(
       `SELECT order_id, ext_order_no, order_date, payment_method, status, order_amount,
               channel_name, ship_city, ship_state, customer_name, customer_phone
-         FROM vin_orders ${whereSql}
+         FROM ims_orders ${whereSql}
         ORDER BY order_date DESC, order_id DESC
         LIMIT ${PER} OFFSET ${(page - 1) * PER}`, args);
 
@@ -352,7 +352,7 @@ router.get('/sales/order', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = String(req.query.id || '').trim();
     if (!id) return res.status(400).json({ error: 'No order id' });
-    const order = await db.one('SELECT * FROM vin_orders WHERE order_id = ?', [id]);
+    const order = await db.one('SELECT * FROM ims_orders WHERE order_id = ?', [id]);
     if (!order) return res.json({ notFound: true });
     let raw = null;
     // The payload lives in vin_orders_raw now. The column is still read as a
@@ -365,7 +365,7 @@ router.get('/sales/order', requireAuth, requireAdmin, async (req, res) => {
     const items = await db.rows(
       `SELECT sku, sku_name, brand, status, order_qty, shipped_qty, cancelled_qty,
               return_qty, unit_price, discount_amt, tax_amount
-         FROM vin_order_items WHERE order_id = ?`, [id]);
+         FROM ims_order_items WHERE order_id = ?`, [id]);
     res.json({ order, raw, items });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });

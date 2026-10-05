@@ -8,8 +8,8 @@ const express = require('express');
 const { db } = require('../db/pool');
 const { requireAuth, requireAdmin, requireCronSecret } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
-const { runVinculumSync } = require('../services/scheduler');
-const vin = require('../../vinculum');
+const { runUnicommerceSync } = require('../services/scheduler');
+const uni = require('../../unicommerce');
 const skuGroup = require('../services/skuGroup');
 
 const router = express.Router();
@@ -52,27 +52,27 @@ router.get('/stock', requireAuth, async (req, res) => {
     let [rows, totals, lastSync, lastOk, counts] = await Promise.all([
       db.rows(
         `SELECT i.sku, i.warehouse, i.qty, i.synced_at, COALESCE(s.description, '') AS description
-           FROM vin_inventory i
-           LEFT JOIN vin_skus s ON s.sku = i.sku
+           FROM ims_inventory i
+           LEFT JOIN ims_skus s ON s.sku = i.sku
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY i.qty ASC, i.sku ASC
           LIMIT ${grouping ? GROUP_SCAN_LIMIT : reorder ? 2000 : ROW_LIMIT}`, args),
       db.rows(
         `SELECT warehouse, COUNT(*) AS skus, COALESCE(SUM(qty),0) AS units
-           FROM vin_inventory WHERE qty > 0 GROUP BY warehouse ORDER BY warehouse`),
+           FROM ims_inventory WHERE qty > 0 GROUP BY warehouse ORDER BY warehouse`),
       // Two questions, not one. "How old is this data?" is answered by the last
       // run that actually succeeded; "is anything wrong?" by the most recent
       // attempt. Reporting only the latest row makes good data look broken the
       // moment a retry fails after a successful run.
       db.one(
         `SELECT started_at, ended_at, rows_seen, ok, error
-           FROM vin_sync_log WHERE kind='inventory' ORDER BY id DESC LIMIT 1`),
+           FROM ims_sync_log WHERE kind='inventory' ORDER BY id DESC LIMIT 1`),
       db.one(
         `SELECT started_at, ended_at, rows_seen
-           FROM vin_sync_log WHERE kind='inventory' AND ok=1 ORDER BY id DESC LIMIT 1`),
+           FROM ims_sync_log WHERE kind='inventory' AND ok=1 ORDER BY id DESC LIMIT 1`),
       db.one(
         `SELECT COUNT(*) AS tracked, SUM(CASE WHEN qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock
-           FROM vin_inventory`),
+           FROM ims_inventory`),
     ]);
 
     // Enrich each row with units sold in the window (from live orders), turning
@@ -85,7 +85,7 @@ router.get('/stock', requireAuth, async (req, res) => {
         // clause that size, and the extra SKUs simply go unclaimed.
         const sold = await db.rows(
           `SELECT it.sku, SUM(it.order_qty) sold
-             FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+             FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
             WHERE LOWER(it.status) <> 'cancelled'
               AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
             GROUP BY it.sku`);
@@ -97,7 +97,7 @@ router.get('/stock', requireAuth, async (req, res) => {
         if (skus.length) {
           const sold = await db.rows(
             `SELECT it.sku, SUM(it.order_qty) sold
-               FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+               FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
               WHERE LOWER(it.status) <> 'cancelled'
                 AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
                 AND it.sku IN (${skus.map(() => '?').join(',')})
@@ -139,16 +139,16 @@ router.get('/stock', requireAuth, async (req, res) => {
     try {
       const u = await db.one(
         `SELECT ROUND(SUM(it.order_qty)) units, COUNT(DISTINCT it.sku) skus
-           FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+           FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
           WHERE LOWER(it.status) <> 'cancelled'
             AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)`);
       const rc = await db.one(
         `SELECT COUNT(*) n FROM (
            SELECT i.qty, COALESCE(sold.s, 0) sold
-             FROM vin_inventory i
+             FROM ims_inventory i
              LEFT JOIN (
                SELECT it.sku, SUM(it.order_qty) s
-                 FROM vin_order_items it JOIN vin_orders o ON o.order_id = it.order_id
+                 FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
                 WHERE LOWER(it.status) <> 'cancelled'
                   AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
                 GROUP BY it.sku
@@ -188,36 +188,55 @@ router.get('/stock', requireAuth, async (req, res) => {
 // so the freshly-checked rows stay correct after the page reloads.
 router.get('/stock/live', requireAuth, asyncRoute(async (req, res) => {
   const asked = String(req.query.skus || '').split(',').map(s => s.trim()).filter(Boolean);
-  const skus = [...new Set(asked)].slice(0, 20);   // API cap is 20 per call
+  // Uniware allows 10,000 SKUs per call, against Vin eRetail's 20. The cap here
+  // is about keeping one request quick, not about the API.
+  const skus = [...new Set(asked)].slice(0, 200);
   if (!skus.length) return res.status(400).json({ error: 'No SKUs to check' });
-  if (!vin.isConfigured()) return res.status(400).json({ error: 'Vinculum is not configured on this server' });
+  if (!uni.isConfigured()) return res.status(400).json({ error: 'Unicommerce is not configured on this server' });
 
-  let rows;
+  // Facilities come from the snapshot rather than the API: it is a local read,
+  // and it asks about exactly the warehouses this page already shows.
+  const facilities = (await db.rows('SELECT DISTINCT facility FROM uni_inventory'))
+    .map(r => r.facility).filter(Boolean);
+  if (!facilities.length) return res.status(400).json({ error: 'No facilities synced yet' });
+
+  const rows = [];
   try {
-    rows = await vin.fetchInventoryBatch(skus);
+    for (const facility of facilities) {
+      const r = await uni.uniCall('INVENTORY_SNAPSHOT', { itemTypeSKUs: skus }, { facility });
+      // 60004 means no SKU in this batch has stock at this facility — an
+      // answer, not a failure. See unicommerce-sync.js for the full note.
+      const empty = (r.errors || []).some(e => Number(e.code) === 60004);
+      if (!r.successful && !empty) {
+        return res.status(502).json({ error: 'Unicommerce: ' + (uni.explain(r) || 'call failed') });
+      }
+      for (const s of (empty ? [] : (r.json && r.json.inventorySnapshots) || [])) {
+        rows.push({ sku: s.itemTypeSKU, warehouse: facility, qty: Number(s.inventory) || 0 });
+      }
+    }
   } catch (e) {
-    return res.status(502).json({ error: 'Vinculum: ' + (e.message || 'call failed') });
+    return res.status(502).json({ error: 'Unicommerce: ' + (e.message || 'call failed') });
   }
 
   // Push live values into the snapshot so the table reflects them.
   if (rows.length) {
     await db.rows(
-      `INSERT INTO vin_inventory (sku, warehouse, qty) VALUES ?
-       ON DUPLICATE KEY UPDATE qty = VALUES(qty), synced_at = CURRENT_TIMESTAMP`,
+      `INSERT INTO uni_inventory (sku, facility, inventory) VALUES ?
+       ON DUPLICATE KEY UPDATE inventory = VALUES(inventory), synced_at = CURRENT_TIMESTAMP`,
       [rows.map(r => [r.sku, r.warehouse, r.qty])]);
   }
 
   // A checked SKU absent from the response is out of stock now. Zero only the
-  // (sku, warehouse) rows we already track — don't invent new warehouse rows.
+  // (sku, facility) rows we already track — don't invent new warehouse rows.
   const seen = new Set(rows.map(r => r.sku + '|' + r.warehouse));
   const existing = await db.rows(
-    `SELECT sku, warehouse FROM vin_inventory WHERE sku IN (${skus.map(() => '?').join(',')})`, skus);
-  const stale = existing.filter(e => !seen.has(e.sku + '|' + e.warehouse));
+    `SELECT sku, facility FROM uni_inventory WHERE sku IN (${skus.map(() => '?').join(',')})`, skus);
+  const stale = existing.filter(e => !seen.has(e.sku + '|' + e.facility));
   if (stale.length) {
     await db.rows(
-      `UPDATE vin_inventory SET qty = 0, synced_at = CURRENT_TIMESTAMP
-        WHERE (sku, warehouse) IN (${stale.map(() => '(?,?)').join(',')})`,
-      stale.flatMap(e => [e.sku, e.warehouse]));
+      `UPDATE uni_inventory SET inventory = 0, synced_at = CURRENT_TIMESTAMP
+        WHERE (sku, facility) IN (${stale.map(() => '(?,?)').join(',')})`,
+      stale.flatMap(e => [e.sku, e.facility]));
   }
 
   res.json({ checked: skus.length, found: rows.length, live: rows });
@@ -230,9 +249,9 @@ router.get('/stock/live', requireAuth, asyncRoute(async (req, res) => {
 // and holding an HTTP request open that long is a promise nothing can keep: a
 // restart, a sleeping laptop or a proxy timeout kills it and the browser
 // reports a failure for a sync that is running fine. On Vercel it could never
-// work at all. So: kick it off, say it started, let the page watch vin_sync_log.
+// work at all. So: kick it off, say it started, let the page watch ims_sync_log.
 router.post('/stock/sync', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
-  const sync = require('../../vinculum-sync');
+  const sync = require('../../unicommerce-sync');
   await sync.ensureTables();
   const running = await sync.runInProgress();
   if (running) {
@@ -243,15 +262,15 @@ router.post('/stock/sync', requireAuth, requireAdmin, asyncRoute(async (req, res
     });
   }
 
-  // Detached on purpose. Errors are recorded in vin_sync_log by the job itself,
+  // Detached on purpose. Errors are recorded in ims_sync_log by the job itself,
   // so this catch only prevents an unhandled rejection.
-  runVinculumSync().catch(e => console.error('  ❌ background stock sync:', e.message));
+  runUnicommerceSync().catch(e => console.error('  ❌ background stock sync:', e.message));
   res.json({ started: true });
 }));
 
 // Cron entry point, for Vercel. Shared-secret auth — cron has no session.
 router.get('/cron/vinculum-sync', requireCronSecret, asyncRoute(async (req, res) => {
-  res.json({ ok: true, ...(await runVinculumSync()) });
+  res.json({ ok: true, ...(await runUnicommerceSync()) });
 }));
 
 module.exports = router;

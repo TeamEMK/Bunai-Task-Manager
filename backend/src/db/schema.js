@@ -864,6 +864,98 @@ const BACKFILLS = [
   [`UPDATE vin_returns o JOIN vin_returns_raw r ON r.return_no = o.return_no
       SET o.raw_json = NULL WHERE o.raw_json IS NOT NULL`,
    'release return payloads from vin_returns'],
+
+  // ── ims_* views: one shape across the Vinculum → Unicommerce cutover ──
+  //
+  // The client moved to Unicommerce on 1 October 2026. The pages used to read
+  // vin_* directly; pointing them at uni_* instead would have thrown away
+  // everything before that date, and reading both in every route would have
+  // put the migration into a dozen queries. These views carry the column names
+  // the pages already use, so a route changes by one identifier.
+  //
+  // Stock is NOT a union. Stock means "right now", and right now lives only in
+  // Unicommerce — vin_inventory is all zeros since inventory moved, and adding
+  // it would contribute nothing but noise.
+  [`CREATE OR REPLACE VIEW ims_inventory AS
+      SELECT sku, facility AS warehouse, inventory AS qty, synced_at
+        FROM uni_inventory`, 'view ims_inventory'],
+  [`CREATE OR REPLACE VIEW ims_skus AS
+      SELECT sku, name AS description, enabled AS is_active
+        FROM uni_items`, 'view ims_skus'],
+  // The pages ask for kind='inventory'; the Unicommerce sync logs it as
+  // 'stock'. Renaming it here keeps that difference out of the routes.
+  // Past-day stock. vin_inventory_daily holds exactly one day — the 3 October
+  // run, all zeros, taken after inventory had already moved — so unioning it
+  // would publish a day that misrepresents what was actually in the warehouse.
+  // Same reasoning as ims_inventory: stock reads Unicommerce only.
+  [`CREATE OR REPLACE VIEW ims_inventory_daily AS
+      SELECT day, sku, facility AS warehouse, inventory AS qty
+        FROM uni_inventory_daily`, 'view ims_inventory_daily'],
+  [`CREATE OR REPLACE VIEW ims_sync_log AS
+      SELECT id, CASE WHEN kind = 'stock' THEN 'inventory' ELSE kind END AS kind,
+             started_at, ended_at, rows_seen, ok, error
+        FROM uni_sync_log`, 'view ims_sync_log'],
+
+  // Orders ARE a union, because the history matters — and it has to be
+  // deduplicated. During the 1-3 October handover the same Myntra order was
+  // pulled by both systems: Vin eRetail stores the channel's UUID in
+  // ext_order_no, which is the very value Unicommerce uses as its own code.
+  // 14 orders overlap that way. A plain UNION ALL would count them, and their
+  // money, twice. Unicommerce wins, being the system that still gets updates.
+  // The cutover date does the heavy lifting below. Unicommerce holds nothing
+  // before it, so no earlier Vin eRetail order can be a duplicate and the
+  // expensive check is skipped for all of them. Without that guard the
+  // OR-across-two-columns lookup runs for every one of ~4,800 rows and cannot
+  // use an index: the reorder query took 2.5s, against 114ms with it. The date
+  // is read from the data, not written in, so it stays correct by itself.
+  [`CREATE OR REPLACE VIEW ims_orders AS
+      SELECT v.order_id, v.ext_order_no, v.order_date, v.status, v.channel_name,
+             v.order_amount, v.payment_method, v.customer_name, v.customer_phone,
+             v.ship_city, v.ship_state, 'vinculum' AS source
+        FROM vin_orders v
+       WHERE v.order_date < (SELECT MIN(order_date) FROM uni_orders)
+          OR NOT EXISTS (SELECT 1 FROM uni_orders u
+                          WHERE u.code = v.ext_order_no OR u.display_code = v.ext_order_no
+                             OR u.code = v.order_id    OR u.display_code = v.order_id)
+      UNION ALL
+      SELECT u.code, u.display_code, u.order_date, u.status, u.channel,
+             u.order_amount, CASE WHEN u.cod = 1 THEN 'COD' ELSE 'Prepaid' END,
+             u.customer_name, u.notification_mobile, u.ship_city, u.ship_state,
+             'unicommerce'
+        FROM uni_orders u`, 'view ims_orders'],
+
+  // Uniware has no quantity column: each saleOrderItem is one unit, so a
+  // two-piece line is two rows. Hence the literal 1 — it is the honest
+  // quantity, not a placeholder.
+  [`CREATE OR REPLACE VIEW ims_order_items AS
+      SELECT it.order_id, it.sku, it.sku_name, it.brand, it.status,
+             it.order_qty, it.shipped_qty, it.cancelled_qty, it.return_qty,
+             it.unit_price, it.discount_amt, it.tax_amount, 'vinculum' AS source
+        FROM vin_order_items it
+       WHERE NOT EXISTS (
+               SELECT 1 FROM vin_orders v JOIN uni_orders u
+                 ON u.code = v.ext_order_no OR u.display_code = v.ext_order_no
+                    OR u.code = v.order_id OR u.display_code = v.order_id
+                WHERE v.order_id = it.order_id
+                  AND v.order_date >= (SELECT MIN(order_date) FROM uni_orders))
+      UNION ALL
+      SELECT it.order_code, it.sku, it.item_name, it.brand, it.status,
+             1,
+             CASE WHEN it.status IN ('DISPATCHED','DELIVERED','SHIPPED','COMPLETE') THEN 1 ELSE 0 END,
+             CASE WHEN it.status = 'CANCELLED' THEN 1 ELSE 0 END,
+             0,
+             it.selling_price, it.discount, it.total_gst, 'unicommerce'
+        FROM uni_order_items it`, 'view ims_order_items'],
+
+  // The Sales page asks "how fresh is this?". Orders came from Vin eRetail
+  // until 1 October and from Unicommerce after, so the honest answer is
+  // whichever of the two ran last. The id offset only keeps the two id spaces
+  // from colliding; nothing reads it.
+  [`CREATE OR REPLACE VIEW ims_order_sync_log AS
+      SELECT id, started_at, ended_at, orders_seen, ok FROM vin_order_sync_log
+      UNION ALL
+      SELECT id + 1000000, started_at, ended_at, orders_seen, ok
+        FROM uni_order_sync_log`, 'view ims_order_sync_log'],
 ];
 
 module.exports = { TABLES, COLUMNS, WIDENINGS, INDEXES, BACKFILLS };

@@ -8,8 +8,8 @@
 //
 // Two things the sheet had that the database does not, and how they are met:
 //
-//   Stock on a past day. vin_inventory only ever holds the latest figure, so
-//   there was no answer. vin_inventory_daily now keeps one row per SKU per day,
+//   Stock on a past day. ims_inventory only ever holds the latest figure, so
+//   there was no answer. ims_inventory_daily now keeps one row per SKU per day,
 //   written by each sync. It cannot be backfilled — history starts from the
 //   first sync after this shipped, and the dashboard fills in as days pass.
 //
@@ -49,7 +49,7 @@ async function dataClock() {
     `SELECT CURDATE() today,
             DATE(MAX(order_date)) last_order,
             DATEDIFF(CURDATE(), DATE(MAX(order_date))) stale_days
-       FROM vin_orders`);
+       FROM ims_orders`);
   const today = r && r.today ? ymd(new Date(r.today)) : ymd(new Date());
   const anchor = r && r.last_order ? ymd(new Date(r.last_order)) : today;
   return { today, anchor, staleDays: Math.max(0, Number(r && r.stale_days) || 0) };
@@ -61,7 +61,7 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
   const ck = clock || await dataClock();
 
   // A SKU can sell without being in the master list, and can sit in stock
-  // without either. Starting from vin_skus alone dropped those, and a missing
+  // without either. Starting from ims_skus alone dropped those, and a missing
   // row reads as "nothing to order", which is the wrong way to be wrong.
   const rows = await db.rows(
     `SELECT u.sku,
@@ -69,15 +69,15 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
             COALESCE(inv.qty, 0)                             AS today_stock,
             COALESCE(sold.qty, 0)                            AS sold_qty,
             COALESCE(ret.qty, 0)                             AS returned_qty
-       FROM (SELECT sku FROM vin_skus
-             UNION SELECT sku FROM vin_inventory
-             UNION SELECT DISTINCT sku FROM vin_order_items WHERE sku <> '') u
-       LEFT JOIN vin_skus s ON s.sku = u.sku
-       LEFT JOIN (SELECT sku, SUM(qty) qty FROM vin_inventory GROUP BY sku) inv
+       FROM (SELECT sku FROM ims_skus
+             UNION SELECT sku FROM ims_inventory
+             UNION SELECT DISTINCT sku FROM ims_order_items WHERE sku <> '') u
+       LEFT JOIN ims_skus s ON s.sku = u.sku
+       LEFT JOIN (SELECT sku, SUM(qty) qty FROM ims_inventory GROUP BY sku) inv
               ON inv.sku = u.sku
        LEFT JOIN (SELECT it.sku, SUM(it.order_qty) qty
-                    FROM vin_order_items it
-                    JOIN vin_orders o ON o.order_id = it.order_id
+                    FROM ims_order_items it
+                    JOIN ims_orders o ON o.order_id = it.order_id
                    WHERE LOWER(it.status) <> 'cancelled'
                      AND o.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
                      AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)
@@ -86,7 +86,7 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
        LEFT JOIN (SELECT ri.sku, SUM(ri.return_qty) qty
                     FROM vin_return_items ri
                     JOIN vin_returns rr ON rr.return_no = ri.return_no
-                    JOIN vin_orders o   ON o.order_id = rr.eretail_order_no
+                    JOIN ims_orders o   ON o.order_id = rr.eretail_order_no
                    WHERE o.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
                      AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)
                    GROUP BY ri.sku) ret
@@ -125,7 +125,7 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
 }
 
 // ── Dashboard ─────────────────────────────────────────
-// The sheet had a column per date. vin_inventory_daily has a row per date, and
+// The sheet had a column per date. ims_inventory_daily has a row per date, and
 // today's live figure is folded in so the newest point is never missing just
 // because a sync has not run since midnight.
 async function getDashboardData(fromStr, toStr) {
@@ -150,7 +150,7 @@ async function getDashboardData(fromStr, toStr) {
 
     const hist = await db.rows(
       `SELECT DATE_FORMAT(day, '%Y-%m-%d') d, sku, SUM(qty) qty
-         FROM vin_inventory_daily
+         FROM ims_inventory_daily
         WHERE day >= ? AND day <= ?
         GROUP BY day, sku`, [from, to]).catch(() => []);
 
@@ -255,8 +255,8 @@ async function getSalesRankData(fromStr, toStr) {
               SUM(it.order_qty) qty,
               ROUND(AVG(NULLIF(it.unit_price,0)), 2) avg_price,
               ROUND(SUM(it.order_qty * it.unit_price)) value
-         FROM vin_order_items it
-         JOIN vin_orders o ON o.order_id = it.order_id
+         FROM ims_order_items it
+         JOIN ims_orders o ON o.order_id = it.order_id
         WHERE LOWER(it.status) <> 'cancelled' AND ${where}
         GROUP BY it.sku`, args);
 
