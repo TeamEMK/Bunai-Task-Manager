@@ -51,6 +51,25 @@ const uniReturns = require(path.join(__dirname, '..', 'uni-returns-sync'));
 const uniMissing = () => uni.missingConfig().length
   ? 'Unicommerce configured nahi (' + uni.missingConfig().join(', ') + ')' : null;
 
+// Schema pehle. Sync scripts apni tables to bana leti hain, par maujooda table
+// mein naya COLUMN nahi jod sakti — CREATE TABLE IF NOT EXISTS us par kuch
+// nahi karta. Woh kaam migrations ka hai, aur abhi tak woh sirf app ke boot
+// par chalti thi. Yaani cron chup-chaap is baat par tika tha ki koi aur
+// pehle schema sudhaar de: uni_returns mein teen naye column jude, app boot
+// nahi hui, aur yeh step "Unknown column 'channel'" se gir gaya.
+//
+// Migrations idempotent hain aur bina kaam ke lagbhag muft, to yahan chalana
+// cron ko apne aap mein poora bana deta hai.
+step('Schema', async () => {
+  const { runMigrations } = require(path.join(__dirname, '..', 'src', 'db', 'migrations'));
+  const lines = await runMigrations({ verbose: false });
+  const changed = lines.filter(l => l.startsWith('✅')).length;
+  const warned = lines.filter(l => l.startsWith('⚠')).length;
+  return changed || warned
+    ? `${changed} applied` + (warned ? `, ${warned} warning` : '')
+    : 'pehle se theek';
+});
+
 step('SKU master', async () => {
   await uniSync.ensureTables();
   const r = await uniSync.syncItems();
@@ -133,6 +152,8 @@ step('Returns (Vin eRetail)', async () => {
   for (const m of [uniSync, uniOrders, uniReturns, vinReturns]) {
     try { await m.pool.end(); } catch (_) { /* already closed */ }
   }
+  // Migrations apna alag pool kholti hain.
+  try { await require(path.join(__dirname, '..', 'src', 'db', 'pool')).pool.end(); } catch (_) {}
 
   const failed = results.filter(r => r.state === 'failed');
   console.log(`\n── ${((Date.now() - started) / 1000).toFixed(1)}s mein khatam ──`);
@@ -143,4 +164,12 @@ step('Returns (Vin eRetail)', async () => {
     process.exit(1);
   }
   console.log('\nSab theek.');
+
+  // Exit saaf-saaf, event loop khaali hone ke bharose nahi. Pools band ho
+  // chuke hain aur kaam khatam hai, par Railway par pehli run 90 second mein
+  // poora kaam karke bhi 15+ minute "Running" padi rahi — koi socket latka
+  // reh gaya tha. Local par woh apne aap nikal jaata tha, isliye yeh wahan
+  // kabhi dikha nahi. Cron ki ekmatra shart yahi hai ki process khatam ho,
+  // to use sanyog par nahi chhodte.
+  process.exit(0);
 })().catch(e => { console.error('\n✗ daily-sync:', e.message); process.exit(1); });
