@@ -55,11 +55,19 @@ A healthy run takes about 45 seconds and ends with exit code 0:
 ✅ SKU master — 5883 SKUs (5.9s)
 ✅ Stock — 2879 rows, 2 facility (3.1s)
 ✅ Orders — 129 orders (34.0s)
+✅ Returns (Unicommerce) — 0 returns (0.4s)
 ✅ Returns (Vin eRetail) — 0 returns (0.0s)
 
-── 43.1s mein khatam ──
+── 43.5s mein khatam ──
 Sab theek.
 ```
+
+Returns reading zero is expected for now, not a fault: the cutover was
+1 October and Unicommerce had not produced a single return by the 5th. Returns
+always lag orders. The step runs anyway so the first one is caught the night it
+appears, instead of ageing out of the window unnoticed. Vin eRetail returns are
+synced alongside, because the older ones are still closing — statuses change and
+refunds land after the order side has gone quiet.
 
 **A failing step does not stop the others.** Orders being unavailable is no
 reason for stock to go stale too. Each step runs on its own and the summary at

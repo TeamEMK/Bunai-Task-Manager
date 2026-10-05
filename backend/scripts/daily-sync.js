@@ -46,6 +46,7 @@ const uni = require(path.join(__dirname, '..', 'unicommerce'));
 const uniSync = require(path.join(__dirname, '..', 'unicommerce-sync'));
 const uniOrders = require(path.join(__dirname, '..', 'uni-orders-sync'));
 const vinReturns = require(path.join(__dirname, '..', 'returns-sync'));
+const uniReturns = require(path.join(__dirname, '..', 'uni-returns-sync'));
 
 const uniMissing = () => uni.missingConfig().length
   ? 'Unicommerce configured nahi (' + uni.missingConfig().join(', ') + ')' : null;
@@ -72,9 +73,23 @@ step('Orders', async () => {
   return `${r.orders} orders` + (r.failed ? `, ${r.failed} fail` : '');
 }, uniMissing);
 
-// Returns abhi bhi Vin eRetail par hain — Unicommerce par ek bhi return nahi
-// aaya, to wahan padhne ko kuch hai hi nahi. Pehla return aate hi yeh step
-// Unicommerce par chala jayega.
+// Returns dono taraf se. Unicommerce par 5 October tak ek bhi return nahi
+// tha — cutover ko chaar din hue the aur returns hamesha orders se peeche
+// chalte hain. Yeh step isliye abhi se chal raha hai ki jis din pehla return
+// bane, woh us raat pakda jaye; warna woh window se nikal kar hamesha ke liye
+// chhoot sakta hai.
+//
+// Vin eRetail wala step saath mein isliye hai ki purane returns ab bhi band
+// ho rahe hain — status badalta hai, refund aata hai. Dono ek saath chalenge
+// jab tak Vinculum ki taraf hilna band na ho jaye.
+step('Returns (Unicommerce)', async () => {
+  await uniReturns.ensureTables();
+  const r = await uniReturns.syncReturns({
+    fromDate: since(RETURN_DAYS), toDate: iso(Date.now()),
+  });
+  return `${r.returns} returns` + (r.failed ? `, ${r.failed} fail` : '');
+}, uniMissing);
+
 step('Returns (Vin eRetail)', async () => {
   const fmt = d => {
     const p = n => String(n).padStart(2, '0');
@@ -115,7 +130,7 @@ step('Returns (Vin eRetail)', async () => {
 
   // Pools band karna zaroori hai, warna process latka rehta hai aur Railway
   // use agle scheduled run par maar deta hai.
-  for (const m of [uniSync, uniOrders, vinReturns]) {
+  for (const m of [uniSync, uniOrders, uniReturns, vinReturns]) {
     try { await m.pool.end(); } catch (_) { /* already closed */ }
   }
 
