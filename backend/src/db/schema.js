@@ -1137,7 +1137,7 @@ const BACKFILLS = [
   [`CREATE OR REPLACE VIEW ims_orders AS
       SELECT v.order_id, v.ext_order_no, v.order_date, v.status, v.channel_name,
              v.order_amount, v.payment_method, v.customer_name, v.customer_phone,
-             v.ship_city, v.ship_state, 'vinculum' AS source
+             v.ship_city, v.ship_state, v.synced_at, 'vinculum' AS source
         FROM vin_orders v
        WHERE v.order_date < (SELECT MIN(order_date) FROM uni_orders)
           OR NOT EXISTS (SELECT 1 FROM uni_orders u
@@ -1147,7 +1147,7 @@ const BACKFILLS = [
       SELECT u.code, u.display_code, u.order_date, u.status, u.channel,
              u.order_amount, CASE WHEN u.cod = 1 THEN 'COD' ELSE 'Prepaid' END,
              u.customer_name, u.notification_mobile, u.ship_city, u.ship_state,
-             'unicommerce'
+             u.synced_at, 'unicommerce'
         FROM uni_orders u`, 'view ims_orders'],
 
   // Uniware has no quantity column: each saleOrderItem is one unit, so a
