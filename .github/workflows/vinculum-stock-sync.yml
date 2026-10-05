@@ -1,44 +1,33 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Daily data sync — keeps the Stock, Sales and Returns pages fresh without an
-# always-on server.
+# Manual data sync — this is what the "Sync now" button on the Stock, Sales and
+# Returns pages triggers, and a break-glass way to refresh the data by hand.
 #
-# Vercel functions freeze the moment they respond, so a multi-minute sync can
-# never finish there. GitHub Actions has no such limit: this job wakes up on a
-# schedule, runs against the (Railway) database, then exits.
+# THERE IS NO SCHEDULE HERE ON PURPOSE. The daily run belongs to the Railway
+# cron service (see RAILWAY-CRON-SETUP.md), which runs this same script next to
+# the database with no function timeout. Two schedules doing identical work
+# would only double the API calls and leave it unclear which one filled a table.
 #
-# ── One-time setup ──
-# Settings → Secrets and variables → Actions → New repository secret:
+# Trigger: the app's "Sync now" button (POST /api/sync/run dispatches this
+# workflow), or the Actions tab → this workflow → "Run workflow".
+#
+# ── Setup (needed before the button does anything) ──
+# Settings → Secrets and variables → Actions:
 #     DB_HOST  DB_PORT  DB_USER  DB_PASSWORD  DB_NAME
-#     UNI_TENANT  UNI_USERNAME  UNI_PASSWORD          (stock, SKUs, orders)
+#     UNI_TENANT  UNI_USERNAME  UNI_PASSWORD
 #     VIN_BASE_URL  VIN_ORDER_API_KEY  VIN_ORDER_API_OWNER   (returns only)
-# Use the Railway PUBLIC host for DB_HOST (*.proxy.rlwy.net), not the internal one.
+# The same values the Railway cron service uses. Use the Railway PUBLIC host
+# for DB_HOST (*.proxy.rlwy.net) — the private one is not reachable from here.
 #
-# NOTE: as of October 2026 there is no evidence this schedule has ever run —
-# vin_sync_log holds only hand-run entries, and the data went stale on exactly
-# the days someone last ran it by hand. Check the Actions tab and the secrets
-# above before trusting it.
-#
-# Run it by hand any time from the Actions tab → this workflow → "Run workflow".
+# These have never been set, so the button has never actually synced anything.
 # ─────────────────────────────────────────────────────────────────────────
-name: Daily sync (Unicommerce stock + orders, Vinculum returns)
+name: Sync now (manual)
 
 on:
-  schedule:
-    - cron: '30 1 * * *'    # 07:00 IST (01:30 UTC) — every morning
-  workflow_dispatch: {}      # manual "Run workflow" button
+  workflow_dispatch: {}
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    env:
-      DB_HOST: ${{ secrets.DB_HOST }}
-      DB_PORT: ${{ secrets.DB_PORT }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_NAME: ${{ secrets.DB_NAME }}
-      UNI_TENANT: ${{ secrets.UNI_TENANT }}
-      UNI_USERNAME: ${{ secrets.UNI_USERNAME }}
-      UNI_PASSWORD: ${{ secrets.UNI_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,30 +35,23 @@ jobs:
           node-version: '20'
       - run: npm ci
 
-      # SKU master first, and not only for tidiness: inventorySnapshot will not
-      # enumerate. It answers for the SKUs you name, and that list comes from
-      # uni_items — so a stock run before an items run misses anything new.
-      - name: Sync the SKU master from Unicommerce
-        run: node backend/unicommerce-sync.js items
-
-      - name: Sync stock from Unicommerce
-        if: ${{ always() }}
-        run: node backend/unicommerce-sync.js stock
-
-      # Ten days, by UPDATED rather than CREATED. A CREATED window only catches
-      # new orders, so an order placed last week and dispatched today would
-      # keep its stale status forever.
-      - name: Sync recent orders from Unicommerce
-        if: ${{ always() }}
-        run: node backend/uni-orders-sync.js sync 10 updated
-
-      # Returns are still Vin eRetail's. Unicommerce has not produced one yet,
-      # so there is nothing there to read; this step moves to Unicommerce the
-      # day the first return appears.
-      - name: Sync recent returns from Vin eRetail
-        if: ${{ always() }}
-        run: node backend/returns-sync.js sync 10
+      # One step, the same entry point Railway runs: schema, SKU master, stock,
+      # orders, both sides of returns. Keeping it to a single command is the
+      # point — the previous version called each sync script separately and so
+      # never ran migrations, which is exactly how a missing column took the
+      # returns step down on Railway's first run.
+      - name: Sync everything
+        run: node backend/scripts/daily-sync.js
         env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSL: 'true'
+          UNI_TENANT: ${{ secrets.UNI_TENANT }}
+          UNI_USERNAME: ${{ secrets.UNI_USERNAME }}
+          UNI_PASSWORD: ${{ secrets.UNI_PASSWORD }}
           VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
           VIN_ORDER_API_KEY: ${{ secrets.VIN_ORDER_API_KEY }}
           VIN_ORDER_API_OWNER: ${{ secrets.VIN_ORDER_API_OWNER }}

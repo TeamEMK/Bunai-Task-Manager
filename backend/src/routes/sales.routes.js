@@ -34,7 +34,7 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
     // ORDER was placed in, not the one the return was recorded in. That keeps a
     // month's sales and that month's returns talking about the same orders.
     const RET = `LEFT JOIN (SELECT eretail_order_no oid, SUM(return_amount) amt, COUNT(*) n
-                              FROM vin_returns WHERE eretail_order_no <> ''
+                              FROM ims_returns WHERE eretail_order_no <> ''
                              GROUP BY eretail_order_no) r ON r.oid = o.order_id`;
     // The one expression every revenue figure on the page goes through.
     const REV = net ? '(o.order_amount - COALESCE(r.amt,0))' : 'o.order_amount';
@@ -95,19 +95,19 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
           `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount,
                   ROUND(SUM(CASE WHEN rr.return_type='RTO' THEN rr.return_amount ELSE 0 END)) rto,
                   ROUND(SUM(CASE WHEN rr.return_type<>'RTO' THEN rr.return_amount ELSE 0 END)) delivered
-             FROM vin_returns rr JOIN ims_orders o ON o.order_id = rr.eretail_order_no
+             FROM ims_returns rr JOIN ims_orders o ON o.order_id = rr.eretail_order_no
             WHERE ${dcO} AND ${LIVE_O}`, A).catch(() => null),
         db.rows(
           `SELECT ri.sku, ROUND(SUM(ri.line_amount)) amount, ROUND(SUM(ri.return_qty)) qty
-             FROM vin_return_items ri
-             JOIN vin_returns rr ON rr.return_no = ri.return_no
+             FROM ims_return_items ri
+             JOIN ims_returns rr ON rr.return_no = ri.return_no
              JOIN ims_orders o ON o.order_id = rr.eretail_order_no
             WHERE ${dcO} AND ${LIVE_O} GROUP BY ri.sku`, A).catch(() => []),
         // Returns whose order is not on file cannot be put in any window. They
         // are named rather than quietly dropped, so the totals can be argued with.
         db.one(
           `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount
-             FROM vin_returns rr LEFT JOIN ims_orders o ON o.order_id = rr.eretail_order_no
+             FROM ims_returns rr LEFT JOIN ims_orders o ON o.order_id = rr.eretail_order_no
             WHERE o.order_id IS NULL`).catch(() => null),
       ]);
 
@@ -142,7 +142,7 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
     // window. b2b_orders has an order_date too, so the window expression above
     // fits it unchanged.
     //
-    // Netting is deliberately not applied: returns come from vin_returns, which
+    // Netting is deliberately not applied: returns come from ims_returns, which
     // is an online idea. A B2B return is a credit note nobody has entered, so
     // subtracting nothing and calling it net would be a lie about this half.
     //

@@ -435,10 +435,10 @@
             style="display:none;width:100%;height:calc(100vh - 60px);border:0;background:#f4f8fe;"></iframe>
   </div>
 
-  <!-- ── STOCK (live warehouse stock from Vinculum) ── -->
+  <!-- ── STOCK (live warehouse stock from Unicommerce) ── -->
   <div id="page-stock" class="page">
     <div class="cp-filter-row" style="margin-bottom:14px;align-items:center">
-      <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">Live warehouse stock from Vinculum</span>
+      <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">Live warehouse stock from Unicommerce</span>
     </div>
 
     <div id="stockNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
@@ -467,8 +467,8 @@
         <option value="90">Sold: 90 days</option>
       </select>
       <button class="btn btn-sm" onclick="loadStock()">Refresh</button>
-      <button class="btn btn-sm" id="stockSyncGhBtn" onclick="runVinSync('stock')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)">↻ Sync from Vinculum</button>
-      <button class="btn btn-sm" id="stockLiveBtn" onclick="liveCheckStock()" title="Ask Vinculum for the current stock of the SKUs shown (up to 20)">⚡ Live check</button>
+      <button class="btn btn-sm" id="stockSyncGhBtn" onclick="runVinSync('stock')" title="Pull the latest stock, orders & returns (runs on GitHub, ~2 min)">↻ Sync now</button>
+      <button class="btn btn-sm" id="stockLiveBtn" onclick="liveCheckStock()" title="Ask Unicommerce for the current stock of the SKUs shown">⚡ Live check</button>
       <button class="btn btn-sm" id="stockSyncBtn" onclick="syncStockNow()" style="display:none">Sync now</button>
       <span id="stockSynced" style="font-size:12px;color:var(--faint);margin-left:auto"></span>
     </div>
@@ -481,7 +481,7 @@
     </div>
   </div>
 
-  <!-- ── SALES (live order analytics from Vin eRetail) ── -->
+  <!-- ── SALES (live order analytics from Unicommerce) ── -->
   <div id="page-sales" class="page">
     <div class="cp-filter-row" style="margin-bottom:14px;align-items:center;flex-wrap:wrap;gap:8px">
       <!-- The three inputs below are still the source of truth for the range —
@@ -504,7 +504,7 @@
         <option value="0">Returns included (gross)</option>
         <option value="1">Returns excluded (net)</option>
       </select>
-      <button class="btn btn-sm" id="salesSyncGhBtn" onclick="runVinSync('sales')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)" style="margin-left:auto">↻ Sync from Vinculum</button>
+      <button class="btn btn-sm" id="salesSyncGhBtn" onclick="runVinSync('sales')" title="Pull the latest stock, orders & returns (runs on GitHub, ~2 min)" style="margin-left:auto">↻ Sync now</button>
       <button class="btn btn-sm" onclick="loadSales()">↻ Refresh</button>
       <span id="salesSpan" style="font-size:12px;color:var(--faint)"></span>
     </div>
@@ -553,7 +553,7 @@
       <input type="hidden" id="returnsRange" value="45"/>
       <input type="hidden" id="returnsFrom"/>
       <input type="hidden" id="returnsTo"/>
-      <button class="btn btn-sm" id="returnsSyncGhBtn" onclick="runVinSync('returns')" title="Pull the latest stock, orders & returns from Vinculum (runs on GitHub, ~5-7 min)" style="margin-left:auto">↻ Sync from Vinculum</button>
+      <button class="btn btn-sm" id="returnsSyncGhBtn" onclick="runVinSync('returns')" title="Pull the latest stock, orders & returns (runs on GitHub, ~2 min)" style="margin-left:auto">↻ Sync now</button>
       <button class="btn btn-sm" onclick="loadReturns()">↻ Refresh</button>
       <span id="returnsSpan" style="font-size:12px;color:var(--faint)"></span>
     </div>

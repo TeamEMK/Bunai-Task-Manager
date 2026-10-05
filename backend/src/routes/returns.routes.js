@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════
 // RETURNS — Return / RTO analytics from Vin eRetail (admin only).
-// Reads vin_returns / vin_return_items, filled by returns-sync.js
+// Reads ims_returns / ims_return_items, filled by returns-sync.js
 // (v1/order/orderreturn, read-only). Optional ?from=YYYY-MM-DD&to=YYYY-MM-DD
 // window (on return_date); without it, every return is counted.
 // ══════════════════════════════════════════════════════
@@ -26,47 +26,47 @@ router.get('/returns', requireAuth, requireAdmin, async (req, res) => {
                   ROUND(SUM(return_amount)) amount,
                   SUM(CASE WHEN return_type='RTO' THEN 1 ELSE 0 END) rto,
                   SUM(CASE WHEN return_type<>'RTO' THEN 1 ELSE 0 END) delivered
-             FROM vin_returns WHERE ${dc}`, A),
+             FROM ims_returns WHERE ${dc}`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(return_type,''),'(blank)') type, COUNT(*) n,
                   ROUND(SUM(return_amount)) amount
-             FROM vin_returns WHERE ${dc} GROUP BY type ORDER BY n DESC`, A),
+             FROM ims_returns WHERE ${dc} GROUP BY type ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(status,''),'(blank)') status, COUNT(*) n
-             FROM vin_returns WHERE ${dc} GROUP BY status ORDER BY n DESC`, A),
+             FROM ims_returns WHERE ${dc} GROUP BY status ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(channel_name,''),'(blank)') channel, COUNT(*) n,
                   ROUND(SUM(return_amount)) amount
-             FROM vin_returns WHERE ${dc} GROUP BY channel ORDER BY n DESC`, A),
+             FROM ims_returns WHERE ${dc} GROUP BY channel ORDER BY n DESC`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(i.return_reason,''),'(blank)') reason, COUNT(*) n
-             FROM vin_return_items i JOIN vin_returns r ON r.return_no = i.return_no
+             FROM ims_return_items i JOIN ims_returns r ON r.return_no = i.return_no
             WHERE ${dcR} GROUP BY reason ORDER BY n DESC LIMIT 12`, A),
         db.rows(
           `SELECT DATE(return_date) d, COUNT(*) n, ROUND(SUM(return_amount)) amount
-             FROM vin_returns WHERE return_date IS NOT NULL AND ${dc}
+             FROM ims_returns WHERE return_date IS NOT NULL AND ${dc}
             GROUP BY DATE(return_date) ORDER BY d`, A),
         db.rows(
           `SELECT i.sku, COALESCE(NULLIF(MAX(i.sku_name),''), i.sku) sku_name,
                   ROUND(SUM(i.return_qty)) qty
-             FROM vin_return_items i JOIN vin_returns r ON r.return_no = i.return_no
+             FROM ims_return_items i JOIN ims_returns r ON r.return_no = i.return_no
             WHERE ${dcR} GROUP BY i.sku ORDER BY qty DESC LIMIT 15`, A),
         db.rows(
           `SELECT return_no, return_type, status, return_date, return_amount,
                   channel_name, eretail_order_no, customer_name, customer_phone,
                   customer_city, customer_state, refund_status
-             FROM vin_returns WHERE ${dc} ORDER BY return_date DESC, return_no DESC LIMIT 100`, A),
+             FROM ims_returns WHERE ${dc} ORDER BY return_date DESC, return_no DESC LIMIT 100`, A),
         db.one(
           `SELECT MIN(return_date) first_return, MAX(return_date) last_return, MAX(synced_at) synced_at
-             FROM vin_returns WHERE ${dc}`, A),
+             FROM ims_returns WHERE ${dc}`, A),
         db.one(
           `SELECT ROUND(SUM(i.return_qty)) units
-             FROM vin_return_items i JOIN vin_returns r ON r.return_no = i.return_no
+             FROM ims_return_items i JOIN ims_returns r ON r.return_no = i.return_no
             WHERE ${dcR}`, A),
       ]);
 
     const lastSync = await db.one(
-      `SELECT started_at, ended_at, returns_seen, ok FROM vin_return_sync_log
+      `SELECT started_at, ended_at, returns_seen, ok FROM ims_return_sync_log
         WHERE ok=1 ORDER BY id DESC LIMIT 1`).catch(() => null);
 
     res.json({
@@ -114,13 +114,13 @@ router.get('/returns/list', requireAuth, requireAdmin, async (req, res) => {
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
     const cnt = await db.one(
-      `SELECT COUNT(*) n, ROUND(SUM(return_amount)) amount FROM vin_returns ${whereSql}`, args);
+      `SELECT COUNT(*) n, ROUND(SUM(return_amount)) amount FROM ims_returns ${whereSql}`, args);
     const total = cnt ? cnt.n : 0;
     const returns = await db.rows(
       `SELECT return_no, return_type, status, return_date, return_amount,
               channel_name, eretail_order_no, customer_name, customer_phone,
               customer_city, customer_state, refund_status
-         FROM vin_returns ${whereSql}
+         FROM ims_returns ${whereSql}
         ORDER BY return_date DESC, return_no DESC
         LIMIT ${PER} OFFSET ${(page - 1) * PER}`, args);
 
@@ -136,7 +136,7 @@ router.get('/returns/detail', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = String(req.query.id || '').trim();
     if (!id) return res.status(400).json({ error: 'No return id' });
-    const ret = await db.one('SELECT * FROM vin_returns WHERE return_no = ?', [id]);
+    const ret = await db.one('SELECT * FROM ims_returns WHERE return_no = ?', [id]);
     if (!ret) return res.json({ notFound: true });
     let raw = null;
     // As with orders: the payload has its own table, and the old column is
@@ -148,7 +148,7 @@ router.get('/returns/detail', requireAuth, requireAdmin, async (req, res) => {
     const items = await db.rows(
       `SELECT line_no, sku, sku_name, brand, status, order_qty, return_qty, received_qty,
               unit_price, line_amount, discount_amt, tax_amount, taxable_amount, hsn_code, return_reason
-         FROM vin_return_items WHERE return_no = ?`, [id]);
+         FROM ims_return_items WHERE return_no = ?`, [id]);
     res.json({ ret, raw, items });
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ notConfigured: true });

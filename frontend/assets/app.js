@@ -401,7 +401,7 @@ function navigate(page, el, fromHash) {
 }
 
 // ══════════════════════════════════════════════════════
-// STOCK — Vinculum warehouse stock
+// STOCK — Unicommerce warehouse stock
 // Reads /api/stock, which reads the synced tables. Nothing here talks to
 // Vinculum directly, so the page renders instantly regardless of their API.
 // ══════════════════════════════════════════════════════
@@ -454,7 +454,7 @@ function stockWatch(on) {
     if (btn) { btn.disabled = false; btn.textContent = 'Sync now'; }
     return;
   }
-  if (btn) { btn.disabled = true; btn.textContent = 'Syncing… (~6 min)'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing… (~2 min)'; }
   // Every 20s: cheap for a job this long, and quick enough that the page
   // notices the finish without the user reaching for refresh.
   _stockPoll = setInterval(async () => {
@@ -485,7 +485,7 @@ async function syncStockNow() {
   }
 }
 
-// ── One-click Vinculum sync (Stock / Sales / Returns pages) ──
+// ── One-click sync (Stock / Sales / Returns pages) ──
 // Triggers the GitHub Actions workflow (stock + orders + returns — Vercel can't
 // run the long pull in-process), then watches THIS page's own sync log for the
 // fresh run and reloads it. The whole workflow runs regardless of which page's
@@ -497,7 +497,7 @@ const VIN_SYNC = {
 };
 const _vinSyncPoll = {};
 function _vinSyncBtn(kind) { return document.getElementById(kind + 'SyncGhBtn'); }
-function _vinSyncReset(kind) { const b = _vinSyncBtn(kind); if (b) { b.disabled = false; b.textContent = '↻ Sync from Vinculum'; } }
+function _vinSyncReset(kind) { const b = _vinSyncBtn(kind); if (b) { b.disabled = false; b.textContent = '↻ Sync now'; } }
 
 async function runVinSync(kind) {
   const cfg = VIN_SYNC[kind]; if (!cfg) return;
@@ -508,8 +508,8 @@ async function runVinSync(kind) {
   let r;
   try { r = await api('/api/sync/run', 'POST'); } catch (e) { cfg.notice('bad', 'Could not start sync — ' + (e.message || 'error')); return; }
   if (r.error) { cfg.notice('bad', r.error); return; }
-  cfg.notice('busy', '⏳ Sync started on GitHub — pulling stock, orders & returns from Vinculum. Takes ~5-7 min; you can leave this page, it keeps running.');
-  if (btn) { btn.disabled = true; btn.textContent = 'Syncing… (~6 min)'; }
+  cfg.notice('busy', '⏳ Sync started on GitHub — pulling stock, orders & returns. Takes ~2 min; you can leave this page, it keeps running.');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing… (~2 min)'; }
   _vinSyncWatch(kind, before, Date.now());
 }
 function _vinSyncWatch(kind, before, startedAt) {
@@ -537,7 +537,7 @@ async function loadStock() {
   const body = document.getElementById('stockBody');
   const tiles = document.getElementById('stockSynced');
   const syncBtn = document.getElementById('stockSyncBtn');
-  if (syncBtn) syncBtn.style.display = 'none';   // replaced by "↻ Sync from Vinculum" (GitHub trigger)
+  if (syncBtn) syncBtn.style.display = 'none';   // replaced by "↻ Sync now" (GitHub trigger)
   const ghBtn = document.getElementById('stockSyncGhBtn');
   if (ghBtn) ghBtn.style.display = (ME && ME.role === 'admin') ? '' : 'none';
   try {
@@ -743,7 +743,7 @@ async function liveCheckStock() {
     if (d.error) {
       stockNotice('bad', 'Live check failed — ' + d.error);
     } else {
-      stockNotice('ok', `Live checked ${d.checked} SKU(s) from Vinculum just now — ${d.found} in stock.` +
+      stockNotice('ok', `Live checked ${d.checked} SKU(s) from Unicommerce just now — ${d.found} in stock.` +
         (all.length > 20 ? ' (first 20 shown — narrow the search to check others)' : ''));
       await loadStock();
     }
@@ -4211,7 +4211,7 @@ async function loadSales() {
   if (d.lastSync && d.lastSync.started_at) {
     const mins = Math.round((Date.now() - new Date(d.lastSync.started_at).getTime()) / 60000);
     const ago = mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
-    salesNotice('ok', `Live from Vin eRetail · last synced ${ago} · ${Number(d.lastSync.orders_seen || 0).toLocaleString('en-IN')} orders`);
+    salesNotice('ok', `Live from Unicommerce · last synced ${ago} · ${Number(d.lastSync.orders_seen || 0).toLocaleString('en-IN')} orders`);
   } else {
     salesNotice('busy', 'Orders loaded. Set up the daily order sync to keep this live.');
   }
