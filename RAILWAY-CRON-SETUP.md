@@ -22,9 +22,25 @@ function timeout to design around.
 
 1. In the Railway project, **New → GitHub Repo** → this repository. Call the
    service something like `bunai-sync`.
-2. Service **Settings → Config as code**: set the path to `railway.cron.json`.
-   That file carries the start command, the schedule and
-   `restartPolicyType: NEVER`.
+2. Service **Settings → Deploy**, set three things by hand:
+
+   | Field | Value |
+   |---|---|
+   | Start Command | `node backend/scripts/daily-sync.js` |
+   | Cron Schedule | `30 1 * * *` |
+   | Restart Policy | **Never** |
+
+   Restart Policy is the one that bites. It defaults to *On Failure* with ten
+   retries, and this script exits 1 when a step fails — so one bad morning
+   would run the sync ten times over, each one hitting the API again. *Never*
+   means a run happens once and the next one is tomorrow's.
+
+   **Not Config-as-code.** Railway deprecated it on 2026-08-28: existing files
+   keep working until 2026-12-01, but a service that never used it cannot opt
+   in, which includes any service created now. `railway.cron.json` is kept in
+   the repo as a record of the intended settings, and for Railway's newer
+   Infrastructure-as-Code if that is ever adopted — but the dashboard fields
+   above are what actually takes effect today.
 3. Service **Variables** — the sync needs these and nothing else:
 
    ```
