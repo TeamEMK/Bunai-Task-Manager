@@ -66,6 +66,27 @@ async function runVinculumSync() {
   return result;
 }
 
+// Unicommerce ka wahi kaam jo runVinculumSync Vin eRetail ke liye karta tha.
+// Kram maayne rakhta hai: SKU master pehle, kyunki inventorySnapshot enumerate
+// nahi karta — use SKU batane padte hain, aur woh list uni_items se aati hai.
+//
+// Yahan low-stock task nahi uthaye jaate. Vinculum wale rule ne dikhaya tha ki
+// ek galat feed kitni jaldi sainkdon jhoothe tasks bana deti hai; naye system
+// par woh dobara jodne se pehle kuch hafton ka bharosa banna chahiye.
+async function runUnicommerceSync() {
+  const uni = require('../../unicommerce');
+  if (!uni.isConfigured()) {
+    return { skipped: 'Unicommerce configured nahi — UNI_TENANT, UNI_USERNAME, UNI_PASSWORD' };
+  }
+  const sync = require('../../unicommerce-sync');
+  await sync.ensureTables();
+
+  const items = await sync.syncItems();
+  const stock = await sync.syncStock();
+  console.log(`✅ Unicommerce sync — ${items.items} SKUs, ${stock.rows} stock rows`);
+  return { ...items, ...stock };
+}
+
 function startSchedulers() {
   if (config.isServerless) {
     console.log('⏰ Serverless runtime — daily jobs run via Vercel Cron, not setInterval');
@@ -90,12 +111,16 @@ function startSchedulers() {
     console.log('⏸ Overdue task reminders disabled (TASK_REMINDER_ENABLED=0)');
   }
 
+  // Stock ab Unicommerce se aata hai. Vin eRetail ka inventory 1 October ko
+  // khaali ho gaya tha, to wahan se roz zero kheenchne ka koi matlab nahi —
+  // woh sirf aaj ka sahi aankda mita deta. Timing wahi VIN_SYNC_* se chalti
+  // hai taaki deploy par koi naya variable set na karna pade.
   if (config.vinculum.syncEnabled) {
-    dailyAt(config.vinculum.syncHour, config.vinculum.syncMinute, () => runVinculumSync(), 'vinculum');
-    console.log(`⏰ Vinculum stock sync scheduled daily at ${hhmm(config.vinculum.syncHour, config.vinculum.syncMinute)} IST`);
+    dailyAt(config.vinculum.syncHour, config.vinculum.syncMinute, () => runUnicommerceSync(), 'unicommerce');
+    console.log(`⏰ Unicommerce stock sync scheduled daily at ${hhmm(config.vinculum.syncHour, config.vinculum.syncMinute)} IST`);
   } else {
-    console.log('⏸ Vinculum stock sync disabled (VIN_SYNC_ENABLED=0)');
+    console.log('⏸ Stock sync disabled (VIN_SYNC_ENABLED=0)');
   }
 }
 
-module.exports = { startSchedulers, runVinculumSync };
+module.exports = { startSchedulers, runVinculumSync, runUnicommerceSync };

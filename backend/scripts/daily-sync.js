@@ -1,0 +1,175 @@
+// ════════════════════════════════════════════════════════════════════════
+//  daily-sync.js — roz ka poora data refresh, ek command mein.
+//
+//    node backend/scripts/daily-sync.js
+//    node backend/scripts/daily-sync.js --days 30     orders ka window
+//
+//  Railway ki cron service isi ko chalati hai. Railway cron ek hi shart rakhta
+//  hai: process khatam hona chahiye. Isliye yeh har DB pool band karta hai aur
+//  saaf exit code deta hai — 0 sab theek, 1 agar koi hissa fail hua.
+//
+//  KYUN EK HI SCRIPT: pehle yeh kaam GitHub Actions ke chaar alag steps mein
+//  tha. Woh workflow aaj tak ek baar bhi nahi chala (sync log mein sirf haath
+//  se chalaye gaye run hain), aur har step apne secrets alag maangta tha.
+//  Ek entry point ka matlab hai ek jagah jo fail ho sakti hai, aur ek jagah
+//  jise dekhna hai.
+//
+//  EK HISSA FAIL HO TO BAAKI RUKTE NAHI. Orders na aa paana koi wajah nahi ki
+//  stock bhi purana pada rahe. Har hissa alag se chalta hai, aur ant mein
+//  poori report chhapti hai — chup-chaap aadha kaam karke "ok" kehna sabse
+//  bura nateeja hota.
+//
+//  KRAM: items pehle, kyunki inventorySnapshot enumerate nahi karta — use SKU
+//  batane padte hain aur woh list uni_items se aati hai.
+// ════════════════════════════════════════════════════════════════════════
+require('dotenv').config();
+const path = require('path');
+
+const arg = (name, fallback) => {
+  const i = process.argv.indexOf(name);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+};
+const ORDER_DAYS  = Number(arg('--days', process.env.SYNC_ORDER_DAYS || 10));
+const RETURN_DAYS = Number(arg('--return-days', process.env.SYNC_RETURN_DAYS || 10));
+
+const iso = d => new Date(d).toISOString();
+const since = days => iso(Date.now() - days * 86400000);
+
+// Har step: naam, kya chalana hai, aur kya yeh chhoda ja sakta hai.
+// `skip` true lautaye to step gina nahi jaata — jaise Unicommerce configured
+// hi na ho. Woh fail nahi hai.
+const steps = [];
+
+function step(name, run, skip) { steps.push({ name, run, skip }); }
+
+const uni = require(path.join(__dirname, '..', 'unicommerce'));
+const uniSync = require(path.join(__dirname, '..', 'unicommerce-sync'));
+const uniOrders = require(path.join(__dirname, '..', 'uni-orders-sync'));
+const vinReturns = require(path.join(__dirname, '..', 'returns-sync'));
+const uniReturns = require(path.join(__dirname, '..', 'uni-returns-sync'));
+
+const uniMissing = () => uni.missingConfig().length
+  ? 'Unicommerce configured nahi (' + uni.missingConfig().join(', ') + ')' : null;
+
+// Schema pehle. Sync scripts apni tables to bana leti hain, par maujooda table
+// mein naya COLUMN nahi jod sakti — CREATE TABLE IF NOT EXISTS us par kuch
+// nahi karta. Woh kaam migrations ka hai, aur abhi tak woh sirf app ke boot
+// par chalti thi. Yaani cron chup-chaap is baat par tika tha ki koi aur
+// pehle schema sudhaar de: uni_returns mein teen naye column jude, app boot
+// nahi hui, aur yeh step "Unknown column 'channel'" se gir gaya.
+//
+// Migrations idempotent hain aur bina kaam ke lagbhag muft, to yahan chalana
+// cron ko apne aap mein poora bana deta hai.
+step('Schema', async () => {
+  const { runMigrations } = require(path.join(__dirname, '..', 'src', 'db', 'migrations'));
+  const lines = await runMigrations({ verbose: false });
+  const changed = lines.filter(l => l.startsWith('✅')).length;
+  const warned = lines.filter(l => l.startsWith('⚠')).length;
+  return changed || warned
+    ? `${changed} applied` + (warned ? `, ${warned} warning` : '')
+    : 'pehle se theek';
+});
+
+step('SKU master', async () => {
+  await uniSync.ensureTables();
+  const r = await uniSync.syncItems();
+  return `${r.items} SKUs`;
+}, uniMissing);
+
+step('Stock', async () => {
+  const r = await uniSync.syncStock();
+  return `${r.rows} rows, ${r.facilities} facility` + (r.zeroed ? `, ${r.zeroed} zero` : '');
+}, uniMissing);
+
+// UPDATED, CREATED nahi: ek order jo pichhle hafte bana aur aaj dispatch hua,
+// CREATED window mein kabhi dobara nahi aayega aur uska status purana hi
+// rah jayega.
+step('Orders', async () => {
+  await uniOrders.ensureTables();
+  const r = await uniOrders.syncOrders({
+    fromDate: since(ORDER_DAYS), toDate: iso(Date.now()), dateType: 'UPDATED',
+  });
+  return `${r.orders} orders` + (r.failed ? `, ${r.failed} fail` : '');
+}, uniMissing);
+
+// Returns dono taraf se. Unicommerce par 5 October tak ek bhi return nahi
+// tha — cutover ko chaar din hue the aur returns hamesha orders se peeche
+// chalte hain. Yeh step isliye abhi se chal raha hai ki jis din pehla return
+// bane, woh us raat pakda jaye; warna woh window se nikal kar hamesha ke liye
+// chhoot sakta hai.
+//
+// Vin eRetail wala step saath mein isliye hai ki purane returns ab bhi band
+// ho rahe hain — status badalta hai, refund aata hai. Dono ek saath chalenge
+// jab tak Vinculum ki taraf hilna band na ho jaye.
+step('Returns (Unicommerce)', async () => {
+  await uniReturns.ensureTables();
+  const r = await uniReturns.syncReturns({
+    fromDate: since(RETURN_DAYS), toDate: iso(Date.now()),
+  });
+  return `${r.returns} returns` + (r.failed ? `, ${r.failed} fail` : '');
+}, uniMissing);
+
+step('Returns (Vin eRetail)', async () => {
+  const fmt = d => {
+    const p = n => String(n).padStart(2, '0');
+    const x = new Date(d);
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+  };
+  const r = await vinReturns.syncReturns({
+    fromDate: fmt(Date.now() - RETURN_DAYS * 86400000), toDate: fmt(Date.now()),
+  });
+  return `${r.returns} returns`;
+}, () => (process.env.VIN_ORDER_API_KEY ? null : 'VIN_ORDER_API_KEY set nahi'));
+
+(async () => {
+  const started = Date.now();
+  console.log(`Daily sync — ${new Date().toISOString()}`);
+  console.log(`orders window ${ORDER_DAYS}d · returns window ${RETURN_DAYS}d\n`);
+
+  const results = [];
+  for (const s of steps) {
+    const why = s.skip && s.skip();
+    if (why) {
+      console.log(`⏭  ${s.name} — skip: ${why}`);
+      results.push({ name: s.name, state: 'skipped', note: why });
+      continue;
+    }
+    const t = Date.now();
+    try {
+      const note = await s.run();
+      const secs = ((Date.now() - t) / 1000).toFixed(1);
+      console.log(`✅ ${s.name} — ${note} (${secs}s)`);
+      results.push({ name: s.name, state: 'ok', note, secs });
+    } catch (e) {
+      const secs = ((Date.now() - t) / 1000).toFixed(1);
+      console.error(`❌ ${s.name} — ${e.message} (${secs}s)`);
+      results.push({ name: s.name, state: 'failed', note: e.message, secs });
+    }
+  }
+
+  // Pools band karna zaroori hai, warna process latka rehta hai aur Railway
+  // use agle scheduled run par maar deta hai.
+  for (const m of [uniSync, uniOrders, uniReturns, vinReturns]) {
+    try { await m.pool.end(); } catch (_) { /* already closed */ }
+  }
+  // Migrations apna alag pool kholti hain.
+  try { await require(path.join(__dirname, '..', 'src', 'db', 'pool')).pool.end(); } catch (_) {}
+
+  const failed = results.filter(r => r.state === 'failed');
+  console.log(`\n── ${((Date.now() - started) / 1000).toFixed(1)}s mein khatam ──`);
+  results.forEach(r => console.log(`   ${r.state.padEnd(7)} ${r.name}${r.note ? ' — ' + r.note : ''}`));
+
+  if (failed.length) {
+    console.error(`\n${failed.length}/${results.length} step fail hue`);
+    process.exit(1);
+  }
+  console.log('\nSab theek.');
+
+  // Exit saaf-saaf, event loop khaali hone ke bharose nahi. Pools band ho
+  // chuke hain aur kaam khatam hai, par Railway par pehli run 90 second mein
+  // poora kaam karke bhi 15+ minute "Running" padi rahi — koi socket latka
+  // reh gaya tha. Local par woh apne aap nikal jaata tha, isliye yeh wahan
+  // kabhi dikha nahi. Cron ki ekmatra shart yahi hai ki process khatam ho,
+  // to use sanyog par nahi chhodte.
+  process.exit(0);
+})().catch(e => { console.error('\n✗ daily-sync:', e.message); process.exit(1); });

@@ -1,22 +1,26 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Vinculum stock sync — keeps the Stock page fresh without an always-on server.
+# Daily data sync — keeps the Stock, Sales and Returns pages fresh without an
+# always-on server.
 #
-# Vercel functions freeze the moment they respond, so the six-minute stock sync
-# can never finish there. GitHub Actions has no such limit: this job wakes up on
-# a schedule, runs the same sync against the (Railway) database, then exits —
-# free, and no extra hosting cost.
+# Vercel functions freeze the moment they respond, so a multi-minute sync can
+# never finish there. GitHub Actions has no such limit: this job wakes up on a
+# schedule, runs against the (Railway) database, then exits.
 #
 # ── One-time setup ──
-# In the repo: Settings → Secrets and variables → Actions → New repository
-# secret, and add each of these (values are the same ones the app uses):
+# Settings → Secrets and variables → Actions → New repository secret:
 #     DB_HOST  DB_PORT  DB_USER  DB_PASSWORD  DB_NAME
-#     VIN_BASE_URL  VIN_API_KEY  VIN_API_OWNER  VIN_ORG_ID
-#     VIN_ORDER_API_KEY  VIN_ORDER_API_OWNER   (for the order sync)
+#     UNI_TENANT  UNI_USERNAME  UNI_PASSWORD          (stock, SKUs, orders)
+#     VIN_BASE_URL  VIN_ORDER_API_KEY  VIN_ORDER_API_OWNER   (returns only)
 # Use the Railway PUBLIC host for DB_HOST (*.proxy.rlwy.net), not the internal one.
+#
+# NOTE: as of October 2026 there is no evidence this schedule has ever run —
+# vin_sync_log holds only hand-run entries, and the data went stale on exactly
+# the days someone last ran it by hand. Check the Actions tab and the secrets
+# above before trusting it.
 #
 # Run it by hand any time from the Actions tab → this workflow → "Run workflow".
 # ─────────────────────────────────────────────────────────────────────────
-name: Vinculum sync (stock + orders + returns)
+name: Daily sync (Unicommerce stock + orders, Vinculum returns)
 
 on:
   schedule:
@@ -26,53 +30,46 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      UNI_TENANT: ${{ secrets.UNI_TENANT }}
+      UNI_USERNAME: ${{ secrets.UNI_USERNAME }}
+      UNI_PASSWORD: ${{ secrets.UNI_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: npm ci
-      - name: Sync stock from Vinculum into the database
-        run: node backend/vinculum-sync.js sync
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
-          VIN_API_KEY: ${{ secrets.VIN_API_KEY }}
-          VIN_API_OWNER: ${{ secrets.VIN_API_OWNER }}
-          VIN_ORG_ID: ${{ secrets.VIN_ORG_ID }}
 
-      # Refresh the last 10 days of orders (new orders + status changes). The
-      # order API caps each request at 7 days, so orders-sync walks it in
-      # windows. Read-only: it never sends the acknowledge that would mark
-      # orders processed.
-      - name: Sync recent orders from Vin eRetail
+      # SKU master first, and not only for tidiness: inventorySnapshot will not
+      # enumerate. It answers for the SKUs you name, and that list comes from
+      # uni_items — so a stock run before an items run misses anything new.
+      - name: Sync the SKU master from Unicommerce
+        run: node backend/unicommerce-sync.js items
+
+      - name: Sync stock from Unicommerce
         if: ${{ always() }}
-        run: node backend/orders-sync.js sync 10
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
-          VIN_ORDER_API_KEY: ${{ secrets.VIN_ORDER_API_KEY }}
-          VIN_ORDER_API_OWNER: ${{ secrets.VIN_ORDER_API_OWNER }}
+        run: node backend/unicommerce-sync.js stock
 
-      # Refresh the last 10 days of Return / RTO orders. Same APIUSER key and the
-      # same 7-day window cap as orders; read-only.
+      # Ten days, by UPDATED rather than CREATED. A CREATED window only catches
+      # new orders, so an order placed last week and dispatched today would
+      # keep its stale status forever.
+      - name: Sync recent orders from Unicommerce
+        if: ${{ always() }}
+        run: node backend/uni-orders-sync.js sync 10 updated
+
+      # Returns are still Vin eRetail's. Unicommerce has not produced one yet,
+      # so there is nothing there to read; this step moves to Unicommerce the
+      # day the first return appears.
       - name: Sync recent returns from Vin eRetail
         if: ${{ always() }}
         run: node backend/returns-sync.js sync 10
         env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
           VIN_BASE_URL: ${{ secrets.VIN_BASE_URL }}
           VIN_ORDER_API_KEY: ${{ secrets.VIN_ORDER_API_KEY }}
           VIN_ORDER_API_OWNER: ${{ secrets.VIN_ORDER_API_OWNER }}

@@ -545,12 +545,238 @@ const TABLES = [
     synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+
+  // ── Unicommerce (uni_*) ──
+  // Yeh definitions sync scripts se hu-ba-hu hain. Dono jagah isliye hain
+  // ki ims_* views in par bani hain aur views migration ke waqt banti hain —
+  // us waqt tak sync chala ho, yeh zaroori nahi. Pehli deploy par table na
+  // milne se view toot jaati thi aur page "not set up yet" dikhata tha,
+  // jabki data mojood hota tha. Khaali table se view banti hai aur page
+  // khaali dikhata hai — jo sach hai, aur galti nahi.
+  ['uni_items', `CREATE TABLE uni_items (
+      sku            VARCHAR(120) NOT NULL PRIMARY KEY,
+      name           VARCHAR(500) NULL,
+      category_code  VARCHAR(120) NULL,
+      category_name  VARCHAR(255) NULL,
+      brand          VARCHAR(120) NULL,
+      color          VARCHAR(120) NULL,
+      size           VARCHAR(60)  NULL,
+      price          DECIMAL(12,2) NULL,
+      base_price     DECIMAL(12,2) NULL,
+      hsn_code       VARCHAR(40)  NULL,
+      gst_tax_type   VARCHAR(40)  NULL,
+      ean            VARCHAR(80)  NULL,
+      weight         DECIMAL(12,3) NULL,
+      enabled        TINYINT(1) NOT NULL DEFAULT 1,
+      synced_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_uni_items_cat (category_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_inventory', `CREATE TABLE uni_inventory (
+      sku            VARCHAR(120) NOT NULL,
+      facility       VARCHAR(80)  NOT NULL,
+      inventory      INT NOT NULL DEFAULT 0,
+      open_sale      INT NOT NULL DEFAULT 0,
+      open_purchase  INT NOT NULL DEFAULT 0,
+      blocked        INT NOT NULL DEFAULT 0,
+      bad_inventory  INT NOT NULL DEFAULT 0,
+      putaway_pending INT NOT NULL DEFAULT 0,
+      pending_transfer INT NOT NULL DEFAULT 0,
+      synced_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (sku, facility),
+      KEY idx_uni_inv_qty (inventory),
+      KEY idx_uni_inv_fac (facility)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_inventory_daily', `CREATE TABLE uni_inventory_daily (
+      day        DATE NOT NULL,
+      sku        VARCHAR(120) NOT NULL,
+      facility   VARCHAR(80)  NOT NULL,
+      inventory  INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, sku, facility),
+      KEY idx_uni_invd_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_sync_log', `CREATE TABLE uni_sync_log (
+      id         INT AUTO_INCREMENT PRIMARY KEY,
+      kind       VARCHAR(30) NOT NULL,
+      started_at DATETIME NOT NULL,
+      ended_at   DATETIME NULL,
+      rows_seen  INT NOT NULL DEFAULT 0,
+      ok         TINYINT(1) NOT NULL DEFAULT 0,
+      error      TEXT NULL,
+      KEY idx_uni_log_kind (kind, started_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_orders', `CREATE TABLE uni_orders (
+      code              VARCHAR(120) NOT NULL PRIMARY KEY,
+      display_code      VARCHAR(120) NULL,
+      channel           VARCHAR(80)  NULL,
+      source            VARCHAR(80)  NULL,
+      status            VARCHAR(60)  NULL,
+      order_category    VARCHAR(60)  NULL,
+      order_date        DATETIME NULL,
+      created_at_uni    DATETIME NULL,
+      updated_at_uni    DATETIME NULL,
+      fulfillment_tat   DATETIME NULL,
+      cod               TINYINT(1) NOT NULL DEFAULT 0,
+      currency          VARCHAR(10)  NULL,
+      priority          VARCHAR(40)  NULL,
+      customer_code     VARCHAR(120) NULL,
+      customer_name     VARCHAR(255) NULL,
+      customer_gstin    VARCHAR(40)  NULL,
+      notification_email VARCHAR(255) NULL,
+      notification_mobile VARCHAR(60) NULL,
+      ship_address      VARCHAR(500) NULL,
+      ship_city         VARCHAR(120) NULL,
+      ship_state        VARCHAR(120) NULL,
+      ship_pincode      VARCHAR(20)  NULL,
+      ship_country      VARCHAR(80)  NULL,
+      facility          VARCHAR(80)  NULL,
+      item_count        INT NOT NULL DEFAULT 0,
+      order_amount      DECIMAL(14,2) NULL,
+      total_discount    DECIMAL(14,2) NULL,
+      shipping_charges  DECIMAL(14,2) NULL,
+      synced_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_uni_ord_date (order_date),
+      KEY idx_uni_ord_status (status),
+      KEY idx_uni_ord_channel (channel),
+      KEY idx_uni_ord_facility (facility)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_order_items', `CREATE TABLE uni_order_items (
+      code            VARCHAR(120) NOT NULL PRIMARY KEY,
+      order_code      VARCHAR(120) NOT NULL,
+      sku             VARCHAR(120) NULL,
+      seller_sku      VARCHAR(120) NULL,
+      item_name       VARCHAR(500) NULL,
+      status          VARCHAR(60)  NULL,
+      facility        VARCHAR(80)  NULL,
+      selling_price   DECIMAL(12,2) NULL,
+      total_price     DECIMAL(12,2) NULL,
+      discount        DECIMAL(12,2) NULL,
+      shipping_charges DECIMAL(12,2) NULL,
+      max_retail_price DECIMAL(12,2) NULL,
+      tax_percentage  DECIMAL(8,3) NULL,
+      total_gst       DECIMAL(12,2) NULL,
+      hsn_code        VARCHAR(40)  NULL,
+      color           VARCHAR(120) NULL,
+      size            VARCHAR(60)  NULL,
+      brand           VARCHAR(120) NULL,
+      shipping_package VARCHAR(120) NULL,
+      cancellation_reason VARCHAR(255) NULL,
+      created_at_uni  DATETIME NULL,
+      updated_at_uni  DATETIME NULL,
+      KEY idx_uni_oi_order (order_code),
+      KEY idx_uni_oi_sku (sku),
+      KEY idx_uni_oi_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_shipments', `CREATE TABLE uni_shipments (
+      code             VARCHAR(120) NOT NULL PRIMARY KEY,
+      order_code       VARCHAR(120) NOT NULL,
+      channel_shipment VARCHAR(120) NULL,
+      status           VARCHAR(60)  NULL,
+      courier          VARCHAR(160) NULL,
+      shipping_provider VARCHAR(160) NULL,
+      shipping_method  VARCHAR(120) NULL,
+      tracking_number  VARCHAR(160) NULL,
+      tracking_status  VARCHAR(80)  NULL,
+      courier_status   VARCHAR(120) NULL,
+      invoice_code     VARCHAR(120) NULL,
+      invoice_date     DATETIME NULL,
+      dispatched_at    DATETIME NULL,
+      delivered_at     DATETIME NULL,
+      city             VARCHAR(120) NULL,
+      no_of_items      INT NULL,
+      collectable_amount DECIMAL(14,2) NULL,
+      collected_amount DECIMAL(14,2) NULL,
+      actual_weight    DECIMAL(12,3) NULL,
+      created_at_uni   DATETIME NULL,
+      updated_at_uni   DATETIME NULL,
+      KEY idx_uni_shp_order (order_code),
+      KEY idx_uni_shp_tracking (tracking_number),
+      KEY idx_uni_shp_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_order_sync_log', `CREATE TABLE uni_order_sync_log (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      started_at  DATETIME NOT NULL,
+      ended_at    DATETIME NULL,
+      from_date   VARCHAR(40) NULL,
+      to_date     VARCHAR(40) NULL,
+      date_type   VARCHAR(20) NULL,
+      orders_seen INT NOT NULL DEFAULT 0,
+      ok          TINYINT(1) NOT NULL DEFAULT 0,
+      error       TEXT NULL,
+      KEY idx_uni_ols (started_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_returns', `CREATE TABLE uni_returns (
+      code              VARCHAR(120) NOT NULL PRIMARY KEY,
+      return_type       VARCHAR(20)  NULL,
+      status            VARCHAR(60)  NULL,
+      facility          VARCHAR(80)  NULL,
+      channel           VARCHAR(80)  NULL,
+      order_code        VARCHAR(120) NULL,
+      shipment_code     VARCHAR(120) NULL,
+      reverse_pickup    VARCHAR(120) NULL,
+      challan_no        VARCHAR(120) NULL,
+      challan_date      DATETIME NULL,
+      return_date       DATETIME NULL,
+      channel_return_date DATETIME NULL,
+      delivery_date     DATETIME NULL,
+      received_date     DATETIME NULL,
+      completed_date    DATETIME NULL,
+      tracking_number   VARCHAR(160) NULL,
+      courier           VARCHAR(160) NULL,
+      shipping_provider VARCHAR(160) NULL,
+      rto_tracking      VARCHAR(160) NULL,
+      rto_courier       VARCHAR(160) NULL,
+      rto_reason        VARCHAR(255) NULL,
+      invoice_code      VARCHAR(120) NULL,
+      putaway_code      VARCHAR(120) NULL,
+      customer_name     VARCHAR(255) NULL,
+      customer_phone    VARCHAR(60)  NULL,
+      customer_city     VARCHAR(120) NULL,
+      customer_state    VARCHAR(120) NULL,
+      customer_pincode  VARCHAR(20)  NULL,
+      -- Documented payload mein koi rakam nahi hai. Column rakha hai taaki
+      -- jab source mile to bharne ke liye jagah ho; tab tak NULL.
+      return_amount     DECIMAL(14,2) NULL,
+      total_lines       INT NOT NULL DEFAULT 0,
+      created_at_uni    DATETIME NULL,
+      updated_at_uni    DATETIME NULL,
+      synced_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_uni_ret_date (return_date),
+      KEY idx_uni_ret_type (return_type),
+      KEY idx_uni_ret_status (status),
+      KEY idx_uni_ret_order (order_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_return_items', `CREATE TABLE uni_return_items (
+      return_code       VARCHAR(120) NOT NULL,
+      sale_order_item   VARCHAR(120) NOT NULL,
+      sku               VARCHAR(120) NULL,
+      item_name         VARCHAR(500) NULL,
+      item_status       VARCHAR(60)  NULL,
+      order_code        VARCHAR(120) NULL,
+      shipment_code     VARCHAR(120) NULL,
+      facility          VARCHAR(80)  NULL,
+      inventory_type    VARCHAR(60)  NULL,
+      return_reason     VARCHAR(500) NULL,
+      qc_comment        VARCHAR(500) NULL,
+      remarks           VARCHAR(500) NULL,
+      courier_status    VARCHAR(120) NULL,
+      tracking_status   VARCHAR(120) NULL,
+      PRIMARY KEY (return_code, sale_order_item),
+      KEY idx_uni_ri_sku (sku),
+      KEY idx_uni_ri_order (order_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['uni_return_sync_log', `CREATE TABLE uni_return_sync_log (
+      id           INT AUTO_INCREMENT PRIMARY KEY,
+      started_at   DATETIME NOT NULL,
+      ended_at     DATETIME NULL,
+      from_date    VARCHAR(40) NULL,
+      to_date      VARCHAR(40) NULL,
+      returns_seen INT NOT NULL DEFAULT 0,
+      ok           TINYINT(1) NOT NULL DEFAULT 0,
+      error        TEXT NULL,
+      KEY idx_uni_rls (started_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 ];
 
 // Columns added after a table first shipped. [table, column, DDL fragment]
 // A database created from TABLES above already has all of them — the lookup in
 // migrations.js skips every one of these on a modern schema.
 const COLUMNS = [
+  // uni_returns pehli deploy par in teeno ke bina bani thi. Yeh fields
+  // documentation mein nahi hain — pehle asli return ke payload mein mile.
+  // CREATE TABLE IF NOT EXISTS maujooda table par kuch nahi karta, isliye
+  // inhe yahan se jodna padta hai.
+  ['uni_returns', 'channel', `VARCHAR(80) DEFAULT NULL`],
+  ['uni_returns', 'challan_no', `VARCHAR(120) DEFAULT NULL`],
+  ['uni_returns', 'challan_date', `DATETIME DEFAULT NULL`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.
@@ -864,6 +1090,98 @@ const BACKFILLS = [
   [`UPDATE vin_returns o JOIN vin_returns_raw r ON r.return_no = o.return_no
       SET o.raw_json = NULL WHERE o.raw_json IS NOT NULL`,
    'release return payloads from vin_returns'],
+
+  // ── ims_* views: one shape across the Vinculum → Unicommerce cutover ──
+  //
+  // The client moved to Unicommerce on 1 October 2026. The pages used to read
+  // vin_* directly; pointing them at uni_* instead would have thrown away
+  // everything before that date, and reading both in every route would have
+  // put the migration into a dozen queries. These views carry the column names
+  // the pages already use, so a route changes by one identifier.
+  //
+  // Stock is NOT a union. Stock means "right now", and right now lives only in
+  // Unicommerce — vin_inventory is all zeros since inventory moved, and adding
+  // it would contribute nothing but noise.
+  [`CREATE OR REPLACE VIEW ims_inventory AS
+      SELECT sku, facility AS warehouse, inventory AS qty, synced_at
+        FROM uni_inventory`, 'view ims_inventory'],
+  [`CREATE OR REPLACE VIEW ims_skus AS
+      SELECT sku, name AS description, enabled AS is_active
+        FROM uni_items`, 'view ims_skus'],
+  // The pages ask for kind='inventory'; the Unicommerce sync logs it as
+  // 'stock'. Renaming it here keeps that difference out of the routes.
+  // Past-day stock. vin_inventory_daily holds exactly one day — the 3 October
+  // run, all zeros, taken after inventory had already moved — so unioning it
+  // would publish a day that misrepresents what was actually in the warehouse.
+  // Same reasoning as ims_inventory: stock reads Unicommerce only.
+  [`CREATE OR REPLACE VIEW ims_inventory_daily AS
+      SELECT day, sku, facility AS warehouse, inventory AS qty
+        FROM uni_inventory_daily`, 'view ims_inventory_daily'],
+  [`CREATE OR REPLACE VIEW ims_sync_log AS
+      SELECT id, CASE WHEN kind = 'stock' THEN 'inventory' ELSE kind END AS kind,
+             started_at, ended_at, rows_seen, ok, error
+        FROM uni_sync_log`, 'view ims_sync_log'],
+
+  // Orders ARE a union, because the history matters — and it has to be
+  // deduplicated. During the 1-3 October handover the same Myntra order was
+  // pulled by both systems: Vin eRetail stores the channel's UUID in
+  // ext_order_no, which is the very value Unicommerce uses as its own code.
+  // 14 orders overlap that way. A plain UNION ALL would count them, and their
+  // money, twice. Unicommerce wins, being the system that still gets updates.
+  // The cutover date does the heavy lifting below. Unicommerce holds nothing
+  // before it, so no earlier Vin eRetail order can be a duplicate and the
+  // expensive check is skipped for all of them. Without that guard the
+  // OR-across-two-columns lookup runs for every one of ~4,800 rows and cannot
+  // use an index: the reorder query took 2.5s, against 114ms with it. The date
+  // is read from the data, not written in, so it stays correct by itself.
+  [`CREATE OR REPLACE VIEW ims_orders AS
+      SELECT v.order_id, v.ext_order_no, v.order_date, v.status, v.channel_name,
+             v.order_amount, v.payment_method, v.customer_name, v.customer_phone,
+             v.ship_city, v.ship_state, 'vinculum' AS source
+        FROM vin_orders v
+       WHERE v.order_date < (SELECT MIN(order_date) FROM uni_orders)
+          OR NOT EXISTS (SELECT 1 FROM uni_orders u
+                          WHERE u.code = v.ext_order_no OR u.display_code = v.ext_order_no
+                             OR u.code = v.order_id    OR u.display_code = v.order_id)
+      UNION ALL
+      SELECT u.code, u.display_code, u.order_date, u.status, u.channel,
+             u.order_amount, CASE WHEN u.cod = 1 THEN 'COD' ELSE 'Prepaid' END,
+             u.customer_name, u.notification_mobile, u.ship_city, u.ship_state,
+             'unicommerce'
+        FROM uni_orders u`, 'view ims_orders'],
+
+  // Uniware has no quantity column: each saleOrderItem is one unit, so a
+  // two-piece line is two rows. Hence the literal 1 — it is the honest
+  // quantity, not a placeholder.
+  [`CREATE OR REPLACE VIEW ims_order_items AS
+      SELECT it.order_id, it.sku, it.sku_name, it.brand, it.status,
+             it.order_qty, it.shipped_qty, it.cancelled_qty, it.return_qty,
+             it.unit_price, it.discount_amt, it.tax_amount, 'vinculum' AS source
+        FROM vin_order_items it
+       WHERE NOT EXISTS (
+               SELECT 1 FROM vin_orders v JOIN uni_orders u
+                 ON u.code = v.ext_order_no OR u.display_code = v.ext_order_no
+                    OR u.code = v.order_id OR u.display_code = v.order_id
+                WHERE v.order_id = it.order_id
+                  AND v.order_date >= (SELECT MIN(order_date) FROM uni_orders))
+      UNION ALL
+      SELECT it.order_code, it.sku, it.item_name, it.brand, it.status,
+             1,
+             CASE WHEN it.status IN ('DISPATCHED','DELIVERED','SHIPPED','COMPLETE') THEN 1 ELSE 0 END,
+             CASE WHEN it.status = 'CANCELLED' THEN 1 ELSE 0 END,
+             0,
+             it.selling_price, it.discount, it.total_gst, 'unicommerce'
+        FROM uni_order_items it`, 'view ims_order_items'],
+
+  // The Sales page asks "how fresh is this?". Orders came from Vin eRetail
+  // until 1 October and from Unicommerce after, so the honest answer is
+  // whichever of the two ran last. The id offset only keeps the two id spaces
+  // from colliding; nothing reads it.
+  [`CREATE OR REPLACE VIEW ims_order_sync_log AS
+      SELECT id, started_at, ended_at, orders_seen, ok FROM vin_order_sync_log
+      UNION ALL
+      SELECT id + 1000000, started_at, ended_at, orders_seen, ok
+        FROM uni_order_sync_log`, 'view ims_order_sync_log'],
 ];
 
 module.exports = { TABLES, COLUMNS, WIDENINGS, INDEXES, BACKFILLS };
