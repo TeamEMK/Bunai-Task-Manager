@@ -29,6 +29,7 @@ api.use(require('./holidays.routes'));
 api.use(require('./stock.routes'));
 api.use(require('./shipments.routes'));
 api.use(require('./stockMovement.routes'));
+api.use(require('./catalog.routes'));
 api.use(require('./inventory.routes'));
 api.use(require('./sales.routes'));
 api.use(require('./returns.routes'));
