@@ -156,7 +156,7 @@ async function syncItems() {
       if (!els.length) break;
 
       const rows = els.map(e => [
-        e.skuCode, e.name || null, e.categoryCode || null, e.categoryName || null,
+        e.skuCode, uni.fixBrand(e.name) || null, e.categoryCode || null, e.categoryName || null,
         e.brand || null, e.color || null, e.size || null,
         num(e.price), num(e.basePrice), e.hsnCode || null, e.gstTaxTypeCode || null,
         e.ean || null, num(e.weight), e.enabled === false ? 0 : 1,

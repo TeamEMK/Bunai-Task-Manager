@@ -396,7 +396,7 @@ function navigate(page, el, fromHash) {
   if (page==='leaves') loadLeaves();
   if (page==='pms') loadPMS();
   if (page==='ims') loadIMS();
-  if (page==='stock') loadStock();
+  if (page==='stock') { loadStock(); loadStockMovement(); }
   if (page==='sales') loadSales();
   if (page==='returns') loadReturns();
   if (page==='shipments') loadShipments();
@@ -10666,4 +10666,59 @@ function renderShipmentsList() {
     <td style="font-size:12.5px">${dtEscape(s.city || '—')}</td>
     <td style="text-align:right">${Number(s.collectable_amount) ? inr(s.collectable_amount) : '<span style="color:var(--faint)">—</span>'}</td>
   </tr>`).join('');
+}
+
+// ── Stock movement — what changed since the last snapshot ────────────────
+// uni_inventory_daily is the only record of a stock change there is:
+// Unicommerce has no read API for adjustments, and its ledger is a UI report.
+// Without this the app could show today's number and nothing about how it got
+// there — which is exactly what made the Vin eRetail stock going to zero so
+// hard to explain.
+async function loadStockMovement() {
+  const host = document.getElementById('stockMovement');
+  if (!host) return;
+  host.innerHTML = '';
+
+  let d;
+  try { d = await api('/api/stock/movement?days=30&limit=12'); } catch (_) { return; }
+  if (!d || d.notConfigured || d.error) return;
+
+  // One snapshot cannot show a change. Say so plainly rather than drawing an
+  // empty panel that looks broken.
+  if (d.onlyOneDay) {
+    host.innerHTML = `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 16px;font-size:13px;color:var(--muted-foreground)">
+      Stock history started today — movement shows from tomorrow's sync.</div>`;
+    return;
+  }
+
+  const t = d.totals || {}, ap = d.appeared || {};
+  const up = Number(t.up) || 0, down = Number(t.down) || 0;
+  const n = v => Number(v || 0).toLocaleString('en-IN');
+  const fmtDay = s => new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+  const movers = (d.movers || []).map(m => {
+    const diff = Number(m.diff) || 0;
+    const col = diff > 0 ? '#16a34a' : '#dc2626';
+    return `<div style="display:flex;gap:10px;align-items:baseline;font-size:13px;padding:4px 0">
+      <span style="font-weight:600;min-width:120px">${dtEscape(m.sku)}</span>
+      <span style="color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${dtEscape(String(m.name || ''))}</span>
+      <span style="color:var(--faint)">${n(m.was)} → ${n(m.now_qty)}</span>
+      <span style="font-weight:700;color:${col};min-width:62px;text-align:right">${diff > 0 ? '+' : ''}${n(diff)}</span>
+    </div>`;
+  }).join('');
+
+  host.innerHTML = `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px 17px">
+    <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground)">Stock movement</div>
+      <div style="font-size:12px;color:var(--faint)">${fmtDay(d.pair.from)} → ${fmtDay(d.pair.to)}</div>
+      <div style="margin-left:auto;display:flex;gap:16px;font-size:13px;flex-wrap:wrap">
+        <span style="color:#16a34a;font-weight:700">+${n(up)}</span>
+        <span style="color:var(--faint)">${n(t.up_skus)} SKUs up</span>
+        <span style="color:#dc2626;font-weight:700">${n(down)}</span>
+        <span style="color:var(--faint)">${n(t.down_skus)} SKUs down</span>
+        ${Number(ap.n) ? `<span style="color:var(--faint)">· ${n(ap.n)} new rows (${n(ap.units)} units)</span>` : ''}
+      </div>
+    </div>
+    ${movers || '<div style="font-size:13px;color:var(--faint)">Nothing moved.</div>'}
+  </div>`;
 }
