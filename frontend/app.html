@@ -142,6 +142,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
       <span class="nav-label-text">Returns</span>
     </div>
+    <div class="nav-item" id="nav-catalog" style="display:none" onclick="navigate('catalog',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5h16M4 12h16M4 19h16M7 5v14"/></svg>
+      <span class="nav-label-text">Catalog</span>
+    </div>
     <div class="nav-item" id="nav-shipments" style="display:none" onclick="navigate('shipments',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 5h11v12H3zM14 9h3l3 3v5h-6z"/></svg>
       <span class="nav-label-text">Shipments</span>
@@ -631,6 +635,31 @@
         <tbody id="shipmentsBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
+  </div>
+
+  <div id="page-catalog" class="page">
+    <div id="catalogTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="catalogSearch" type="text" placeholder="Search SKU, product, EAN, HSN…" oninput="catalogSearchDebounced()" style="min-width:260px;max-width:380px"/>
+      <select id="catalogFilter" onchange="loadCatalog(1)">
+        <option value="">All SKUs</option>
+        <option value="instock">In stock</option>
+        <option value="nostock">No stock</option>
+        <option value="noprice">No price</option>
+        <option value="nohsn">No HSN</option>
+        <option value="disabled">Disabled</option>
+      </select>
+      <button class="btn btn-sm" onclick="loadCatalog(1)" style="margin-left:auto">↻ Refresh</button>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead><tr><th>SKU</th><th>Product</th><th>Size</th><th style="text-align:right">Price</th><th style="text-align:right">Stock</th><th>HSN</th><th>GST</th><th style="text-align:right">Weight</th><th>EAN</th></tr></thead>
+        <tbody id="catalogBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="catalogPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
   </div>
 
   <div id="page-profile" class="page">

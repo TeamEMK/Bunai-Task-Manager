@@ -167,6 +167,7 @@ async function init() {
       document.getElementById('nav-sales').style.display = 'flex';
       document.getElementById('nav-returns').style.display = 'flex';
       document.getElementById('nav-shipments').style.display = 'flex';
+      document.getElementById('nav-catalog').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -280,7 +281,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -334,6 +335,7 @@ function canOpenPage(page) {
   if (page === 'sales') return ME && ME.role === 'admin';
   if (page === 'returns') return ME && ME.role === 'admin';
   if (page === 'shipments') return ME && ME.role === 'admin';
+  if (page === 'catalog') return ME && ME.role === 'admin';
   if (page === 'hr') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
@@ -367,6 +369,7 @@ function navigate(page, el, fromHash) {
   // Returns page — admin only
   if (page === 'returns' && (!ME || ME.role !== 'admin')) return;
   if (page === 'shipments' && (!ME || ME.role !== 'admin')) return;
+  if (page === 'catalog' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   _navCurrent = page;
@@ -400,6 +403,7 @@ function navigate(page, el, fromHash) {
   if (page==='sales') loadSales();
   if (page==='returns') loadReturns();
   if (page==='shipments') loadShipments();
+  if (page==='catalog') loadCatalog(1);
   if (page==='inventory') loadInventory();
   window.scrollTo(0,0);
 }
@@ -576,7 +580,9 @@ async function loadStock() {
       (d.totals.length > 1
         ? d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'), `${t.skus} SKUs in stock`)).join('') : '') +
       (d.counts && d.counts.out_of_stock > 0
-        ? stockTile('Out of stock', d.counts.out_of_stock, 'quantity is zero', 'bad') : '') +
+        ? stockTile('Out of stock', d.counts.out_of_stock,
+            `sold recently, none left${d.counts.zero_rows ? ` · ${Number(d.counts.zero_rows).toLocaleString('en-IN')} rows at zero` : ''}`,
+            'bad') : '') +
       // Period cards — recompute whenever the "Sold: N days" window changes.
       (d.period && d.period.hasOrders
         ? stockTile(`Sold (${d.period.soldDays}d)`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`) +
@@ -10654,7 +10660,7 @@ function renderShipmentsList() {
     return `<span style="display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;color:${c[0]};background:${c[1]}">${dtEscape(s || '—')}</span>`;
   };
 
-  body.innerHTML = rows.map(s => `<tr>
+  body.innerHTML = rows.map(s => `<tr onclick="shipToggleDetail(this, '${dtEscape(s.code || '')}')" style="cursor:pointer">
     <td style="font-weight:600">${dtEscape(s.code || '')}</td>
     <td style="font-size:12px;color:var(--faint)">${dtEscape(String(s.display_code || s.order_code || '').slice(0, 12))}</td>
     <td style="font-size:12.5px">${dtEscape(s.channel || '—')}</td>
@@ -10721,4 +10727,129 @@ async function loadStockMovement() {
     </div>
     ${movers || '<div style="font-size:13px;color:var(--faint)">Nothing moved.</div>'}
   </div>`;
+}
+
+
+// Ek shipment kholo — usi row ke neeche, modal ke bina. Table mein yeh behtar
+// baithta hai: jagah apni hi rehti hai aur do shipments saath mein dekhe ja
+// sakte hain. Dobara click par band.
+async function shipToggleDetail(tr, code) {
+  const open = tr.nextElementSibling;
+  if (open && open.dataset.detailFor === code) { open.remove(); return; }
+  if (open && open.dataset.detailFor) open.remove();
+
+  const row = document.createElement('tr');
+  row.dataset.detailFor = code;
+  row.innerHTML = `<td colspan="10" style="background:var(--muted);padding:12px 16px;font-size:13px">Loading…</td>`;
+  tr.insertAdjacentElement('afterend', row);
+
+  let d;
+  try { d = await api('/api/shipments/detail?id=' + encodeURIComponent(code)); }
+  catch (e) { row.firstElementChild.textContent = 'Could not load — ' + (e.message || 'error'); return; }
+  if (!d || d.notFound) { row.firstElementChild.textContent = 'Not found.'; return; }
+
+  const s = d.shipment || {}, o = d.order || {}, items = d.items || [];
+  const fmt = t => t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const bit = (k, v) => `<div><span style="color:var(--faint)">${k}</span><br><span style="font-weight:600">${dtEscape(String(v == null || v === '' ? '—' : v))}</span></div>`;
+
+  row.firstElementChild.innerHTML = `
+    <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px">
+      ${bit('Order', o.display_code || s.order_code)}
+      ${bit('Channel', o.channel)}
+      ${bit('Courier', s.courier || s.shipping_provider)}
+      ${bit('AWB', s.tracking_number)}
+      ${bit('Invoice', s.invoice_code)}
+      ${bit('Dispatched', fmt(s.dispatched_at))}
+      ${bit('Delivered', fmt(s.delivered_at))}
+      ${bit('Customer', o.customer_name)}
+      ${bit('Ship to', [o.ship_city, o.ship_state, o.ship_pincode].filter(Boolean).join(', '))}
+      ${bit('COD', Number(s.collectable_amount) ? inr(s.collectable_amount) : '—')}
+    </div>
+    ${items.length ? `<table style="width:100%;font-size:12.5px">
+      <thead><tr><th style="text-align:left">SKU</th><th style="text-align:left">Product</th><th style="text-align:left">Status</th><th style="text-align:right">Price</th></tr></thead>
+      <tbody>${items.map(i => `<tr>
+        <td style="padding:3px 0">${dtEscape(i.sku || '')}</td>
+        <td>${dtEscape(String(i.item_name || ''))}</td>
+        <td>${dtEscape(i.status || '')}</td>
+        <td style="text-align:right">${Number(i.total_price) ? inr(i.total_price) : '—'}</td>
+      </tr>`).join('')}</tbody></table>`
+      : '<div style="color:var(--faint)">No line items recorded against this package.</div>'}`;
+}
+
+
+// ── CATALOG — the SKU master, with stock alongside ───────────────────────
+// Vin eRetail never opened its SKU master, so the list was CSV-seeded and went
+// stale whenever somebody added a product. Unicommerce hands the whole thing
+// over; this is the first place in the app it can be seen.
+let CATALOG_T = null;
+
+function catalogSearchDebounced() {
+  clearTimeout(CATALOG_T);
+  CATALOG_T = setTimeout(() => loadCatalog(1), 300);
+}
+
+async function loadCatalog(page) {
+  const body = document.getElementById('catalogBody');
+  const tiles = document.getElementById('catalogTiles');
+  const pager = document.getElementById('catalogPager');
+  if (!body) return;
+
+  const q = (document.getElementById('catalogSearch').value || '').trim();
+  const filter = document.getElementById('catalogFilter').value;
+  const params = new URLSearchParams({ page: page || 1 });
+  if (q) params.set('q', q);
+  if (filter) params.set('filter', filter);
+
+  let d;
+  try { d = await api('/api/catalog?' + params); }
+  catch (e) { body.innerHTML = `<tr><td colspan="9" class="empty">Could not load — ${dtEscape(e.message || 'error')}</td></tr>`; return; }
+
+  if (d.notConfigured) {
+    body.innerHTML = '<tr><td colspan="9" class="empty">No SKU master synced yet — run the daily sync.</td></tr>';
+    return;
+  }
+
+  const t = d.totals || {};
+  const n = v => Number(v || 0).toLocaleString('en-IN');
+  // Gaps are shown as counts of what is MISSING, because that is the number
+  // somebody has to act on. "2,403 priced" reads as progress; "3,510 without a
+  // price" reads as work.
+  tiles.innerHTML =
+    stockTile('SKUs', n(t.skus), 'in the catalogue') +
+    stockTile('Without price', n(Number(t.skus) - Number(t.priced)), 'cannot be valued',
+      Number(t.skus) - Number(t.priced) > 0 ? 'bad' : null) +
+    stockTile('Without HSN', n(Number(t.skus) - Number(t.with_hsn)), 'cannot be invoiced',
+      Number(t.skus) - Number(t.with_hsn) > 0 ? 'bad' : null) +
+    stockTile('Disabled', n(t.disabled), 'not sellable') +
+    stockTile('Average price', t.avg_price ? inr(t.avg_price) : '—', 'where a price is set');
+
+  const rows = d.rows || [];
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="9" class="empty">Nothing matches.</td></tr>';
+    pager.innerHTML = '';
+    return;
+  }
+
+  const dash = '<span style="color:var(--faint)">—</span>';
+  body.innerHTML = rows.map(r => {
+    const qty = Number(r.qty) || 0;
+    return `<tr${r.enabled ? '' : ' style="opacity:.55"'}>
+      <td style="font-weight:600">${dtEscape(r.sku || '')}</td>
+      <td>${dtEscape(String(r.name || ''))}</td>
+      <td style="font-size:12.5px">${dtEscape(r.size || '')}</td>
+      <td style="text-align:right">${Number(r.price) ? inr(r.price) : dash}</td>
+      <td style="text-align:right;font-weight:${qty ? 600 : 400};color:${qty ? 'inherit' : '#dc2626'}">${qty}</td>
+      <td style="font-size:12.5px">${dtEscape(r.hsn_code || '') || dash}</td>
+      <td style="font-size:12.5px">${dtEscape(r.gst_tax_type || '') || dash}</td>
+      <td style="text-align:right;font-size:12.5px">${Number(r.weight) || dash}</td>
+      <td style="font-size:12px;color:var(--faint)">${dtEscape(r.ean || '') || dash}</td>
+    </tr>`;
+  }).join('');
+
+  const p = d.page, last = d.pages;
+  pager.innerHTML = `<span>${n(d.total)} SKU${d.total === 1 ? '' : 's'} · page ${p} of ${last}</span>
+    <span style="display:flex;gap:6px">
+      <button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="loadCatalog(${p - 1})">‹ Prev</button>
+      <button class="btn btn-sm" ${p >= last ? 'disabled' : ''} onclick="loadCatalog(${p + 1})">Next ›</button>
+    </span>`;
 }

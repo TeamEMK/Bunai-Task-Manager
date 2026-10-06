@@ -70,9 +70,27 @@ router.get('/stock', requireAuth, async (req, res) => {
       db.one(
         `SELECT started_at, ended_at, rows_seen
            FROM ims_sync_log WHERE kind='inventory' AND ok=1 ORDER BY id DESC LIMIT 1`),
+      // "Out of stock" counts SKUs that were SELLING and have run out, not every
+      // row sitting at zero. The raw zero count was 368 against 4 that actually
+      // matter: most zeros are SKUs a facility has started tracking and never
+      // stocked, and lumping them together turned a figure somebody should act
+      // on into one nobody reads. The plain count stays as zero_rows for the
+      // sub-label, since "368 rows at zero" is still worth knowing.
+      // The sold-SKU set is built once and joined, not asked per row. As a
+      // correlated EXISTS this ran the sales lookup for all 3,500 inventory
+      // rows and took the page from fast to unusable.
       db.one(
-        `SELECT COUNT(*) AS tracked, SUM(CASE WHEN qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock
-           FROM ims_inventory`),
+        `SELECT COUNT(*) AS tracked,
+                SUM(i.qty <= 0) AS zero_rows,
+                SUM(i.qty <= 0 AND sold.sku IS NOT NULL) AS out_of_stock
+           FROM ims_inventory i
+           LEFT JOIN (
+             SELECT DISTINCT oi.sku
+               FROM ims_order_items oi
+               JOIN ims_orders o ON o.order_id = oi.order_id
+              WHERE LOWER(oi.status) <> 'cancelled'
+                AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+           ) sold ON sold.sku = i.sku`),
     ]);
 
     // Enrich each row with units sold in the window (from live orders), turning
