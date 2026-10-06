@@ -103,7 +103,7 @@ const IMS_WEBAPP_URL = "/ims";
 
 // A separate tool of the client's, opened from the dashboard. It lives outside
 // this app, so it is a plain link in a new tab rather than anything embedded.
-const BUNAI_GRAPHICS_URL = "https://bunai-graphics-generator-orpin.vercel.app/";
+const BUNAI_GRAPHICS_URL = "https://bunai-backup.vercel.app/";
 
 // ══════════════════════════════════════════════════════
 // UNIT / LOCATION NAMES  ← rename your production units here
