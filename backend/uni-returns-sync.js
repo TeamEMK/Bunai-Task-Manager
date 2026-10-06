@@ -191,7 +191,7 @@ async function storeReturn(code, returnType, facility, json) {
   if (items.length) {
     const rows = items.map(i => [
       code, String(i.saleOrderItemCode || i.skuCode || ''), i.skuCode || null,
-      i.itemName || null, i.saleOrderItemStatus || null, i.saleOrderCode || null,
+      uni.fixBrand(i.itemName) || null, i.saleOrderItemStatus || null, i.saleOrderCode || null,
       i.shipmentCode || null, i.forwardItemFacility || facility,
       i.inventoryType || null, i.marketplaceReturnReason || null,
       i.putawayQcComment || null, i.returnRemarks || null,

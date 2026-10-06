@@ -225,7 +225,7 @@ async function storeOrder(so) {
   if (items.length) {
     const rows = items.map(i => [
       String(i.code), so.code, i.itemSku || null, i.sellerSkuCode || null,
-      i.itemName || null, i.statusCode || null, i.facilityCode || null,
+      uni.fixBrand(i.itemName) || null, i.statusCode || null, i.facilityCode || null,
       num(i.sellingPrice), num(i.totalPrice), num(i.discount),
       num(i.shippingCharges), num(i.maxRetailPrice), num(i.taxPercentage),
       (Number(i.totalIntegratedGst) || 0) + (Number(i.totalStateGst) || 0) +

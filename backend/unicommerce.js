@@ -227,6 +227,25 @@ async function uniCall(ep, body = {}, opts = {}) {
   throw new Error(`Unicommerce request failed (${url}): ${lastErr && (lastErr.message || lastErr)}`);
 }
 
+// The catalogue spells the brand both ways — 1,235 SKUs say "Bunaai" against
+// 2,866 that say "Bunai", sometimes for near-identical products, and the
+// website and Myntra both use the single-a form. Correcting it in Uniware is
+// the real fix and still needs doing; until then this keeps the app from
+// repeating the typo on every page.
+//
+// It has to happen on the way IN, not with an UPDATE: syncItems writes
+// name = VALUES(name) every morning, so anything fixed in the table is undone
+// by the next run.
+//
+// Case is preserved rather than flattened — product names arrive in Title Case
+// and in SHOUTING, and rewriting one into the other would look like a second
+// bug.
+function fixBrand(s) {
+  if (!s) return s;
+  return String(s).replace(/bunaai/gi, m =>
+    m === m.toUpperCase() ? 'BUNAI' : m[0] === m[0].toUpperCase() ? 'Bunai' : 'bunai');
+}
+
 // Errors arrive as objects, which read badly in a log line.
 function explain(result) {
   if (!result) return null;
@@ -245,5 +264,6 @@ module.exports = {
   forgetToken,
   uniCall,
   explain,
+  fixBrand,
   config: { BASE_URL, USERNAME, FACILITY, CLIENT_ID, hasPassword: Boolean(PASSWORD) },
 };
