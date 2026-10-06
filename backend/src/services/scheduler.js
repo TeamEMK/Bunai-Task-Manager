@@ -70,9 +70,9 @@ async function runVinculumSync() {
 // Kram maayne rakhta hai: SKU master pehle, kyunki inventorySnapshot enumerate
 // nahi karta — use SKU batane padte hain, aur woh list uni_items se aati hai.
 //
-// Yahan low-stock task nahi uthaye jaate. Vinculum wale rule ne dikhaya tha ki
-// ek galat feed kitni jaldi sainkdon jhoothe tasks bana deti hai; naye system
-// par woh dobara jodne se pehle kuch hafton ka bharosa banna chahiye.
+// Reorder tasks ab is chain ka hissa hain, par opt-in: REORDER_ASSIGN_TO (ya
+// purana VIN_LOW_STOCK_ASSIGN_TO) set na ho to woh step chupchaap nikal jaata
+// hai — kisi ko kaam dene se pehle yeh tay hona chahiye ki kise.
 async function runUnicommerceSync() {
   const uni = require('../../unicommerce');
   if (!uni.isConfigured()) {
@@ -84,7 +84,19 @@ async function runUnicommerceSync() {
   const items = await sync.syncItems();
   const stock = await sync.syncStock();
   console.log(`✅ Unicommerce sync — ${items.items} SKUs, ${stock.rows} stock rows`);
-  return { ...items, ...stock };
+
+  // Reorder tasks ke baad, kyunki inhe abhi-abhi aaye stock par chalna hai.
+  // Fail ho to sync fail nahi hota: stock taaza ho gaya, aur ek task na banna
+  // uske mukable chhoti baat hai.
+  let reorder = {};
+  try {
+    reorder = await sync.raiseReorderTasks({ log: m => console.log('  [uni]' + m) });
+    if (reorder.raised) console.log(`✅ ${reorder.raised} reorder task(s) raised`);
+  } catch (e) {
+    console.error('  ⚠ reorder tasks:', e.message);
+    reorder = { error: e.message };
+  }
+  return { ...items, ...stock, reorder };
 }
 
 function startSchedulers() {

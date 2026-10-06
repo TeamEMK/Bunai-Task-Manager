@@ -81,6 +81,15 @@ step('Stock', async () => {
   return `${r.rows} rows, ${r.facilities} facility` + (r.zeroed ? `, ${r.zeroed} zero` : '');
 }, uniMissing);
 
+// Stock ke theek baad, taaki rule abhi-abhi aaye aankdon par chale. Yeh step
+// opt-in hai: REORDER_ASSIGN_TO set na ho to skip, kyunki kaam kisi ko dene se
+// pehle yeh tay hona chahiye ki kise.
+step('Reorder tasks', async () => {
+  const r = await uniSync.raiseReorderTasks({ log: () => {} });
+  if (r.skipped) return 'skip: ' + r.skipped;
+  return `${r.raised} raised, ${r.recovered} cleared (${r.behind} behind)`;
+}, uniMissing);
+
 // UPDATED, CREATED nahi: ek order jo pichhle hafte bana aur aaj dispatch hua,
 // CREATED window mein kabhi dobara nahi aayega aur uska status purana hi
 // rah jayega.

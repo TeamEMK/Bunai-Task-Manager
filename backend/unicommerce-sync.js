@@ -297,6 +297,130 @@ async function runInProgress(kind = 'stock') {
   return row || null;
 }
 
+// ── Reorder → tasks ──────────────────────────────────────────────────────
+// Turns stock into work for whoever owns reordering.
+//
+// THE RULE IS NOT A FLAT THRESHOLD. "qty <= 5" flags a SKU nobody has bought
+// in months and stays quiet about one that sold twelve and has two left. What
+// matters is whether demand is outrunning stock, so a SKU qualifies when it
+// sold MORE in the window than it currently holds. That is the same rule the
+// Stock page's reorder view already uses — one definition, not two.
+//
+// Stock is summed across facilities before the comparison. Sales are not split
+// by facility, so comparing one warehouse's shelf against the whole country's
+// demand would flag the same SKU once per warehouse and overstate both.
+//
+// uni_stock_alerts is what stops the same SKU raising a task every morning for
+// weeks. One row per SKU holding the task already raised; a second task only
+// comes after the SKU recovers and falls behind again, which is a genuinely
+// new event rather than the same one restated.
+async function ensureAlertTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS uni_stock_alerts (
+      sku           VARCHAR(120) NOT NULL PRIMARY KEY,
+      task_id       INT NULL,
+      qty_at_alert  INT NOT NULL DEFAULT 0,
+      sold_at_alert INT NOT NULL DEFAULT 0,
+      raised_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      cleared_at    DATETIME NULL,
+      KEY idx_uni_alert_open (cleared_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+}
+
+const REORDER_DAYS  = Number(process.env.REORDER_DAYS  || 45);
+const REORDER_MAX   = Number(process.env.REORDER_MAX   || process.env.VIN_LOW_STOCK_MAX || 25);
+const REORDER_ASSIGN = process.env.REORDER_ASSIGN_TO || process.env.VIN_LOW_STOCK_ASSIGN_TO || '';
+
+async function raiseReorderTasks({
+  assignTo = Number(REORDER_ASSIGN) || 0,
+  assignedBy = null,
+  soldDays = REORDER_DAYS,
+  dueInDays = 3,
+  limit = REORDER_MAX,
+  log = console.log,
+} = {}) {
+  if (!assignTo) return { skipped: 'no assignee (REORDER_ASSIGN_TO)' };
+  await ensureAlertTable();
+
+  // Same guard the stock sweep carries: a catalogue reading zero everywhere is
+  // a broken feed, not a warehouse that sold out, and acting on it would hand
+  // someone every SKU at once.
+  const [[stocked]] = await pool.query('SELECT COUNT(*) AS n FROM uni_inventory WHERE inventory > 0');
+  if (!stocked.n) {
+    log('  stock feed reads zero everywhere — raising nothing');
+    return { raised: 0, recovered: 0, skipped: 'empty-feed' };
+  }
+
+  const days = Math.max(1, Math.min(365, Number(soldDays) || 45));
+
+  // Demand vs stock, per SKU, over the window.
+  const [rows] = await pool.query(
+    `SELECT i.sku, i.qty, s.sold, COALESCE(NULLIF(it.name,''), i.sku) AS name
+       FROM (SELECT sku, SUM(inventory) qty FROM uni_inventory GROUP BY sku) i
+       JOIN (SELECT oi.sku, SUM(oi.order_qty) sold
+               FROM ims_order_items oi JOIN ims_orders o ON o.order_id = oi.order_id
+              WHERE LOWER(oi.status) <> 'cancelled'
+                AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+              GROUP BY oi.sku) s ON s.sku = i.sku
+       LEFT JOIN uni_items it ON it.sku = i.sku
+      WHERE s.sold > i.qty
+      ORDER BY (s.sold - i.qty) DESC`, [days]);
+
+  // Recovered: an open alert whose SKU is no longer behind. Clearing it is what
+  // lets a future dip alert again.
+  const behind = new Set(rows.map(r => r.sku));
+  const [open] = await pool.query('SELECT sku FROM uni_stock_alerts WHERE cleared_at IS NULL');
+  const recoveredSkus = open.map(r => r.sku).filter(s => !behind.has(s));
+  if (recoveredSkus.length) {
+    await pool.query(
+      `UPDATE uni_stock_alerts SET cleared_at = NOW()
+        WHERE cleared_at IS NULL AND sku IN (${recoveredSkus.map(() => '?').join(',')})`,
+      recoveredSkus);
+  }
+
+  const openSet = new Set(open.map(r => r.sku));
+  const fresh = rows.filter(r => !openSet.has(r.sku)).slice(0, limit);
+
+  if (!fresh.length) {
+    log(`  no new reorder SKUs (${rows.length} behind, all already raised)` +
+        (recoveredSkus.length ? `, ${recoveredSkus.length} recovered` : ''));
+    return { raised: 0, recovered: recoveredSkus.length, behind: rows.length };
+  }
+
+  const due = new Date(Date.now() + dueInDays * 86400000).toISOString().slice(0, 10);
+  let raised = 0;
+
+  for (const r of fresh) {
+    const qty = Number(r.qty) || 0, sold = Number(r.sold) || 0;
+    const desc = qty <= 0
+      ? `Out of stock — ${r.name} (${r.sku}): ${sold} sold in ${days} days, none left`
+      : `Reorder — ${r.name} (${r.sku}): ${sold} sold in ${days} days, ${qty} left`;
+
+    const [ins] = await pool.query(
+      `INSERT INTO delegation_tasks
+         (description, assigned_to, assigned_by, due_date, status, priority,
+          approval, waiting_approval, approver_id, remarks, client_id, url)
+       VALUES (?,?,?,?,'pending',?, 'no', 0, NULL, ?, NULL, NULL)`,
+      [desc, assignTo, assignedBy || assignTo, due,
+       qty <= 0 ? 'high' : 'medium',
+       'Raised automatically from the Unicommerce stock sync.']);
+
+    await pool.query(
+      `INSERT INTO uni_stock_alerts (sku, task_id, qty_at_alert, sold_at_alert)
+       VALUES (?,?,?,?)
+       ON DUPLICATE KEY UPDATE task_id = VALUES(task_id), qty_at_alert = VALUES(qty_at_alert),
+                               sold_at_alert = VALUES(sold_at_alert),
+                               raised_at = CURRENT_TIMESTAMP, cleared_at = NULL`,
+      [r.sku, ins.insertId, qty, sold]);
+    raised++;
+  }
+
+  log(`  raised ${raised} reorder task(s) of ${rows.length} behind` +
+      (recoveredSkus.length ? `, ${recoveredSkus.length} recovered` : '') +
+      (rows.length > limit + openSet.size ? ` — capped at ${limit}/run` : ''));
+  return { raised, recovered: recoveredSkus.length, behind: rows.length };
+}
+
 async function status() {
   const [[items]] = await pool.query('SELECT COUNT(*) n FROM uni_items');
   const [byFac] = await pool.query(
@@ -309,7 +433,7 @@ async function status() {
   return { items: items.n, byFacility: byFac, historyDays: days.n, recent: last };
 }
 
-module.exports = { pool, ensureTables, facilityCodes, syncItems, syncStock, runInProgress, status };
+module.exports = { pool, ensureTables, ensureAlertTable, facilityCodes, syncItems, syncStock, runInProgress, raiseReorderTasks, status };
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 if (require.main === module) {
@@ -336,6 +460,16 @@ if (require.main === module) {
       console.log(`\nDone — ${a.items} SKUs, ${b.rows} stock rows` +
                   (b.zeroed ? `, ${b.zeroed} zero kiye` : ''));
 
+    } else if (cmd === 'reorder') {
+      // node backend/unicommerce-sync.js reorder <userId> [days]
+      const userId = Number(process.argv[3]);
+      if (!userId) throw new Error('Usage: node backend/unicommerce-sync.js reorder <userId> [days]');
+      const soldDays = process.argv[4] ? Number(process.argv[4]) : undefined;
+      const r = await raiseReorderTasks({ assignTo: userId, ...(soldDays ? { soldDays } : {}) });
+      console.log(`
+Done — ${r.raised || 0} task(s) raised, ${r.recovered || 0} cleared` +
+                  (r.skipped ? ` (skipped: ${r.skipped})` : ''));
+
     } else if (cmd === 'status') {
       const s = await status();
       console.log(`SKUs        : ${s.items}`);
@@ -349,7 +483,7 @@ if (require.main === module) {
         `rows=${r.rows_seen} ok=${r.ok} ${r.err}`));
 
     } else {
-      console.log('Usage: node backend/unicommerce-sync.js [items | stock | all | status]');
+      console.log('Usage: node backend/unicommerce-sync.js [items | stock | all | reorder <userId> [days] | status]');
     }
     await pool.end();
   })().catch(e => { console.error('\n✗', e.message); process.exit(1); });
