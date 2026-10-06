@@ -166,6 +166,7 @@ async function init() {
       document.getElementById('nav-ims').style.display = 'flex';
       document.getElementById('nav-sales').style.display = 'flex';
       document.getElementById('nav-returns').style.display = 'flex';
+      document.getElementById('nav-shipments').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -332,6 +333,7 @@ function canOpenPage(page) {
   if (page === 'ims') return ME && ME.role === 'admin';
   if (page === 'sales') return ME && ME.role === 'admin';
   if (page === 'returns') return ME && ME.role === 'admin';
+  if (page === 'shipments') return ME && ME.role === 'admin';
   if (page === 'hr') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
@@ -364,6 +366,7 @@ function navigate(page, el, fromHash) {
   if (page === 'hr' && (!ME || ME.role !== 'admin')) return;
   // Returns page — admin only
   if (page === 'returns' && (!ME || ME.role !== 'admin')) return;
+  if (page === 'shipments' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   _navCurrent = page;
@@ -396,6 +399,7 @@ function navigate(page, el, fromHash) {
   if (page==='stock') loadStock();
   if (page==='sales') loadSales();
   if (page==='returns') loadReturns();
+  if (page==='shipments') loadShipments();
   if (page==='inventory') loadInventory();
   window.scrollTo(0,0);
 }
@@ -10497,3 +10501,169 @@ setDefaultMISDates();
 initModalCloseButtons();
 initPasswordToggles();
 applyUnitNames();
+
+// ══════════════════════════════════════════════════════
+// SHIPMENTS — dispatch and courier tracking (admin only).
+//
+// Reads uni_shipments, which arrives inside the order payload, so this page
+// costs no API call of its own. It is the tracking module the client asked
+// Vin eRetail for and never got.
+//
+// The list is filtered and searched in the browser rather than on the server:
+// the window returns at most 200 rows, and a dispatch desk flicks between
+// "not dispatched" and "in transit" constantly — a round trip per flick would
+// make that feel broken.
+// ══════════════════════════════════════════════════════
+let SHIPMENTS = [];
+
+function shipNotice(kind, msg) {
+  const el = document.getElementById('shipmentsNotice'); if (!el) return;
+  const map = { ok: ['#059669', '#ecfdf5', '#a7f3d0'], busy: ['#b45309', '#fffbeb', '#fde68a'] };
+  const [c, bg, bd] = map[kind] || map.busy;
+  el.style.display = 'block'; el.style.color = c; el.style.background = bg;
+  el.style.border = '1px solid ' + bd; el.textContent = msg;
+}
+
+function shipTile(label, value, sub, tone) {
+  const col = tone === 'warn' ? '#dc2626' : tone === 'good' ? '#16a34a'
+            : tone === 'amber' ? '#b45309' : 'var(--foreground)';
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:9px">${label}</div>
+    <div style="font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${col}">${value}</div>
+    ${sub ? `<div style="font-size:12px;color:var(--faint);margin-top:6px">${sub}</div>` : ''}</div>`;
+}
+
+function shipPanel(title, rows) {
+  if (!rows || !rows.length) return '';
+  const max = Math.max(...rows.map(r => Number(r.n) || 0), 1);
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px 17px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin-bottom:11px">${title}</div>
+    ${rows.map(r => `<div style="margin-bottom:9px">
+      <div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:3px">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dtEscape(String(r.label || '(blank)'))}</span>
+        <span style="font-weight:700;white-space:nowrap">${Number(r.n || 0).toLocaleString('en-IN')}${r.sub ? ` <span style="font-weight:500;color:var(--faint)">${dtEscape(r.sub)}</span>` : ''}</span>
+      </div>
+      <div style="height:5px;border-radius:3px;background:var(--border)"><div style="height:5px;border-radius:3px;background:#2563eb;width:${Math.round((Number(r.n) || 0) / max * 100)}%"></div></div>
+    </div>`).join('')}</div>`;
+}
+
+const shipFmtDate = ts => ts
+  ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+  : '<span style="color:var(--faint)">—</span>';
+
+async function loadShipments() {
+  if (!DRP.shipments) drpInit('shipments', loadShipments);
+  const rangeSel = document.getElementById('shipmentsRange');
+  const fromI = document.getElementById('shipmentsFrom'), toI = document.getElementById('shipmentsTo');
+  const tiles = document.getElementById('shipmentsTiles'),
+    stuck = document.getElementById('shipmentsStuck'),
+    bd = document.getElementById('shipmentsBreakdown'),
+    span = document.getElementById('shipmentsSpan');
+  tiles.innerHTML = ''; stuck.innerHTML = ''; bd.innerHTML = '';
+
+  const params = new URLSearchParams();
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) {
+    params.set('from', fromI.value); params.set('to', toI.value);
+  }
+  const d = await api('/api/shipments' + (params.toString() ? '?' + params : ''));
+
+  if (d.notConfigured) {
+    shipNotice('busy', 'No shipments synced on this server yet — run the daily sync.');
+    document.getElementById('shipmentsBody').innerHTML = '<tr><td colspan="10" class="empty">No shipments synced yet.</td></tr>';
+    return;
+  }
+  if (d.error) {
+    document.getElementById('shipmentsBody').innerHTML =
+      `<tr><td colspan="10" class="empty">Could not load shipments — ${dtEscape(d.error)}</td></tr>`;
+    return;
+  }
+
+  const t = d.totals || {};
+  // Pending is the number this page exists for, so it is coloured even when
+  // it is small — it is work nobody has done yet, not a statistic.
+  tiles.innerHTML =
+    shipTile('Shipments', Number(t.shipments || 0).toLocaleString('en-IN'), 'in this window') +
+    shipTile('Not dispatched', Number(t.pending || 0).toLocaleString('en-IN'), 'waiting to go out', Number(t.pending) ? 'amber' : null) +
+    shipTile('In transit', Number(t.transit || 0).toLocaleString('en-IN'), 'with the courier') +
+    shipTile('Delivered', Number(t.delivered || 0).toLocaleString('en-IN'), null, 'good') +
+    shipTile('With AWB', Number(t.tracked || 0).toLocaleString('en-IN'), 'tracking number assigned') +
+    shipTile('COD value', inr(t.cod_value), 'to be collected');
+
+  // Only shown when there is something to chase. An empty "nothing is stuck"
+  // panel trains people to ignore the space it sits in.
+  const st = d.stuck || [];
+  if (st.length) {
+    stuck.innerHTML = `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;padding:15px 17px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#b45309;margin-bottom:10px">
+        ${st.length} shipment${st.length > 1 ? 's' : ''} dispatched but not delivered after ${d.stuckDays} days</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+        ${st.slice(0, 12).map(s => `<div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:600">${dtEscape(s.code || '')}</span>
+          <span style="color:var(--faint)">${dtEscape(s.courier || '—')}</span>
+          <span>${dtEscape(s.tracking_number || '—')}</span>
+          <span style="color:var(--faint)">${dtEscape(s.city || '')}</span>
+          <span style="margin-left:auto;font-weight:700;color:#b45309">${s.days} days</span>
+        </div>`).join('')}
+      </div>${st.length > 12 ? `<div style="font-size:12px;color:var(--faint);margin-top:8px">+${st.length - 12} more</div>` : ''}</div>`;
+  }
+
+  bd.innerHTML =
+    shipPanel('By status', (d.byStatus || []).map(x => ({ label: x.status, n: x.n }))) +
+    shipPanel('By courier', (d.byCourier || []).map(x => ({
+      label: x.courier, n: x.n,
+      sub: x.avg_days != null ? `${x.avg_days}d avg` : (x.delivered ? `${x.delivered} delivered` : ''),
+    })));
+
+  const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) span.textContent = `${fmtD(fromI.value)} → ${fmtD(toI.value)}`;
+  else if (d.span) span.textContent = `${fmtD(d.span.first_shipment)} → ${fmtD(d.span.last_shipment)}`;
+
+  const n = Number(t.shipments || 0);
+  shipNotice('ok', `Live from Unicommerce · ${n.toLocaleString('en-IN')} shipment${n === 1 ? '' : 's'}` +
+    (Number(t.pending) ? ` · ${Number(t.pending).toLocaleString('en-IN')} still to dispatch` : ''));
+
+  SHIPMENTS = d.recent || [];
+  renderShipmentsList();
+}
+
+function renderShipmentsList() {
+  const body = document.getElementById('shipmentsBody'); if (!body) return;
+  const q = (document.getElementById('shipmentsSearch').value || '').trim().toLowerCase();
+  const f = document.getElementById('shipmentsStatusFilter').value;
+
+  const PENDING = ['CREATED', 'READY_TO_SHIP', 'PICKING', 'PACKED'];
+  const TRANSIT = ['SHIPPED', 'DISPATCHED', 'MANIFESTED'];
+  const rows = SHIPMENTS.filter(s => {
+    if (f === 'pending' && !PENDING.includes(s.status)) return false;
+    if (f === 'transit' && !TRANSIT.includes(s.status)) return false;
+    if (f && f !== 'pending' && f !== 'transit' && s.status !== f) return false;
+    if (!q) return true;
+    return [s.code, s.order_code, s.display_code, s.tracking_number, s.invoice_code, s.city, s.courier, s.channel]
+      .some(v => String(v || '').toLowerCase().includes(q));
+  });
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="10" class="empty">No shipments match.</td></tr>';
+    return;
+  }
+
+  const pill = s => {
+    const c = PENDING.includes(s) ? ['#b45309', '#fffbeb'] : TRANSIT.includes(s) ? ['#1d4ed8', '#eff6ff']
+            : s === 'DELIVERED' ? ['#059669', '#ecfdf5'] : s === 'CANCELLED' ? ['#dc2626', '#fef2f2']
+            : ['var(--muted-foreground)', 'var(--muted)'];
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;color:${c[0]};background:${c[1]}">${dtEscape(s || '—')}</span>`;
+  };
+
+  body.innerHTML = rows.map(s => `<tr>
+    <td style="font-weight:600">${dtEscape(s.code || '')}</td>
+    <td style="font-size:12px;color:var(--faint)">${dtEscape(String(s.display_code || s.order_code || '').slice(0, 12))}</td>
+    <td style="font-size:12.5px">${dtEscape(s.channel || '—')}</td>
+    <td style="font-size:12.5px">${dtEscape(s.courier || '—')}</td>
+    <td style="font-size:12.5px">${dtEscape(s.tracking_number || '—')}</td>
+    <td>${pill(s.status)}</td>
+    <td style="font-size:12.5px">${shipFmtDate(s.dispatched_at)}</td>
+    <td style="font-size:12.5px">${shipFmtDate(s.delivered_at)}</td>
+    <td style="font-size:12.5px">${dtEscape(s.city || '—')}</td>
+    <td style="text-align:right">${Number(s.collectable_amount) ? inr(s.collectable_amount) : '<span style="color:var(--faint)">—</span>'}</td>
+  </tr>`).join('');
+}

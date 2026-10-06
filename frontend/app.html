@@ -142,6 +142,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
       <span class="nav-label-text">Returns</span>
     </div>
+    <div class="nav-item" id="nav-shipments" style="display:none" onclick="navigate('shipments',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 5h11v12H3zM14 9h3l3 3v5h-6z"/></svg>
+      <span class="nav-label-text">Shipments</span>
+    </div>
 
     <div class="nav-section" id="navsec-admin">Admin &amp; Reports</div>
     <div class="nav-item" id="nav-mis" style="display:none" onclick="navigate('mis',this)">
@@ -581,6 +585,50 @@
       </table>
     </div>
     <div id="returnsPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
+  </div>
+
+  <div id="page-shipments" class="page">
+    <div class="cp-filter-row" style="margin-bottom:14px;align-items:center;flex-wrap:wrap;gap:8px">
+      <div class="drp" id="shipmentsDrp">
+        <button type="button" class="drp-btn" onclick="drpToggle('shipments')">
+          <span aria-hidden="true">Ὕ3</span>
+          <span id="shipmentsDrpLabel">Last 45 days</span>
+          <span class="drp-caret">▼</span>
+        </button>
+        <div class="drp-panel" id="shipmentsDrpPanel"></div>
+      </div>
+      <input type="hidden" id="shipmentsRange" value="45"/>
+      <input type="hidden" id="shipmentsFrom"/>
+      <input type="hidden" id="shipmentsTo"/>
+      <button class="btn btn-sm" onclick="loadShipments()" style="margin-left:auto">↻ Refresh</button>
+      <span id="shipmentsSpan" style="font-size:12px;color:var(--faint)"></span>
+    </div>
+
+    <div id="shipmentsNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
+
+    <div id="shipmentsTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+
+    <div id="shipmentsStuck" style="margin-bottom:16px"></div>
+
+    <div id="shipmentsBreakdown" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px;flex-wrap:wrap">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Shipments</div>
+      <select id="shipmentsStatusFilter" onchange="renderShipmentsList()" style="margin-left:auto">
+        <option value="">All status</option>
+        <option value="pending">Not dispatched</option>
+        <option value="transit">In transit</option>
+        <option value="DELIVERED">Delivered</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+      <input id="shipmentsSearch" type="text" placeholder="Search shipment, order, AWB, invoice, city…" oninput="renderShipmentsList()" style="min-width:240px;max-width:340px"/>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead><tr><th>Shipment</th><th>Order</th><th>Channel</th><th>Courier</th><th>AWB</th><th>Status</th><th>Dispatched</th><th>Delivered</th><th>City</th><th style="text-align:right">COD</th></tr></thead>
+        <tbody id="shipmentsBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <div id="page-profile" class="page">
