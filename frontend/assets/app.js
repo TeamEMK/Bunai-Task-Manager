@@ -6538,7 +6538,6 @@ async function saveFMS() {
 let fmsTasksActiveFmsId = null;
 let fmsTasksActiveStepId = null;
 let fmsTasksActiveStepData = null;
-let fmsTrainPaused = false;
 
 // ══════════════════════════════════════════════════════
 // MERCH FMS — Production Merchandising FMS - Unit 1
@@ -7018,12 +7017,12 @@ async function loadPOEntries() {
 async function loadFMSTasks() {
   document.getElementById('fmsTasksRefreshBtn').style.display = 'block';
   const sel = document.getElementById('fmsTasksSelect');
-  const trainContainer = document.getElementById('fmsTrainContainer');
+  const stepsContainer = document.getElementById('fmsStepsContainer');
   const stepPanel = document.getElementById('fmsTaskStepPanel');
   const emptyEl = document.getElementById('fmsTasksEmpty');
 
   sel.innerHTML = '<option value="">Loading...</option>';
-  trainContainer.style.display = 'none';
+  stepsContainer.style.display = 'none';
   stepPanel.style.display = 'none';
   emptyEl.style.display = 'none';
 
@@ -7046,149 +7045,179 @@ async function loadFMSTasks() {
 
 async function onFMSTasksSelect() {
   const fmsId = document.getElementById('fmsTasksSelect').value;
-  const trainContainer = document.getElementById('fmsTrainContainer');
+  const stepsContainer = document.getElementById('fmsStepsContainer');
   const stepPanel = document.getElementById('fmsTaskStepPanel');
 
   if (!fmsId) {
-    trainContainer.style.display = 'none';
+    stepsContainer.style.display = 'none';
     stepPanel.style.display = 'none';
     return;
   }
 
   fmsTasksActiveFmsId = parseInt(fmsId);
   fmsTasksActiveStepId = null;
+  window._fmsFilter = 'all';
   stepPanel.style.display = 'none';
-  trainContainer.style.display = 'block';
+  stepsContainer.style.display = 'block';
 
-  document.getElementById('fmsTrainInner').innerHTML = '<div style="color:var(--muted-foreground);font-size:12px;padding:20px">Loading steps...</div>';
+  document.getElementById('fmsStepsRail').innerHTML =
+    '<div style="color:var(--muted-foreground);font-size:12px;padding:20px">Loading steps…</div>';
 
   const data = await api(`/api/fms-tasks/${fmsId}`);
-  buildFMSTrain(data.steps, data.sheet);
+  buildFMSSteps(data.steps || []);
 }
 
-function buildFMSTrain(steps, sheet) {
-  window._fmsAllSteps = steps; // Store all steps for modal use
+// One card per step, in order, each carrying its own counts. The counts arrive
+// with the steps from a single sheet read, so this costs nothing extra to draw.
+function buildFMSSteps(steps) {
+  window._fmsAllSteps = steps;
   const isAdmin = ME.role === 'admin';
-  const uid = ME.id;
 
-  // Build double set for infinite scroll loop
-  const buildCoaches = () => steps.map((s, i) => {
-    const isMine = isAdmin || s.isMyStep;
-    const doerNames = (s.doers || []).map(d => d.name).join(', ') || '—';
+  const cards = steps.map((s, i) => {
+    const mine = isAdmin || s.isMyStep;
+    const c = s.counts;
+    // Pending and Overdue are split rather than added together: both are open
+    // work, but only one of them is already late, and that is the number people
+    // act on. In Progress sits with Pending - it is late only once its date has
+    // passed, in which case it is counted as overdue anyway.
+    const pend = c ? (c.pending + c.in_progress) : null;
+    const over = c ? c.overdue : null;
+    const done = c ? c.completed : null;
+    const arrow = i < steps.length - 1 ? '<div class="fms-rail-arrow">→</div>' : '';
     return `
-      <div class="fms-coach ${isMine ? 'mine' : 'not-mine'}" 
-           onclick="${isMine ? `selectFMSStep(${s.id},'${s.step_name.replace(/'/g,"\\'")}','${doerNames.replace(/'/g,"\\'")}')` : ''}"
-           title="${isMine ? 'Click to view tasks' : 'Not your step'}">
-        <div class="fms-coach-num">Step ${s.step_order}</div>
-        <div class="fms-coach-name">${s.step_name}</div>
-        <div class="fms-coach-doers">👤 ${doerNames}</div>
-        ${isMine ? '<div style="font-size:9px;margin-top:4px;opacity:.7">▶ Click to open</div>' : '<div style="font-size:9px;margin-top:4px;opacity:.5">🔒 Not assigned</div>'}
-      </div>
-      ${i < steps.length - 1 ? '<div class="fms-coach-connector"></div>' : ''}`;
+      <div class="fms-stepcard ${mine ? '' : 'locked'}" data-step="${s.id}"
+           ${mine ? `onclick="selectFMSStep(${s.id})"` : ''}
+           title="${mine ? 'Open this step' : 'Not your step'}">
+        <div class="fms-stepcard-top">
+          <span class="fms-stepcard-num">${s.step_order}</span>
+          <span class="fms-stepcard-name">${dtEscape(fmsShortName(s.step_name))}</span>
+        </div>
+        <div class="fms-stepcard-counts">
+          <div><div class="n pend">${pend === null ? '—' : pend}</div><div class="l">Pending</div></div>
+          <div><div class="n over">${over === null ? '—' : over}</div><div class="l">Overdue</div></div>
+          <div><div class="n done">${done === null ? '—' : done}</div><div class="l">Completed</div></div>
+        </div>
+      </div>${arrow}`;
   }).join('');
 
-  const engine = `
-    <div class="fms-train-engine">
-      🚂
-      <div style="font-size:9px;margin-top:4px;opacity:.7;max-width:70px;text-align:center;word-break:break-word">${(document.getElementById('fmsTasksSelect').selectedOptions[0]?.text || '').substring(0,12)}</div>
-    </div>
-    <div class="fms-coach-connector"></div>`;
-
-  // Double the coaches for seamless loop
-  const coaches = buildCoaches();
-  document.getElementById('fmsTrainInner').innerHTML = engine + coaches + '<div style="width:30px;flex-shrink:0"></div>' + coaches;
-
-  // Set initial speed
-  setTrainSpeed(document.getElementById('fmsTrainSpeedSlider').value);
+  document.getElementById('fmsStepsRail').innerHTML = cards;
 }
 
-function selectFMSStep(stepId, stepName, doerNames) {
+// "STEP 1 — Sample handover to Vendor" reads as "Sample handover to Vendor" on
+// a card that already shows the number in its own badge.
+function fmsShortName(name) {
+  return String(name || '').replace(/^\s*STEP\s*\d+\s*[—–-]\s*/i, '').trim() || String(name || '');
+}
+
+function selectFMSStep(stepId) {
   fmsTasksActiveStepId = stepId;
-  // Store active step data for modal
-  window._fmsActiveStepData = (window._fmsAllSteps || []).find(s => s.id === stepId) || null;
+  const step = (window._fmsAllSteps || []).find(s => s.id === stepId) || null;
+  window._fmsActiveStepData = step;
 
-  // Highlight selected coach
-  document.querySelectorAll('.fms-coach').forEach(c => {
-    c.classList.toggle('active', c.querySelector('.fms-coach-name')?.textContent === stepName);
-  });
+  document.querySelectorAll('.fms-stepcard').forEach(c =>
+    c.classList.toggle('active', Number(c.dataset.step) === stepId));
 
-  document.getElementById('fmsTaskStepName').textContent = stepName;
-  document.getElementById('fmsTaskStepDoers').textContent = '👤 ' + doerNames;
-  document.getElementById('fmsTaskRowCount').textContent = '';
-  document.getElementById('fmsTaskRowsContainer').innerHTML = `
-    <div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
-      Click "Load Tasks" to fetch pending rows for this step
-    </div>`;
-  document.getElementById('fmsTaskStepPanel').style.display = 'block';
-  document.getElementById('fmsTaskStepPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('fmsTaskStepName').textContent =
+    step ? `STEP ${step.step_order} — ${fmsShortName(step.step_name)}` : '—';
+  document.getElementById('fmsTaskStepDoers').textContent =
+    '👤 ' + ((step?.doers || []).map(d => d.name).join(', ') || '—');
+
+  const panel = document.getElementById('fmsTaskStepPanel');
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Opening a step is the request to see its rows; a second click to load them
+  // was only ever an extra step.
+  loadFMSTaskRows();
+}
+
+function fmsSetFilter(f, el) {
+  window._fmsFilter = f;
+  document.querySelectorAll('#fmsFilterPills .fms-pill').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderFMSRows();
 }
 
 async function loadFMSTaskRows() {
   if (!fmsTasksActiveFmsId || !fmsTasksActiveStepId) return;
   const btn = document.getElementById('fmsTaskLoadBtn');
-  btn.textContent = '⏳ Loading...';
+  btn.textContent = '⏳ Loading…';
   btn.disabled = true;
+  document.getElementById('fmsTaskRowsContainer').innerHTML =
+    '<div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border)">Loading rows…</div>';
 
   const r = await api(`/api/fms-tasks/${fmsTasksActiveFmsId}/steps/${fmsTasksActiveStepId}/rows`);
   btn.textContent = 'Refresh';
   btn.disabled = false;
+  if (r.error) { showToast(r.error, 'error'); return; }
 
-  if (r.error) {
-    showToast(r.error, 'error');
+  window._fmsCurrentRows = r.rows || [];
+  window._fmsMeta = r;
+  renderFMSRows();
+}
+
+const FMS_STATUS_LABEL = {
+  pending: 'Pending', overdue: 'Overdue', completed: 'Completed', in_progress: 'In Progress',
+};
+const fmsStatusPill = (s) =>
+  `<span class="fms-badge ${s}">${FMS_STATUS_LABEL[s] || s}</span>`;
+
+// Filtering and searching happen here rather than on the server: the step's rows
+// are already in memory, so a pill or a keystroke should not cost a sheet read.
+function renderFMSRows() {
+  const r = window._fmsMeta;
+  const all = window._fmsCurrentRows || [];
+  if (!r) return;
+
+  const counts = r.counts || { pending: 0, overdue: 0, completed: 0, in_progress: 0, total: 0 };
+  // Split the same way the cards do, so the header cannot appear to disagree
+  // with the card the reader just clicked.
+  document.getElementById('fmsTaskRowCount').innerHTML =
+    `<b class="pend">${counts.pending + counts.in_progress}</b> Pending` +
+    ` · <b class="over">${counts.overdue}</b> Overdue` +
+    ` · <b class="done">${counts.completed}</b> Completed`;
+
+  const f = window._fmsFilter || 'all';
+  const q = (document.getElementById('fmsRowSearch')?.value || '').trim().toLowerCase();
+  const rows = all.filter(row => {
+    if (f === 'pending' && !(row.status === 'pending' || row.status === 'in_progress')) return false;
+    if (f === 'overdue' && row.status !== 'overdue') return false;
+    if (f === 'completed' && row.status !== 'completed') return false;
+    if (!q) return true;
+    return Object.values(row.data || {}).some(v => String(v || '').toLowerCase().includes(q));
+  });
+
+  const container = document.getElementById('fmsTaskRowsContainer');
+  if (!rows.length) {
+    container.innerHTML = `<div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
+      ${all.length ? 'No rows match this filter.' : '✅ Nothing in this step yet.'}</div>`;
     return;
   }
 
-  document.getElementById('fmsTaskRowCount').textContent = r.total ? `${r.total} pending row(s)` : '✅ All done!';
+  const colKeys = Object.keys(rows[0].data || {});
+  const body = rows.map(row => {
+    const ri = all.indexOf(row);
+    const done = row.status === 'completed';
+    return `<tr>
+      <td>${fmsStatusPill(row.status)}</td>
+      ${colKeys.map(k => `<td>${dtEscape(row.data[k] || '') || '—'}</td>`).join('')}
+      <td>${done
+        ? '<button class="fms-row-btn" disabled>View</button>'
+        : `<button class="fms-row-btn" onclick="openFMSDoneModal(${ri})">Update</button>`}</td>
+    </tr>`;
+  }).join('');
 
-  // Filter banner — show if doer-name filtering is applied (or if admin viewing all)
-  let banner = '';
-  if (r.filtered) {
-    banner = `<div style="background:#dbeafe;border:1px solid #93c5fd;color:#1e3a8a;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;">
-      🎯 <b>Showing only your assigned rows</b> — filtered by Col ${r.doerColumn} (Doer Name).
-      ${r.totalPending > r.total ? ` <span style="color:#475569">${r.totalPending - r.total} other row(s) belong to other doers.</span>` : ''}
-    </div>`;
-  } else if (r.isAdmin && r.doerColumn) {
-    banner = `<div style="background:#fef3c7;border:1px solid #fcd34d;color:#92400e;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;">
-      👑 <b>Admin view</b> — showing all ${r.totalPending} pending rows across all doers (Col ${r.doerColumn}).
-    </div>`;
-  }
-
-  if (!r.rows || !r.rows.length) {
-    document.getElementById('fmsTaskRowsContainer').innerHTML = banner + `
-      <div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
-        ${r.filtered ? '✅ No rows assigned to you in this step!' : '✅ No pending rows — all actual values filled for this step!'}
-      </div>`;
-    return;
-  }
-
-  // Build table headers from first row's data keys
-  const colKeys = Object.keys(r.rows[0].data);
-  const tableRows = r.rows.map((row, ri) => `
-    <tr ${row.isMine === false && r.isAdmin ? 'style="opacity:.85"' : ''}>
-      <td>
-        <button class="fms-done-btn" onclick="openFMSDoneModal(${ri})">✅ Done</button>
-      </td>
-      ${colKeys.map(k => `<td>${row.data[k] || '—'}</td>`).join('')}
-      <td>
-        <span class="fms-status-badge">⏳ Pending</span>
-        ${row.rowDoerName && r.isAdmin ? `<br><span style="font-size:10px;color:var(--muted-foreground);margin-top:4px;display:inline-block">→ ${row.rowDoerName}</span>` : ''}
-      </td>
-    </tr>`).join('');
-
-  document.getElementById('fmsTaskRowsContainer').innerHTML = banner + `
+  container.innerHTML = `
     <div class="fms-step-rows-table">
       <table>
         <thead><tr>
-          <th>Action</th>
-          ${colKeys.map(k => `<th>${k}</th>`).join('')}
           <th>Status</th>
+          ${colKeys.map(k => `<th>${dtEscape(k)}</th>`).join('')}
+          <th>Action</th>
         </tr></thead>
-        <tbody>${tableRows}</tbody>
+        <tbody>${body}</tbody>
       </table>
     </div>`;
-
-  // Store rows in memory for modal
-  window._fmsCurrentRows = r.rows;
 }
 
 function openFMSDoneModal(rowIdx) {
@@ -7401,26 +7430,6 @@ async function saveFMSDone() {
   }
   // Reload rows
   loadFMSTaskRows();
-}
-
-function setTrainSpeed(val) {
-  const dur = parseInt(val);
-  document.getElementById('fmsTrainSpeedLabel').textContent = dur + 's';
-  const scroll = document.getElementById('fmsTrainInner');
-  if (scroll) {
-    scroll.style.setProperty('--train-dur', dur + 's');
-    scroll.style.animationDuration = dur + 's';
-  }
-  const track = document.getElementById('fmsTrainTrack');
-  if (track) track.style.setProperty('--train-dur', dur + 's');
-}
-
-function toggleTrainPause() {
-  fmsTrainPaused = !fmsTrainPaused;
-  const scroll = document.getElementById('fmsTrainInner');
-  const btn = document.getElementById('fmsTrainPauseBtn');
-  if (scroll) scroll.style.animationPlayState = fmsTrainPaused ? 'paused' : 'running';
-  if (btn) btn.textContent = fmsTrainPaused ? '▶ Play' : '⏸ Pause';
 }
 
 // ══════════════════════════════════════════════════════

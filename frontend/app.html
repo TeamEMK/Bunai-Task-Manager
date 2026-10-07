@@ -780,45 +780,41 @@
       </select>
     </div>
 
-    <!-- Train Container -->
-    <div id="fmsTrainContainer" style="display:none;margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:var(--muted-foreground);margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">
-        Process Flow — Click a step to view tasks
-        <span id="fmsTrainLegend" style="margin-left:12px;font-weight:400;text-transform:none">
-          <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,var(--brand-soft),var(--brand));display:inline-block"></span> Your step</span>
-          <span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:var(--foreground);display:inline-block;opacity:.5"></span> Other step</span>
-        </span>
-      </div>
-      <div class="fms-train-track" id="fmsTrainTrack">
-        <div id="fmsTrainInner" class="fms-train-scroll"></div>
-      </div>
-      <div class="fms-train-speed">
-        <span>🐢</span>
-        <input type="range" id="fmsTrainSpeedSlider" min="5" max="60" value="18" oninput="setTrainSpeed(this.value)"/>
-        <span>🐇</span>
-        <span style="margin-left:8px;color:var(--foreground);font-weight:600" id="fmsTrainSpeedLabel">18s</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto" id="fmsTrainPauseBtn" onclick="toggleTrainPause()">⏸ Pause</button>
-      </div>
+    <!-- Process flow — one card per step, carrying that step's own counts.
+         This replaced an animated train: the motion made the steps hard to
+         read and hard to click, and the counts are what people came for. -->
+    <div id="fmsStepsContainer" style="display:none;margin-bottom:18px">
+      <div class="fms-rail" id="fmsStepsRail"></div>
     </div>
 
-    <!-- Selected Step Info + Rows -->
+    <!-- Selected step: its totals, the filters, and the rows -->
     <div id="fmsTaskStepPanel" style="display:none">
-      <div style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div class="fms-step-head">
         <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">Selected Step</div>
-          <div id="fmsTaskStepName" style="font-size:16px;font-weight:700;color:var(--foreground);margin-top:2px">—</div>
-          <div id="fmsTaskStepDoers" style="font-size:12px;color:var(--muted-foreground);margin-top:2px"></div>
+          <div class="fms-step-eyebrow">Selected step</div>
+          <div id="fmsTaskStepName" class="fms-step-title">—</div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span id="fmsTaskRowCount" style="font-size:13px;color:#ef4444;font-weight:600"></span>
-          <button class="btn btn-outline btn-sm" onclick="loadFMSTaskRows()" id="fmsTaskLoadBtn">Load Tasks</button>
+        <div class="fms-step-head-right">
+          <span id="fmsTaskStepDoers" class="fms-step-doer"></span>
+          <span id="fmsTaskRowCount" class="fms-step-counts"></span>
+          <button class="btn btn-outline btn-sm" onclick="loadFMSTaskRows()" id="fmsTaskLoadBtn">Refresh</button>
         </div>
       </div>
 
-      <!-- Rows table -->
+      <div class="fms-filter-bar">
+        <div class="fms-pills" id="fmsFilterPills">
+          <button type="button" class="fms-pill active" data-f="all"       onclick="fmsSetFilter('all',this)">All</button>
+          <button type="button" class="fms-pill"        data-f="pending"   onclick="fmsSetFilter('pending',this)">Pending</button>
+          <button type="button" class="fms-pill"        data-f="overdue"   onclick="fmsSetFilter('overdue',this)">Overdue</button>
+          <button type="button" class="fms-pill"        data-f="completed" onclick="fmsSetFilter('completed',this)">Completed</button>
+        </div>
+        <input type="text" id="fmsRowSearch" class="fms-search"
+               placeholder="🔍 Search by style, vendor, order no." oninput="renderFMSRows()"/>
+      </div>
+
       <div id="fmsTaskRowsContainer">
         <div class="empty" style="background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-xs);">
-          Click "Load Tasks" to fetch pending rows for this step
+          Pick a step above to see its rows
         </div>
       </div>
     </div>

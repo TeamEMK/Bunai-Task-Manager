@@ -459,8 +459,57 @@ router.get('/fms-tasks/:id', requireAuth, asyncRoute(async (req, res) => {
     viewerId: req.session.userId,
     isAdmin: req.session.role === 'admin',
   });
+  // Counts for the step cards, from ONE read of the sheet. Asking the rows
+  // endpoint per step would be a separate full read each - seven for this FMS,
+  // fourteen for Sampling Unit - on every page load.
+  await attachStepCounts(sheet, steps);
   res.json({ sheet, steps });
 }));
+
+// Fills step.counts for every step of a sheet. A failure leaves the counts off
+// rather than failing the page: the cards can show a dash and the step still
+// opens, which is better than an FMS that will not load because Sheets is slow.
+async function attachStepCounts(sheet, steps) {
+  try {
+    const spreadsheetId = extractSpreadsheetId(sheet.sheet_id);
+    const tabName = sheet.sheet_name || 'Sheet1';
+    const headerRowIdx = (sheet.header_row || 1) - 1;
+    const grid = await google.readValues(spreadsheetId, `${tabName}!A:BZ`);
+    const headers = grid[headerRowIdx] || [];
+    const dataRows = grid.slice(headerRowIdx + 1);
+    const today = serverToday();
+
+    for (const step of steps) {
+      const cols = fmsColumns.resolveStep(step, [], headers);
+      const planIdx = cols.plan, actualIdx = cols.actual;
+      if (planIdx < 0) { step.counts = null; continue; }
+
+      let statusIdx = -1;
+      for (let i = Math.max(actualIdx, planIdx) + 1; i < headers.length; i++) {
+        if (fmsColumns.norm(headers[i]) === 'status') { statusIdx = i; break; }
+      }
+      const planFormat = detectColumnDateFormat(dataRows.map(r => r[planIdx]));
+      const counts = { pending: 0, overdue: 0, completed: 0, in_progress: 0, total: 0 };
+
+      for (const row of dataRows) {
+        const planVal = (row[planIdx] || '').trim();
+        if (!planVal) continue;
+        const actualVal = actualIdx >= 0 ? (row[actualIdx] || '').trim() : '';
+        const sheetStatus = statusIdx >= 0 ? (row[statusIdx] || '').trim() : '';
+        const planDate = sheetDateToYMD(planVal, planFormat) || '';
+        if (actualVal) counts.completed++;
+        else if (fmsColumns.norm(sheetStatus) === 'in progress') counts.in_progress++;
+        else if (planDate && planDate < today) counts.overdue++;
+        else counts.pending++;
+        counts.total++;
+      }
+      step.counts = counts;
+    }
+  } catch (e) {
+    console.warn('  ⚠️ FMS step counts:', e.message);
+    steps.forEach(s => { if (s.counts === undefined) s.counts = null; });
+  }
+}
 
 // One-time, fire-and-forget: gives a pre-mapping step its header names. It runs
 // on a read, so a failure must never affect the response — the letters keep
@@ -515,8 +564,23 @@ router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async
   const doerNameIdx = cols.doer;
   const showCols = cols.show;
 
+  // Each step occupies a block of the sheet - Planned, Actual, Time Delay,
+  // Status, Delay Reason, Remarks - so a step's own Status is the first one
+  // sitting after its Actual. Found by position rather than by a stored
+  // occurrence index, because a sheet whose steps do not all carry a Status
+  // still works this way: the ones that do are picked up, the rest simply
+  // never report In Progress.
+  const statusIdx = (() => {
+    const from = Math.max(actualIdx, planIdx);
+    if (from < 0) return -1;
+    for (let i = from + 1; i < headerRowValues.length; i++) {
+      if (fmsColumns.norm(headerRowValues[i]) === 'status') return i;
+    }
+    return -1;
+  })();
+
   // Fetch only as far as the furthest needed column.
-  const maxIdx = Math.max(planIdx, actualIdx, doerNameIdx, ...(showCols.length ? showCols : [0]));
+  const maxIdx = Math.max(planIdx, actualIdx, doerNameIdx, statusIdx, ...(showCols.length ? showCols : [0]));
   const allRows = await google.readValues(
     spreadsheetId, `${tabName}!A:${maxIdx >= 0 ? idxToCol(maxIdx) : 'Z'}`);
 
@@ -526,14 +590,34 @@ router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async
   // Non-admins see only their own rows; admins see all.
   const applyDoerFilter = !isAdmin && doerNameIdx >= 0 && !!myName;
 
+  // Completed rows used to be dropped here. The screen now shows every row of
+  // the step and filters by status in the browser, so they are kept and each
+  // row is labelled instead.
+  const planFormat = detectColumnDateFormat(dataRows.map(r => (planIdx >= 0 ? r[planIdx] : '')));
+  const today = serverToday();
+
   const matchedRows = [];
+  const counts = { pending: 0, overdue: 0, completed: 0, in_progress: 0, total: 0 };
   let totalPending = 0;
   let assignedToMe = 0;
   dataRows.forEach((row, i) => {
     const planVal = planIdx >= 0 ? (row[planIdx] || '').trim() : '';
     const actualVal = actualIdx >= 0 ? (row[actualIdx] || '').trim() : '';
-    if (!planVal || actualVal) return;   // not pending
-    totalPending++;
+    if (!planVal) return;                // this step does not apply to the row
+
+    // Actual filled wins over everything: the work is done whatever the sheet's
+    // Status cell still says. In Progress is only meaningful while it is open.
+    const sheetStatus = statusIdx >= 0 ? (row[statusIdx] || '').trim() : '';
+    const planDate = sheetDateToYMD(planVal, planFormat) || '';
+    let status;
+    if (actualVal) status = 'completed';
+    else if (fmsColumns.norm(sheetStatus) === 'in progress') status = 'in_progress';
+    else if (planDate && planDate < today) status = 'overdue';
+    else status = 'pending';
+
+    counts[status]++;
+    counts.total++;
+    if (status !== 'completed') totalPending++;
 
     const rowDoer = doerNameIdx >= 0 ? (row[doerNameIdx] || '').trim() : '';
     const isMine = rowDoer.toLowerCase() === myName;
@@ -549,7 +633,10 @@ router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async
     matchedRows.push({
       sheetRowNumber: headerRowIdx + 1 + i + 1,
       planValue: planVal,
+      planDate,
       actualValue: actualVal,
+      sheetStatus,
+      status,
       rowDoerName: rowDoer,
       isMine,
       data: rowData,
@@ -557,7 +644,8 @@ router.get('/fms-tasks/:fmsId/steps/:stepId/rows', requireAuth, asyncRoute(async
   });
 
   res.json({
-    rows: matchedRows, headers,
+    rows: matchedRows, headers, counts,
+    hasStatusColumn: statusIdx >= 0,
     total: matchedRows.length, totalPending, assignedToMe,
     filtered: applyDoerFilter,
     doerColumn: doerNameIdx >= 0 ? idxToCol(doerNameIdx) : null,
