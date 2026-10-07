@@ -1148,3 +1148,15 @@ tbody tr:last-child td{border-bottom:none;}
 }
 .fms-row-btn:hover:not(:disabled){border-color:var(--brand-mid);color:var(--brand-deep);}
 .fms-row-btn:disabled{opacity:.5;cursor:default;}
+
+/* Long pipelines: Sampling Unit's fourteen steps are two screens wide at the
+   full card size. Tightening them keeps the sequence closer to one view
+   without wrapping it onto a second line, where it stops reading as an order. */
+.fms-rail.compact .fms-stepcard{min-width:140px;padding:10px 11px;}
+.fms-rail.compact .fms-stepcard-top{margin-bottom:8px;gap:6px;}
+.fms-rail.compact .fms-stepcard-num{width:19px;height:19px;font-size:10px;}
+.fms-rail.compact .fms-stepcard-name{font-size:11.5px;}
+.fms-rail.compact .fms-stepcard-counts{gap:9px;}
+.fms-rail.compact .fms-stepcard-counts .n{font-size:16px;}
+.fms-rail.compact .fms-stepcard-counts .l{font-size:9px;}
+.fms-rail.compact .fms-rail-arrow{font-size:13px;}

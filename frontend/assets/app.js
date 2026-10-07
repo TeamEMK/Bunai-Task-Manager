@@ -7100,7 +7100,12 @@ function buildFMSSteps(steps) {
       </div>${arrow}`;
   }).join('');
 
-  document.getElementById('fmsStepsRail').innerHTML = cards;
+  // Sampling Unit has fourteen steps and Fabric Warehouse twelve. At the full
+  // card size that is two screens of sideways scrolling, so the pipeline can
+  // never be seen whole. Past eight steps the cards tighten up instead.
+  const rail = document.getElementById('fmsStepsRail');
+  rail.classList.toggle('compact', steps.length > 8);
+  rail.innerHTML = cards;
 }
 
 // "STEP 1 — Sample handover to Vendor" reads as "Sample handover to Vendor" on
