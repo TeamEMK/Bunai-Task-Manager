@@ -11,12 +11,14 @@ minutes and could not finish inside a Vercel function. Two things have changed:
 
 - Unicommerce takes **9 seconds** for SKUs and stock, against 361 seconds on
   Vinculum, because it accepts 10,000 SKUs per call instead of 20.
-- The workflow has **no evidence of ever having run**. `vin_sync_log` holds only
-  hand-run entries, and each table went stale on exactly the day someone last
-  ran it by hand. The repository secrets were most likely never added.
+- Railway already hosts the database, so the sync runs next to it with no
+  function timeout to design around.
 
-Railway also already hosts the database, so the sync runs next to it with no
-function timeout to design around.
+The workflow is still there, and it does work — the secrets were added at some
+point, and the app's "Sync now" button dispatches it successfully. It stays as
+the manual, on-demand path. What it must **not** get is a `schedule:` block of
+its own: two schedules pulling the same window would double the API calls and
+leave it unclear which one filled a table. The recurring run belongs here.
 
 ## One-time setup
 
@@ -27,13 +29,13 @@ function timeout to design around.
    | Field | Value |
    |---|---|
    | Start Command | `node backend/scripts/daily-sync.js` |
-   | Cron Schedule | `30 1 * * *` |
+   | Cron Schedule | `30 1,4,7,10,13,16,19,22 * * *` |
    | Restart Policy | **Never** |
 
    Restart Policy is the one that bites. It defaults to *On Failure* with ten
-   retries, and this script exits 1 when a step fails — so one bad morning
-   would run the sync ten times over, each one hitting the API again. *Never*
-   means a run happens once and the next one is tomorrow's.
+   retries, and this script exits 1 when a step fails — so one bad run would
+   fire the sync ten times over, each one hitting the API again. *Never* means
+   a run happens once and the next one is at the next scheduled slot.
 
    **Not Config-as-code.** Railway deprecated it on 2026-08-28: existing files
    keep working until 2026-12-01, but a service that never used it cannot opt
@@ -60,8 +62,22 @@ function timeout to design around.
 
 ## The schedule
 
-`30 1 * * *` — Railway reads cron in **UTC**, so this is **07:00 IST**, the same
-time the GitHub workflow used.
+`30 1,4,7,10,13,16,19,22 * * *` — Railway reads cron in **UTC**, and the half
+hour lines up with India's offset, so these land on the hour in IST: **07:00,
+10:00, 13:00, 16:00, 19:00, 22:00, 01:00 and 04:00**.
+
+It used to be `30 1 * * *`, a single 07:00 IST run. That left the Sales page
+showing the morning's snapshot for the rest of the day — orders placed at noon
+did not appear until the next morning, which reads as a broken page rather than
+a sync window. Eight runs put the longest stale stretch at three hours.
+
+Running more often is cheap because every run pulls the same **10-day window by
+UPDATED date** (`SYNC_ORDER_DAYS`), not just the new rows. Nothing is lost if a
+run is skipped — the next one covers it — and a run takes well under a minute,
+so no two overlap.
+
+Raising it further is a question for Unicommerce's API limits, not for this
+script. Hourly would be 24 pulls of the same window each day.
 
 ## What a run looks like
 

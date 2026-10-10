@@ -18,7 +18,15 @@
 # The same values the Railway cron service uses. Use the Railway PUBLIC host
 # for DB_HOST (*.proxy.rlwy.net) — the private one is not reachable from here.
 #
-# These have never been set, so the button has never actually synced anything.
+# These are set and the button works: a dispatch on 10 Oct 2026 at 22:00 IST
+# pulled 552 orders and wrote ok=1 to ims_order_sync_log, hours away from any
+# Railway slot, so the run can only have come from here.
+#
+# One caveat. The button fires a dispatch per click and GitHub queues every one
+# of them. Eleven clicks that evening became eleven runs doing identical work
+# within five seconds; eight wrote the same 552 orders and three collided and
+# failed. The data survives — the writes are upserts — but a click is not free,
+# so wait for the banner to update before clicking again.
 # ─────────────────────────────────────────────────────────────────────────
 name: Sync now (manual)
 

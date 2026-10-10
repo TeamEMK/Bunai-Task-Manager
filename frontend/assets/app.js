@@ -4221,7 +4221,9 @@ async function loadSales() {
   if (d.lastSync && d.lastSync.started_at) {
     const mins = Math.round((Date.now() - new Date(d.lastSync.started_at).getTime()) / 60000);
     const ago = mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
-    salesNotice('ok', `Live from Unicommerce · last synced ${ago} · ${Number(d.lastSync.orders_seen || 0).toLocaleString('en-IN')} orders`);
+    // "orders pulled", not just "orders" — this is what the last sync run
+    // fetched, and sitting next to the window totals it reads as a total.
+    salesNotice('ok', `Live from Unicommerce · last synced ${ago} · ${Number(d.lastSync.orders_seen || 0).toLocaleString('en-IN')} orders pulled`);
   } else {
     salesNotice('busy', 'Orders loaded. Set up the daily order sync to keep this live.');
   }
@@ -4581,7 +4583,7 @@ async function loadReturns() {
   if (d.lastSync && d.lastSync.started_at) {
     const mins = Math.round((Date.now() - new Date(d.lastSync.started_at).getTime()) / 60000);
     const ago = mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
-    returnsNotice('ok', `Live from Vin eRetail · last synced ${ago} · ${Number(d.lastSync.returns_seen || 0).toLocaleString('en-IN')} returns`);
+    returnsNotice('ok', `Live from Vin eRetail · last synced ${ago} · ${Number(d.lastSync.returns_seen || 0).toLocaleString('en-IN')} returns pulled`);
   } else returnsNotice('busy', 'Returns loaded. Set up the daily returns sync to keep this live.');
   loadReturnsList(1);
 }
