@@ -500,7 +500,9 @@ async function syncStockNow() {
 // button was clicked; each page just waits for its own data to land.
 const VIN_SYNC = {
   stock:   { endpoint: '/api/stock',   notice: (k, m) => stockNotice(k, m),  reload: () => loadStock(),   seen: d => d.lastSync && d.lastSync.rows_seen,    label: 'stock rows' },
-  sales:   { endpoint: '/api/sales',   notice: (k, m) => salesNotice(k, m),  reload: () => loadSales(),   seen: d => d.lastSync && d.lastSync.orders_seen,  label: 'orders' },
+  // orders_new, not orders_seen: the finish message should report what the run
+  // brought back, not the size of the window it re-read.
+  sales:   { endpoint: '/api/sales',   notice: (k, m) => salesNotice(k, m),  reload: () => loadSales(),   seen: d => d.lastSync && (d.lastSync.orders_new ?? d.lastSync.orders_seen), label: 'orders pulled' },
   returns: { endpoint: '/api/returns', notice: (k, m) => returnsNotice(k, m), reload: () => loadReturns(), seen: d => d.lastSync && d.lastSync.returns_seen, label: 'returns' },
 };
 const _vinSyncPoll = {};
@@ -4221,9 +4223,21 @@ async function loadSales() {
   if (d.lastSync && d.lastSync.started_at) {
     const mins = Math.round((Date.now() - new Date(d.lastSync.started_at).getTime()) / 60000);
     const ago = mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
-    // "orders pulled", not just "orders" — this is what the last sync run
-    // fetched, and sitting next to the window totals it reads as a total.
-    salesNotice('ok', `Live from Unicommerce · last synced ${ago} · ${Number(d.lastSync.orders_seen || 0).toLocaleString('en-IN')} orders pulled`);
+    // Two different numbers, and they used to be one. "Pulled" is what the run
+    // actually brought back — new orders plus ones whose status moved — and on
+    // a quiet run that is genuinely 1. It is NOT orders_seen, which counts the
+    // whole ten-day window the sync re-reads every time and so sat at 626 next
+    // to a card reading 67. "Today" is the figure anyone actually wants.
+    //
+    // orders_new is null for runs that predate the column, and for the old Vin
+    // eRetail side; in that case the segment is left out rather than shown as 0.
+    const bits = [`Live from Unicommerce`, `last synced ${ago}`];
+    const pulled = d.lastSync.orders_new;
+    if (pulled !== null && pulled !== undefined) {
+      bits.push(`${Number(pulled).toLocaleString('en-IN')} pulled`);
+    }
+    bits.push(`${Number(d.today?.orders || 0).toLocaleString('en-IN')} orders today`);
+    salesNotice('ok', bits.join(' · '));
   } else {
     salesNotice('busy', 'Orders loaded. Set up the daily order sync to keep this live.');
   }

@@ -693,6 +693,7 @@ const TABLES = [
       to_date     VARCHAR(40) NULL,
       date_type   VARCHAR(20) NULL,
       orders_seen INT NOT NULL DEFAULT 0,
+      orders_new  INT NULL,
       ok          TINYINT(1) NOT NULL DEFAULT 0,
       error       TEXT NULL,
       KEY idx_uni_ols (started_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
@@ -777,6 +778,12 @@ const COLUMNS = [
   ['uni_returns', 'channel', `VARCHAR(80) DEFAULT NULL`],
   ['uni_returns', 'challan_no', `VARCHAR(120) DEFAULT NULL`],
   ['uni_returns', 'challan_date', `DATETIME DEFAULT NULL`],
+  // orders_seen counts the whole window a run re-pulled, which on the Sales
+  // banner read as a daily total — 626 next to a card saying 67. orders_new
+  // is the part of that window that was actually new or had changed. NULL,
+  // not 0, for the runs that finished before this column existed: we do not
+  // know their number, and 0 would claim they found nothing.
+  ['uni_order_sync_log', 'orders_new', `INT NULL AFTER orders_seen`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.
@@ -1242,10 +1249,14 @@ const BACKFILLS = [
   // until 1 October and from Unicommerce after, so the honest answer is
   // whichever of the two ran last. The id offset only keeps the two id spaces
   // from colliding; nothing reads it.
+  // orders_new is NULL on the Vin eRetail side because that sync never counted
+  // it and is no longer running. The page treats NULL as "not recorded" and
+  // leaves the figure out rather than printing a zero it cannot stand behind.
   [`CREATE OR REPLACE VIEW ims_order_sync_log AS
-      SELECT id, started_at, ended_at, orders_seen, ok FROM vin_order_sync_log
+      SELECT id, started_at, ended_at, orders_seen, NULL AS orders_new, ok
+        FROM vin_order_sync_log
       UNION ALL
-      SELECT id + 1000000, started_at, ended_at, orders_seen, ok
+      SELECT id + 1000000, started_at, ended_at, orders_seen, orders_new, ok
         FROM uni_order_sync_log`, 'view ims_order_sync_log'],
 ];
 

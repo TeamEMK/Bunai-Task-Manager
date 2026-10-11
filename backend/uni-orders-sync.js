@@ -161,6 +161,7 @@ async function ensureTables() {
       to_date     VARCHAR(40) NULL,
       date_type   VARCHAR(20) NULL,
       orders_seen INT NOT NULL DEFAULT 0,
+      orders_new  INT NULL,
       ok          TINYINT(1) NOT NULL DEFAULT 0,
       error       TEXT NULL,
       KEY idx_uni_ols (started_at)
@@ -323,6 +324,27 @@ async function syncOrders({ fromDate, toDate, dateType = 'CREATED' } = {}) {
     const codes = [...seen];
     log(`  ${codes.length} orders mile (${dateType} ${fromDate.slice(0, 10)} → ${toDate.slice(0, 10)})`);
 
+    // Seconds, not a formatted string: MySQL DATETIME has no milliseconds and
+    // Unicommerce's epoch does, so comparing raw would call every order changed.
+    //
+    // ROUND, not floor. A DATETIME column rounds the milliseconds off rather
+    // than truncating them, so an API stamp of …086.777 comes back as …087.
+    // Flooring both sides disagrees for every order whose millisecond part is
+    // 500 or over — roughly half of them, every run, for ever.
+    const secs = v => (v ? Math.round(new Date(v).getTime() / 1000) : 0);
+
+    // Har run poori window dobara kheenchta hai, isliye `codes.length` har baar
+    // ~600 aata hai chahe naya kuch bhi na ho. Store karne se PEHLE yahan ki
+    // haalat uthao, taaki baad mein bataya ja sake ki asal mein naya ya badla
+    // hua kitna tha. Ek hi query — per-order check 600 queries ban jata.
+    const before = new Map();
+    if (codes.length) {
+      const [rows] = await pool.query(
+        'SELECT code, updated_at_uni FROM uni_orders WHERE code IN (?)', [codes]);
+      rows.forEach(r => before.set(r.code, secs(r.updated_at_uni)));
+    }
+    let fresh = 0;
+
     // 2) Detail — ek call per order. Yahi mehnga hissa hai.
     let done = 0, failed = 0;
     for (const code of codes) {
@@ -332,6 +354,9 @@ async function syncOrders({ fromDate, toDate, dateType = 'CREATED' } = {}) {
         failed++;
         log(`  ⚠ ${code}: ${uni.explain(g) || 'saleOrderDTO nahi mila'}`);
       } else {
+        // Unicommerce ka apna `updated` hi sach hai. Row hai hi nahi → naya;
+        // hai par stamp badal gaya → kuch change hua. Dono "fresh" hain.
+        if (!before.has(so.code) || before.get(so.code) !== secs(dt(so.updated))) fresh++;
         await storeOrder(so);
       }
       done++;
@@ -342,9 +367,10 @@ async function syncOrders({ fromDate, toDate, dateType = 'CREATED' } = {}) {
     }
 
     await pool.query(
-      'UPDATE uni_order_sync_log SET ended_at=NOW(), orders_seen=?, ok=1 WHERE id=?',
-      [done - failed, runId]);
-    return { orders: done - failed, failed };
+      'UPDATE uni_order_sync_log SET ended_at=NOW(), orders_seen=?, orders_new=?, ok=1 WHERE id=?',
+      [done - failed, fresh, runId]);
+    log(`  ${fresh} naye ya badle hue (window mein ${done - failed})`);
+    return { orders: done - failed, fresh, failed };
   } catch (e) {
     await pool.query(
       'UPDATE uni_order_sync_log SET ended_at=NOW(), ok=0, error=? WHERE id=?',

@@ -134,8 +134,26 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
 
     // Freshness is about the sync, not the chosen window — always global.
     const lastSync = await db.one(
-      `SELECT started_at, ended_at, orders_seen, ok FROM ims_order_sync_log
+      `SELECT started_at, ended_at, orders_seen, orders_new, ok FROM ims_order_sync_log
         WHERE ok=1 ORDER BY started_at DESC LIMIT 1`).catch(() => null);
+
+    // Today's orders, deliberately outside the chosen window — the banner is
+    // about what has come in, not about what the user is looking at.
+    //
+    // ims_orders.order_date is stored in UTC (Unicommerce's own convention),
+    // so the Indian day is the stored time plus 5:30 on BOTH sides of the
+    // comparison. Using CURDATE() here would cut the day at 05:30 IST.
+    const IST = '+ INTERVAL 330 MINUTE';
+    // Counted the way the cards above count: orders gross (the ORDERS card
+    // shows the total with "live" beneath it), revenue net of cancellations
+    // (the REVENUE card leaves them out). Mixing the two conventions is how a
+    // banner ends up disagreeing with the card it sits above.
+    const today = await db.one(
+      `SELECT COUNT(*) orders,
+              SUM(${LIVE}) live,
+              ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
+         FROM ims_orders
+        WHERE DATE(order_date ${IST}) = DATE(UTC_TIMESTAMP() ${IST})`).catch(() => null);
 
     // ── Bunai B2B ──
     // The wholesale orders, typed in on their own page, summed over the same
@@ -178,6 +196,11 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
         unlinked: { orders: Number(unlinked?.n) || 0, amount: Number(unlinked?.amount) || 0 },
       },
       byChannel, byStatus, byPayment, daily, topSkus: products, topStates, recent, span, lastSync,
+      today: {
+        orders: Number(today?.orders) || 0,
+        live: Number(today?.live) || 0,
+        revenue: Number(today?.revenue) || 0,
+      },
       // The wholesale half, kept as its own block so the page can show the two
       // side by side and a combined figure above them.
       b2b: {
