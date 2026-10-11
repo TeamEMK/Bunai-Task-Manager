@@ -266,10 +266,17 @@ async function syncStock() {
       `UPDATE uni_inventory SET inventory = 0, synced_at = CURRENT_TIMESTAMP
         WHERE inventory > 0 AND synced_at < ?`, [started]);
 
-    // Aaj ka snapshot history mein.
+    // Aaj ka snapshot history mein — India ka "aaj", server ka nahi.
+    //
+    // CURDATE() yahan UTC deta hai. Jab sync din mein ek baar 01:30 UTC par
+    // chalta tha, dono taarikhein ek hi thi. Ab aath baar chalta hai, aur
+    // 19:30 aur 22:30 UTC wale run bhartiya kaayde se agle din ke hain —
+    // CURDATE() unhe pichle din par likh deta, yaani ek din ka snapshot
+    // chupchaap agli subah 04:00 IST ka ban jata.
     await pool.query(
       `INSERT INTO uni_inventory_daily (day, sku, facility, inventory)
-       SELECT CURDATE(), sku, facility, inventory FROM uni_inventory
+       SELECT DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), sku, facility, inventory
+         FROM uni_inventory
        ON DUPLICATE KEY UPDATE inventory = VALUES(inventory)`);
 
     await endRun(runId, true, seen);
@@ -360,7 +367,9 @@ async function raiseReorderTasks({
        JOIN (SELECT oi.sku, SUM(oi.order_qty) sold
                FROM ims_order_items oi JOIN ims_orders o ON o.order_id = oi.order_id
               WHERE LOWER(oi.status) <> 'cancelled'
-                AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+                -- ims_orders.order_date is IST, so the cut-off has to be too.
+                AND o.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE),
+                                             INTERVAL ? DAY)
               GROUP BY oi.sku) s ON s.sku = i.sku
        LEFT JOIN uni_items it ON it.sku = i.sku
       WHERE s.sold > i.qty

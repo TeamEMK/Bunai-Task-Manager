@@ -140,10 +140,11 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
     // Today's orders, deliberately outside the chosen window — the banner is
     // about what has come in, not about what the user is looking at.
     //
-    // ims_orders.order_date is stored in UTC (Unicommerce's own convention),
-    // so the Indian day is the stored time plus 5:30 on BOTH sides of the
-    // comparison. Using CURDATE() here would cut the day at 05:30 IST.
-    const IST = '+ INTERVAL 330 MINUTE';
+    // ims_orders.order_date is IST: the view converts the Unicommerce half,
+    // which Uniware stores in UTC. So the day to compare against is India's,
+    // which is UTC_TIMESTAMP() plus 5:30 — CURDATE() on a UTC server would cut
+    // the day at 05:30 IST. Do not add the offset to order_date again here.
+    //
     // Counted the way the cards above count: orders gross (the ORDERS card
     // shows the total with "live" beneath it), revenue net of cancellations
     // (the REVENUE card leaves them out). Mixing the two conventions is how a
@@ -153,7 +154,7 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
               SUM(${LIVE}) live,
               ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
          FROM ims_orders
-        WHERE DATE(order_date ${IST}) = DATE(UTC_TIMESTAMP() ${IST})`).catch(() => null);
+        WHERE DATE(order_date) = DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE)`).catch(() => null);
 
     // ── Bunai B2B ──
     // The wholesale orders, typed in on their own page, summed over the same

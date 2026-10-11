@@ -1141,17 +1141,31 @@ const BACKFILLS = [
   // OR-across-two-columns lookup runs for every one of ~4,800 rows and cannot
   // use an index: the reorder query took 2.5s, against 114ms with it. The date
   // is read from the data, not written in, so it stays correct by itself.
+  // One more thing the two systems disagree about: the clock. Vin eRetail
+  // records order_date in IST, Unicommerce in UTC — the same Myntra order came
+  // through as 12:41 from one and 07:11 from the other. Unioned raw, the view
+  // hands every reader a column that means IST before 1 October and UTC after,
+  // and nothing downstream can tell which row is which.
+  //
+  // So the Unicommerce side is converted here, once, rather than in each query
+  // that touches it. 65 of its 626 orders — one in ten, every one placed
+  // between midnight and 05:30 IST — were being reported on the previous day,
+  // and the daily revenue chart had a silent step in it at the handover.
+  //
+  // The cutover comparison below needs the same treatment: it holds a Vin
+  // eRetail timestamp against Unicommerce's earliest, and those were 5:30
+  // apart too.
   [`CREATE OR REPLACE VIEW ims_orders AS
       SELECT v.order_id, v.ext_order_no, v.order_date, v.status, v.channel_name,
              v.order_amount, v.payment_method, v.customer_name, v.customer_phone,
              v.ship_city, v.ship_state, v.synced_at, 'vinculum' AS source
         FROM vin_orders v
-       WHERE v.order_date < (SELECT MIN(order_date) FROM uni_orders)
+       WHERE v.order_date < (SELECT MIN(order_date) + INTERVAL 330 MINUTE FROM uni_orders)
           OR NOT EXISTS (SELECT 1 FROM uni_orders u
                           WHERE u.code = v.ext_order_no OR u.display_code = v.ext_order_no
                              OR u.code = v.order_id    OR u.display_code = v.order_id)
       UNION ALL
-      SELECT u.code, u.display_code, u.order_date, u.status, u.channel,
+      SELECT u.code, u.display_code, u.order_date + INTERVAL 330 MINUTE, u.status, u.channel,
              u.order_amount, CASE WHEN u.cod = 1 THEN 'COD' ELSE 'Prepaid' END,
              u.customer_name, u.notification_mobile, u.ship_city, u.ship_state,
              u.synced_at, 'unicommerce'
@@ -1170,7 +1184,9 @@ const BACKFILLS = [
                  ON u.code = v.ext_order_no OR u.display_code = v.ext_order_no
                     OR u.code = v.order_id OR u.display_code = v.order_id
                 WHERE v.order_id = it.order_id
-                  AND v.order_date >= (SELECT MIN(order_date) FROM uni_orders))
+                  -- Vin eRetail's IST against Unicommerce's UTC; see ims_orders.
+                  AND v.order_date >= (SELECT MIN(order_date) + INTERVAL 330 MINUTE
+                                         FROM uni_orders))
       UNION ALL
       SELECT it.order_code, it.sku, it.item_name, it.brand, it.status,
              1,
@@ -1204,7 +1220,8 @@ const BACKFILLS = [
       UNION ALL
       SELECT r.code,
              CASE WHEN r.return_type = 'RTO' THEN 'RTO' ELSE 'Delivered Return' END,
-             r.status, r.return_date, r.return_amount,
+             -- UTC, like everything Uniware timestamps; see ims_orders.
+             r.status, r.return_date + INTERVAL 330 MINUTE, r.return_amount,
              r.channel, r.order_code, r.order_code, r.customer_name,
              r.customer_phone, r.customer_city, r.customer_state, NULL,
              r.tracking_number, r.rto_tracking, r.invoice_code, r.facility,
