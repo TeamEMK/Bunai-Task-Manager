@@ -893,11 +893,18 @@ const TABLES = [
       KEY idx_sfy_o_ref (order_ref),
       KEY idx_sfy_o_phone (customer_phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // status is carried on the item, not looked up through the order, because
+  // every page that reads items filters with LOWER(status) <> 'cancelled' —
+  // and LOWER(NULL) is NULL, which is not true, so a null here would drop all
+  // eight years of history from the SKU and unit figures without any error.
+  // The export has no per-line status, so it is the order's: a cancelled order
+  // cancels its lines, anything else counts.
   ['sfy_order_items', `CREATE TABLE sfy_order_items (
       id           BIGINT AUTO_INCREMENT PRIMARY KEY,
       order_no     VARCHAR(60) NOT NULL,
       sku          VARCHAR(160) NULL,
       sku_name     VARCHAR(500) NULL,
+      status       VARCHAR(40) NULL,
       order_qty    INT NOT NULL DEFAULT 0,
       unit_price   DECIMAL(12,2) NULL,
       discount_amt DECIMAL(12,2) NULL,
@@ -1041,6 +1048,15 @@ const COLUMNS = [
 //   [table, index name, column list, { unique }]
 // ══════════════════════════════════════════════════════
 const INDEXES = [
+  // ── sfy_orders ──
+  // A covering index, and it is the difference between the history being
+  // usable and not. Counting and summing a year of it — 93,869 of 450,584
+  // rows — took 5.4 seconds through idx_sfy_o_date alone, because the index
+  // gives the date but every row then has to be fetched for its amount. With
+  // the amount and status in the index the range scan answers by itself: 0.28
+  // seconds, the same numbers. Every figure on the Sales page is some
+  // combination of these three columns over a date window.
+  ['sfy_orders', 'idx_sfy_o_date_amt', 'order_date, order_amount, status'],
   ['hrm_candidates', 'idx_hrm_status', 'status'],
   ['hrm_candidates', 'idx_hrm_interview', 'interview_date'],
   ['hrm_candidates', 'idx_hrm_join_token', 'joining_form_token'],
@@ -1307,16 +1323,49 @@ const BACKFILLS = [
              u.order_amount, CASE WHEN u.cod = 1 THEN 'COD' ELSE 'Prepaid' END,
              u.customer_name, u.notification_mobile, u.ship_city, u.ship_state,
              u.synced_at, 'unicommerce'
-        FROM uni_orders u`, 'view ims_orders'],
+        FROM uni_orders u
+      UNION ALL
+      -- Shopify's own eight years, ending where the live feed begins.
+      --
+      -- The guard is a date, not a NOT EXISTS: Vin eRetail's first order is
+      -- 15 May 2026 and it has carried every Shopify order since, so one
+      -- comparison separates the two eras completely and costs nothing. A
+      -- per-row existence check against 450,000 rows would not.
+      --
+      -- MIN(order_date) is read from the data rather than written in, so the
+      -- boundary stays correct if the history is ever reloaded or the feed
+      -- backfilled. Dates here are already IST, as Shopify exports in the
+      -- store's own timezone.
+      SELECT s.order_no, s.order_ref, s.order_date,
+             CASE WHEN s.cancelled_at IS NOT NULL THEN 'Cancelled'
+                  ELSE COALESCE(NULLIF(s.fulfillment, ''), s.status) END,
+             'Shopify', s.order_amount, s.payment_method, s.customer_name,
+             s.customer_phone, s.ship_city, s.ship_state, NULL, 'shopify'
+        FROM sfy_orders s
+       WHERE s.order_date < (SELECT MIN(order_date) FROM vin_orders)`, 'view ims_orders'],
 
   // Uniware has no quantity column: each saleOrderItem is one unit, so a
   // two-piece line is two rows. Hence the literal 1 — it is the honest
   // quantity, not a placeholder.
+  // order_date is carried on the line, duplicated from its order, and it is
+  // what makes this view usable at all now that it spans 580,000 rows.
+  //
+  // A UNION view is always materialised, so a date filter written against the
+  // ORDER (`JOIN ims_orders o ... WHERE o.order_date >= ?`) cannot reach the
+  // branches: MySQL builds the whole 580,000-row temporary table first and
+  // filters afterwards. Top SKUs for the default 45-day window took 14.9
+  // seconds that way. With the date on the line the filter pushes into each
+  // branch and hits an index: 0.49 seconds, same answer.
+  //
+  // So date-filter the LINE, not its order. The join to ims_orders is still
+  // right when a query needs the order's own columns — channel, city, status —
+  // but never for the date alone.
   [`CREATE OR REPLACE VIEW ims_order_items AS
-      SELECT it.order_id, it.sku, it.sku_name, it.brand, it.status,
+      SELECT it.order_id, vo.order_date, it.sku, it.sku_name, it.brand, it.status,
              it.order_qty, it.shipped_qty, it.cancelled_qty, it.return_qty,
              it.unit_price, it.discount_amt, it.tax_amount, 'vinculum' AS source
         FROM vin_order_items it
+        JOIN vin_orders vo ON vo.order_id = it.order_id
        WHERE NOT EXISTS (
                SELECT 1 FROM vin_orders v JOIN uni_orders u
                  ON u.code = v.ext_order_no OR u.display_code = v.ext_order_no
@@ -1326,13 +1375,28 @@ const BACKFILLS = [
                   AND v.order_date >= (SELECT MIN(order_date) + INTERVAL 330 MINUTE
                                          FROM uni_orders))
       UNION ALL
-      SELECT it.order_code, it.sku, it.item_name, it.brand, it.status,
+      SELECT it.order_code, uo.order_date + INTERVAL 330 MINUTE,
+             it.sku, it.item_name, it.brand, it.status,
              1,
              CASE WHEN it.status IN ('DISPATCHED','DELIVERED','SHIPPED','COMPLETE') THEN 1 ELSE 0 END,
              CASE WHEN it.status = 'CANCELLED' THEN 1 ELSE 0 END,
              0,
              it.selling_price, it.discount, it.total_gst, 'unicommerce'
-        FROM uni_order_items it`, 'view ims_order_items'],
+        FROM uni_order_items it
+        JOIN uni_orders uo ON uo.code = it.order_code
+      UNION ALL
+      -- The history's lines, behind the same cutover as its orders, so the two
+      -- views always describe the same set of orders.
+      SELECT i.order_no, s.order_date, i.sku, i.sku_name, NULL, i.status,
+             i.order_qty,
+             CASE WHEN i.status = 'cancelled' THEN 0 ELSE i.order_qty END,
+             CASE WHEN i.status = 'cancelled' THEN i.order_qty ELSE 0 END,
+             0,
+             i.unit_price, i.discount_amt, NULL, 'shopify'
+        FROM sfy_order_items i
+        JOIN sfy_orders s ON s.order_no = i.order_no
+       WHERE s.order_date < (SELECT MIN(order_date) FROM vin_orders)`,
+   'view ims_order_items'],
 
   // ── Returns: a union as well, and for the same reason as orders ──
   // Both systems are producing returns at once and will be for weeks: orders

@@ -21,6 +21,10 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
     // Half-open [from, to+1day) so the whole "to" day is included.
     const dc  = ranged ? '(order_date >= ? AND order_date < DATE_ADD(?, INTERVAL 1 DAY))' : '1=1';
     const dcO = ranged ? '(o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY))' : '1=1';
+    // Same window, written against the LINE. ims_order_items carries its
+    // order's date so that item queries never have to join to filter by it —
+    // see the view's comment for why that difference is worth 14 seconds.
+    const dcI = ranged ? '(i.order_date >= ? AND i.order_date < DATE_ADD(?, INTERVAL 1 DAY))' : '1=1';
     const A = ranged ? [from, to] : [];   // date args, prepended to each query
 
     // Gross or net. The client wants both: revenue as it was sold, and revenue
@@ -68,11 +72,14 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
             GROUP BY DATE(o.order_date) ORDER BY d`, A),
         // Deliberately more than the fifteen shown: netting reorders the list, so
         // trimming first would rank by gross and then relabel it net.
+        // No join to ims_orders: the line carries order_date, and filtering it
+        // there is what lets the date reach inside the UNION. Joining instead
+        // materialises all 580,000 lines first — 14.9 seconds against 0.49.
         db.rows(
           `SELECT i.sku, COALESCE(NULLIF(MAX(i.sku_name),''), i.sku) sku_name,
                   ROUND(SUM(i.order_qty)) qty, ROUND(SUM(i.order_qty * i.unit_price)) value
-             FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
-            WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'
+             FROM ims_order_items i
+            WHERE ${dcI} AND LOWER(i.status) <> 'cancelled'
             GROUP BY i.sku ORDER BY qty DESC LIMIT 80`, A),
         db.rows(
           `SELECT COALESCE(NULLIF(o.ship_state,''),'(unknown)') state, COUNT(*) n,
@@ -87,8 +94,8 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
              FROM ims_orders WHERE ${dc}`, A),
         db.one(
           `SELECT ROUND(SUM(i.order_qty)) units
-             FROM ims_order_items i JOIN ims_orders o ON o.order_id = i.order_id
-            WHERE ${dcO} AND LOWER(i.status) <> 'cancelled'`, A),
+             FROM ims_order_items i
+            WHERE ${dcI} AND LOWER(i.status) <> 'cancelled'`, A),
         // What netting takes out, reported whichever mode is on — a net figure
         // nobody can reconcile against the gross one is not worth showing.
         db.one(
@@ -105,10 +112,24 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
             WHERE ${dcO} AND ${LIVE_O} GROUP BY ri.sku`, A).catch(() => []),
         // Returns whose order is not on file cannot be put in any window. They
         // are named rather than quietly dropped, so the totals can be argued with.
+        //
+        // This one asks the three base tables instead of the ims_orders view,
+        // and it is the only query here that does. It has no date filter — the
+        // whole point is returns that match nothing — so against the view it
+        // materialises all 450,000 rows to find 376 misses among 2,338 returns:
+        // 7.3 seconds, against 0.47 going straight to the indexes. NOT EXISTS
+        // on the view was slower still.
+        //
+        // The cost is that this list has to be kept in step with the view by
+        // hand. A fourth order source added to ims_orders and not added here
+        // would make these returns look unlinked when they are not.
         db.one(
           `SELECT COUNT(*) n, ROUND(SUM(rr.return_amount)) amount
-             FROM ims_returns rr LEFT JOIN ims_orders o ON o.order_id = rr.eretail_order_no
-            WHERE o.order_id IS NULL`).catch(() => null),
+             FROM ims_returns rr
+            WHERE NOT EXISTS (SELECT 1 FROM vin_orders v WHERE v.order_id = rr.eretail_order_no)
+              AND NOT EXISTS (SELECT 1 FROM uni_orders u WHERE u.code = rr.eretail_order_no)
+              AND NOT EXISTS (SELECT 1 FROM sfy_orders s WHERE s.order_no = rr.eretail_order_no)`)
+          .catch(() => null),
       ]);
 
     // Products: take the returns off each one, then rank. Units and value both
@@ -154,7 +175,9 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
               SUM(${LIVE}) live,
               ROUND(SUM(CASE WHEN ${LIVE} THEN order_amount ELSE 0 END)) revenue
          FROM ims_orders
-        WHERE DATE(order_date) = DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE)`).catch(() => null);
+        WHERE order_date >= DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE)
+          AND order_date <  DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE) + INTERVAL 1 DAY`)
+      .catch(() => null);
 
     // ── Bunai B2B ──
     // The wholesale orders, typed in on their own page, summed over the same

@@ -87,9 +87,8 @@ router.get('/stock', requireAuth, async (req, res) => {
            LEFT JOIN (
              SELECT DISTINCT oi.sku
                FROM ims_order_items oi
-               JOIN ims_orders o ON o.order_id = oi.order_id
               WHERE LOWER(oi.status) <> 'cancelled'
-                AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+                AND oi.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
            ) sold ON sold.sku = i.sku`),
     ]);
 
@@ -103,9 +102,9 @@ router.get('/stock', requireAuth, async (req, res) => {
         // clause that size, and the extra SKUs simply go unclaimed.
         const sold = await db.rows(
           `SELECT it.sku, SUM(it.order_qty) sold
-             FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
+             FROM ims_order_items it
             WHERE LOWER(it.status) <> 'cancelled'
-              AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+              AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
             GROUP BY it.sku`);
         const m = {};
         for (const s of sold) m[s.sku] = Number(s.sold) || 0;
@@ -115,9 +114,9 @@ router.get('/stock', requireAuth, async (req, res) => {
         if (skus.length) {
           const sold = await db.rows(
             `SELECT it.sku, SUM(it.order_qty) sold
-               FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
+               FROM ims_order_items it
               WHERE LOWER(it.status) <> 'cancelled'
-                AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+                AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
                 AND it.sku IN (${skus.map(() => '?').join(',')})
               GROUP BY it.sku`, skus);
           const m = {};
@@ -157,18 +156,18 @@ router.get('/stock', requireAuth, async (req, res) => {
     try {
       const u = await db.one(
         `SELECT ROUND(SUM(it.order_qty)) units, COUNT(DISTINCT it.sku) skus
-           FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
+           FROM ims_order_items it
           WHERE LOWER(it.status) <> 'cancelled'
-            AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)`);
+            AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)`);
       const rc = await db.one(
         `SELECT COUNT(*) n FROM (
            SELECT i.qty, COALESCE(sold.s, 0) sold
              FROM ims_inventory i
              LEFT JOIN (
                SELECT it.sku, SUM(it.order_qty) s
-                 FROM ims_order_items it JOIN ims_orders o ON o.order_id = it.order_id
+                 FROM ims_order_items it
                 WHERE LOWER(it.status) <> 'cancelled'
-                  AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL ${soldDays} DAY)
+                  AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
                 GROUP BY it.sku
              ) sold ON sold.sku = i.sku
             WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0

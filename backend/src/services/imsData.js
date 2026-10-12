@@ -77,10 +77,9 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
               ON inv.sku = u.sku
        LEFT JOIN (SELECT it.sku, SUM(it.order_qty) qty
                     FROM ims_order_items it
-                    JOIN ims_orders o ON o.order_id = it.order_id
                    WHERE LOWER(it.status) <> 'cancelled'
-                     AND o.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
-                     AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)
+                     AND it.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
+                     AND it.order_date <  DATE_ADD(?, INTERVAL 1 DAY)
                    GROUP BY it.sku) sold
               ON sold.sku = u.sku
        LEFT JOIN (SELECT ri.sku, SUM(ri.return_qty) qty
@@ -243,10 +242,10 @@ async function getSalesRankData(fromStr, toStr) {
     const clock = ranged ? null : await dataClock();
     const where = ranged
       // An explicit range is taken literally, both ends included.
-      ? 'o.order_date >= ? AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)'
+      ? 'it.order_date >= ? AND it.order_date < DATE_ADD(?, INTERVAL 1 DAY)'
       // The default is the window ending at the last order, matching skuBase.
-      : `o.order_date > DATE_SUB(?, INTERVAL ${AVG_WINDOW_DAYS} DAY)
-         AND o.order_date < DATE_ADD(?, INTERVAL 1 DAY)`;
+      : `it.order_date > DATE_SUB(?, INTERVAL ${AVG_WINDOW_DAYS} DAY)
+         AND it.order_date < DATE_ADD(?, INTERVAL 1 DAY)`;
     const args = ranged ? [fromStr, toStr] : [clock.anchor, clock.anchor];
 
     const sold = await db.rows(
@@ -256,7 +255,6 @@ async function getSalesRankData(fromStr, toStr) {
               ROUND(AVG(NULLIF(it.unit_price,0)), 2) avg_price,
               ROUND(SUM(it.order_qty * it.unit_price)) value
          FROM ims_order_items it
-         JOIN ims_orders o ON o.order_id = it.order_id
         WHERE LOWER(it.status) <> 'cancelled' AND ${where}
         GROUP BY it.sku`, args);
 
