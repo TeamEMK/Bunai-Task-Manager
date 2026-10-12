@@ -1332,8 +1332,8 @@ const BACKFILLS = [
       -- comparison separates the two eras completely and costs nothing. A
       -- per-row existence check against 450,000 rows would not.
       --
-      -- MIN(order_date) is read from the data rather than written in, so the
-      -- boundary stays correct if the history is ever reloaded or the feed
+      -- MIN(order_date) comes out of the data rather than being written in, so
+      -- the boundary stays correct if the history is ever reloaded or the feed
       -- backfilled. Dates here are already IST, as Shopify exports in the
       -- store's own timezone.
       SELECT s.order_no, s.order_ref, s.order_date,

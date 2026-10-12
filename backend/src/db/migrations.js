@@ -134,12 +134,29 @@ async function runMigrations({ verbose = true } = {}) {
 
   // ── 4) Backfills ─────────────────────────────────────
   for (const [sql, label] of BACKFILLS) {
+    // Comments first. The scan below looks for the word after FROM or JOIN,
+    // and English prose is full of both: a comment reading "is read from the
+    // data" hands it a table called `the`, which no database has, so the
+    // statement is skipped — silently, on every boot, for ever. That is what
+    // happened to the ims_orders view on 12 Oct 2026; it ran by hand and was
+    // dropped by the migration eight times a day with nothing in the log.
+    const bare = sql.replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ');
+
     // Every table the statement names, not just the first word after UPDATE:
     // a backfill may insert into one table by reading another, and both have
     // to exist before it can run.
-    const named = [...sql.matchAll(/(?:UPDATE|INSERT\s+INTO|FROM|JOIN)\s+`?(\w+)`?/gi)]
+    const named = [...bare.matchAll(/(?:UPDATE|INSERT\s+INTO|FROM|JOIN)\s+`?(\w+)`?/gi)]
       .map(m => m[1]);
-    if (!named.length || !named.every(hasTable)) continue;
+
+    // A name that is no table of ours is worth saying out loud. Skipping is
+    // right when a table genuinely has not been created yet, but it is also
+    // how a typo disappears, and the whole point here is that it did.
+    const missing = [...new Set(named)].filter(t => !hasTable(t));
+    if (missing.length) {
+      note(`• ${label} skipped — no such table: ${missing.join(', ')}`);
+      continue;
+    }
+    if (!named.length) continue;
     await exec(sql, label);
   }
 
