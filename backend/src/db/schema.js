@@ -765,6 +765,144 @@ const TABLES = [
       ok           TINYINT(1) NOT NULL DEFAULT 0,
       error        TEXT NULL,
       KEY idx_uni_rls (started_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  // ── PMS — production management ─────────────────────
+  // pms_steps is the workflow template (editable in PMS → Settings). Every
+  // order copies it into pms_order_steps when it is created, so editing the
+  // template later never rewrites an order already on the floor. All PMS
+  // DATETIMEs are IST wall-clock, written as strings by pms.routes.js.
+  ['pms_steps', `CREATE TABLE pms_steps (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      step_no       INT NOT NULL,
+      name          VARCHAR(160) NOT NULL,
+      doer_label    VARCHAR(160) DEFAULT '',
+      default_user_id INT DEFAULT NULL,
+      tat_days      DECIMAL(5,1) NOT NULL DEFAULT 1,
+      condition_key VARCHAR(40) DEFAULT NULL,
+      fill_label    VARCHAR(160) DEFAULT '',
+      uses_vendor   TINYINT(1) NOT NULL DEFAULT 0,
+      active        TINYINT(1) NOT NULL DEFAULT 1,
+      KEY idx_pms_steps_no (step_no)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['pms_vendors', `CREATE TABLE pms_vendors (
+      id         INT AUTO_INCREMENT PRIMARY KEY,
+      name       VARCHAR(200) NOT NULL,
+      phone      VARCHAR(40) DEFAULT '',
+      category   VARCHAR(120) DEFAULT '',
+      address    VARCHAR(500) DEFAULT '',
+      notes      TEXT,
+      active     TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['pms_orders', `CREATE TABLE pms_orders (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      order_code     VARCHAR(20) DEFAULT NULL,
+      order_no       VARCHAR(120) DEFAULT '',
+      source         VARCHAR(20) NOT NULL DEFAULT 'manual',
+      uni_order_code VARCHAR(120) DEFAULT NULL,
+      client_name    VARCHAR(200) NOT NULL,
+      client_phone   VARCHAR(40) DEFAULT '',
+      party          VARCHAR(200) DEFAULT '',
+      channel        VARCHAR(80) DEFAULT '',
+      sales_person_id INT DEFAULT NULL,
+      product        VARCHAR(300) NOT NULL,
+      sku            VARCHAR(120) DEFAULT '',
+      category       VARCHAR(80) DEFAULT '',
+      yarn           VARCHAR(200) DEFAULT '',
+      color          VARCHAR(120) DEFAULT '',
+      sizes          VARCHAR(300) DEFAULT '',
+      qty            INT NOT NULL DEFAULT 1,
+      order_type     VARCHAR(20) NOT NULL DEFAULT 'new',
+      priority       VARCHAR(20) NOT NULL DEFAULT 'normal',
+      flags          VARCHAR(300) DEFAULT '',
+      description    TEXT,
+      photo          LONGTEXT,
+      order_date     DATE NOT NULL,
+      delivery_date  DATE DEFAULT NULL,
+      status         VARCHAR(20) NOT NULL DEFAULT 'active',
+      created_by     INT DEFAULT NULL,
+      created_at     DATETIME NOT NULL,
+      completed_at   DATETIME DEFAULT NULL,
+      UNIQUE KEY uq_pms_order_code (order_code),
+      KEY idx_pms_orders_status (status),
+      KEY idx_pms_orders_uni (uni_order_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['pms_order_steps', `CREATE TABLE pms_order_steps (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      order_id    INT NOT NULL,
+      step_id     INT DEFAULT NULL,
+      step_no     INT NOT NULL,
+      name        VARCHAR(160) NOT NULL,
+      tat_days    DECIMAL(5,1) NOT NULL DEFAULT 1,
+      condition_key VARCHAR(40) DEFAULT NULL,
+      fill_label  VARCHAR(160) DEFAULT '',
+      uses_vendor TINYINT(1) NOT NULL DEFAULT 0,
+      status      VARCHAR(12) NOT NULL DEFAULT 'waiting',
+      doer_id     INT DEFAULT NULL,
+      vendor_id   INT DEFAULT NULL,
+      planned_at  DATETIME DEFAULT NULL,
+      actual_at   DATETIME DEFAULT NULL,
+      done_by     INT DEFAULT NULL,
+      fill_value  VARCHAR(300) DEFAULT '',
+      remarks     TEXT,
+      KEY idx_pms_os_order (order_id, step_no),
+      KEY idx_pms_os_open (status, doer_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['pms_order_updates', `CREATE TABLE pms_order_updates (
+      id         INT AUTO_INCREMENT PRIMARY KEY,
+      order_id   INT NOT NULL,
+      user_id    INT DEFAULT NULL,
+      kind       VARCHAR(20) NOT NULL DEFAULT 'note',
+      text       TEXT,
+      created_at DATETIME NOT NULL,
+      KEY idx_pms_up_order (order_id),
+      KEY idx_pms_up_time (created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  // ── Shopify's own history, 2018 to the cutover ────────────────────────
+  // Neither Vin eRetail nor Unicommerce was in the picture before 15 May 2026,
+  // so everything the store sold in its first eight years lived only in
+  // Shopify. The client exported it (450,584 orders, 22 Jun 2018 onward) and
+  // backend/scripts/import-shopify-history.js loads it here, once.
+  //
+  // Nothing writes to these tables on a schedule. They are a fixed record of a
+  // closed period: the live syncs own everything from the cutover forward, and
+  // the ims_orders view takes these rows only for dates before it, so the two
+  // can never count the same order twice.
+  //
+  // order_no is Shopify's order name ("Bunai483052"); order_ref is the digits
+  // alone, which is what Vin eRetail stores in ext_order_no — kept as its own
+  // indexed column so the overlap can be checked without a LIKE on every row.
+  ['sfy_orders', `CREATE TABLE sfy_orders (
+      order_no        VARCHAR(60) NOT NULL PRIMARY KEY,
+      order_ref       VARCHAR(40) NULL,
+      order_date      DATETIME NULL,
+      status          VARCHAR(40) NULL,
+      fulfillment     VARCHAR(40) NULL,
+      order_amount    DECIMAL(12,2) NULL,
+      subtotal        DECIMAL(12,2) NULL,
+      shipping        DECIMAL(12,2) NULL,
+      taxes           DECIMAL(12,2) NULL,
+      discount_amount DECIMAL(12,2) NULL,
+      discount_code   VARCHAR(160) NULL,
+      payment_method  VARCHAR(120) NULL,
+      customer_name   VARCHAR(200) NULL,
+      customer_email  VARCHAR(255) NULL,
+      customer_phone  VARCHAR(40) NULL,
+      ship_city       VARCHAR(120) NULL,
+      ship_state      VARCHAR(120) NULL,
+      ship_pincode    VARCHAR(20) NULL,
+      cancelled_at    DATETIME NULL,
+      total_lines     INT NOT NULL DEFAULT 0,
+      KEY idx_sfy_o_date (order_date),
+      KEY idx_sfy_o_ref (order_ref),
+      KEY idx_sfy_o_phone (customer_phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  ['sfy_order_items', `CREATE TABLE sfy_order_items (
+      id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+      order_no     VARCHAR(60) NOT NULL,
+      sku          VARCHAR(160) NULL,
+      sku_name     VARCHAR(500) NULL,
+      order_qty    INT NOT NULL DEFAULT 0,
+      unit_price   DECIMAL(12,2) NULL,
+      discount_amt DECIMAL(12,2) NULL,
+      KEY idx_sfy_i_order (order_no),
+      KEY idx_sfy_i_sku (sku)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 ];
 
 // Columns added after a table first shipped. [table, column, DDL fragment]
