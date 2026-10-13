@@ -676,19 +676,12 @@
   </div>
 
   <div id="page-scot" class="page">
-    <div id="scotTiles" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <div class="lv-tabs" id="scotTabs"></div>
+    <input type="hidden" id="scotFilter" value=""/>
 
     <div style="display:flex;align-items:center;gap:10px;margin:0 2px 10px;flex-wrap:wrap">
       <input id="scotSearch" type="text" placeholder="Search name, phone, city, email…"
         oninput="scotDebounced()" style="min-width:250px;max-width:360px"/>
-      <select id="scotFilter" onchange="loadScot()">
-        <option value="">Everyone</option>
-        <option value="overdue">Overdue</option>
-        <option value="due">Due soon</option>
-        <option value="gone">Gone quiet</option>
-        <option value="on-track">On track</option>
-        <option value="one-time">One-time</option>
-      </select>
       <span style="flex:1"></span>
       <span id="scotNote" style="font-size:12px;color:var(--muted-foreground)"></span>
     </div>
@@ -723,8 +716,8 @@
       <input id="whSearch" type="text" placeholder="Search SKU or product…" oninput="whFilterRows()" style="min-width:240px"/>
     </div>
 
-    <!-- The two cards ARE the switch: clicking one shows its variants below. -->
-    <div id="whCards" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px"></div>
+    <div class="lv-tabs" id="whTabs"></div>
+    <div id="whFigures" style="margin:0 2px 14px"></div>
 
     <div style="display:flex;align-items:baseline;gap:10px;margin:0 2px 8px;flex-wrap:wrap">
       <div id="whTableTitle" style="font-size:14px;font-weight:700"></div>
@@ -748,15 +741,11 @@
   </div>
 
   <div id="page-samples" class="page">
-    <div id="sampleTiles" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+    <div class="lv-tabs" id="sampleTabs"></div>
 
     <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
       <input id="sampleSearch" type="text" placeholder="Search style ID, fabric, notes…" oninput="sampleSearchDebounced()" style="min-width:260px;max-width:380px"/>
-      <select id="sampleFilter" onchange="loadSamples()">
-        <option value="">All styles</option>
-        <option value="Production">Production</option>
-        <option value="Outstanding">Outstanding</option>
-      </select>
+      <input type="hidden" id="sampleFilter" value=""/>
       <span style="flex:1"></span>
       <button class="btn btn-primary" onclick="sampleOpen()">+ Add style</button>
     </div>

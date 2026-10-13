@@ -10801,20 +10801,17 @@ async function loadSamples() {
   }
   _sampleRows = d.rows || [];
 
-  const tiles = document.getElementById('sampleTiles');
-  if (tiles) {
-    const tile = (label, n, hint) =>
-      '<div style="flex:0 1 190px;background:var(--card);border:1px solid var(--border);'
-      + 'border-radius:14px;padding:14px 16px">'
-      + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;'
-      + 'color:var(--muted-foreground);margin-bottom:8px">' + label + '</div>'
-      + '<div style="font-size:23px;font-weight:800;line-height:1">'
-      + Number(n || 0).toLocaleString('en-IN') + '</div>'
-      + (hint ? '<div style="font-size:11.5px;color:var(--faint);margin-top:6px">' + hint + '</div>' : '')
-      + '</div>';
-    tiles.innerHTML = tile('All styles', d.counts.all)
-      + tile('Production', d.counts.production, 'approved to make')
-      + tile('Outstanding', d.counts.outstanding, 'still being decided');
+  const tabs = document.getElementById('sampleTabs');
+  if (tabs) {
+    const cur = document.getElementById('sampleFilter').value;
+    const num = v => Number(v || 0).toLocaleString('en-IN');
+    const tab = (key, label, count) =>
+      '<div class="lv-tab' + (cur === key ? ' active' : '') + '"'
+      + ' onclick="samplePick(\'' + key + '\')">' + label
+      + '<span class="lv-tab-badge">' + num(count) + '</span></div>';
+    tabs.innerHTML = tab('', 'All styles', d.counts.all)
+      + tab('Production', 'Production', d.counts.production)
+      + tab('Outstanding', 'Outstanding', d.counts.outstanding);
   }
 
   if (!_sampleRows.length) {
@@ -10926,6 +10923,11 @@ async function saveSample(btn) {
   }
 }
 
+function samplePick(key) {
+  document.getElementById('sampleFilter').value = key;
+  loadSamples();
+}
+
 async function sampleDelete(id) {
   const r = _sampleRows.find(x => x.id === id);
   if (!confirm('Delete ' + (r ? r.style_id : 'this style') + '? This cannot be undone.')) return;
@@ -10978,38 +10980,26 @@ function whQuery() {
 
 const whNum = n => Number(n || 0).toLocaleString('en-IN');
 
-function whCard(w, active) {
-  // A fixed four-column grid, not a flex row. At 340px wide the four stats did
-  // not fit side by side and Return dropped onto a line of its own.
-  const stat = (label, value) =>
-    '<div>'
-    + '<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;'
-    + 'color:var(--muted-foreground)">' + label + '</div>'
-    + '<div style="font-size:20px;font-weight:800;line-height:1.3">' + whNum(value) + '</div></div>';
+// Two tabs and a line of figures, where there were two cards carrying four
+// numbers each. The cards were the only way to switch warehouse, so the tabs
+// take that job.
+function whTabStrip(list, current) {
+  return list.map(w =>
+    '<div class="lv-tab' + (w.key === current ? ' active' : '') + '"'
+    + ' onclick="whPick(\'' + w.key + '\')">' + dtEscape(w.label) + '</div>').join('');
+}
 
-  // The selected card is a wash in the brand tint, not a thick ring in the
-  // brand's mid tone. The brand here is a rose, and a 2px rose border with a
-  // solid rose badge reads as a warning rather than a choice.
-  const pick = "whPick('" + w.key + "')";
-  return '<div onclick="' + pick + '" role="button" tabindex="0"'
-    + ' onkeydown="if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();' + pick + '}"'
-    + ' style="flex:0 1 340px;cursor:pointer;border-radius:14px;padding:15px 17px;'
-    + 'border:1px solid ' + (active ? 'var(--brand-mid)' : 'var(--border)') + ';'
-    + 'background:' + (active ? 'var(--brand-tint)' : 'var(--card)') + ';'
-    + 'transition:background .12s,border-color .12s">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
-    + '<div style="font-size:15px;font-weight:700">' + dtEscape(w.label) + '</div>'
-    + (active
-        ? '<span style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;'
-          + 'color:var(--brand-deep)">Showing</span>'
-        : '<span style="font-size:11.5px;color:var(--muted-foreground)">click to view</span>')
-    + '</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'
-    + stat('Stock', w.stock) + stat('Shipped', w.shipped)
-    + stat('RTO', w.rto) + stat('Return', w.returned)
-    + '</div>'
-    + '<div style="font-size:11.5px;color:var(--faint);margin-top:10px">'
-    + whNum(w.skus) + ' variants in stock · ' + dtEscape(w.code) + '</div></div>';
+function whFigureLine(w) {
+  if (!w) return '';
+  const fig = (label, value) =>
+    '<span style="margin-right:20px"><span style="font-size:11px;font-weight:700;'
+    + 'letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">'
+    + label + '</span> <span style="font-size:17px;font-weight:700">' + whNum(value) + '</span></span>';
+  return '<div style="display:flex;flex-wrap:wrap;align-items:baseline">'
+    + fig('Stock', w.stock) + fig('Shipped', w.shipped)
+    + fig('RTO', w.rto) + fig('Return', w.returned)
+    + '<span style="font-size:12px;color:var(--faint)">'
+    + whNum(w.skus) + ' variants in stock · ' + dtEscape(w.code) + '</span></div>';
 }
 
 async function loadWarehouse() {
@@ -11030,10 +11020,11 @@ async function loadWarehouse() {
     return;
   }
 
-  const cards = document.getElementById('whCards');
-  if (cards) {
-    cards.innerHTML = (cmp.warehouses || [])
-      .map(w => whCard(w, w.key === _whFacility)).join('');
+  const tabs = document.getElementById('whTabs');
+  if (tabs) tabs.innerHTML = whTabStrip(cmp.warehouses || [], _whFacility);
+  const figures = document.getElementById('whFigures');
+  if (figures) {
+    figures.innerHTML = whFigureLine((cmp.warehouses || []).find(w => w.key === _whFacility));
   }
 
   const t = d.totals || {};
@@ -11291,26 +11282,19 @@ async function loadScot() {
   const when = s => (s ? new Date(s + 'T00:00:00Z').toLocaleDateString('en-IN',
     { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
-  // The counts are what the page is for, so they double as the filter.
-  const tiles = document.getElementById('scotTiles');
-  if (tiles) {
-    const tile = (key, label, hint) => {
-      const on = document.getElementById('scotFilter').value === key;
-      return '<div onclick="scotPick(\'' + key + '\')" role="button" tabindex="0"'
-        + ' style="flex:0 1 165px;cursor:pointer;border-radius:14px;padding:13px 15px;'
-        + 'border:1px solid ' + (on ? 'var(--brand-mid)' : 'var(--border)') + ';'
-        + 'background:' + (on ? 'var(--brand-tint)' : 'var(--card)') + '">'
-        + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;'
-        + 'color:var(--muted-foreground);margin-bottom:7px">' + label + '</div>'
-        + '<div style="font-size:23px;font-weight:800;line-height:1">' + n(d.counts[key === '' ? 'all' : key]) + '</div>'
-        + (hint ? '<div style="font-size:11.5px;color:var(--faint);margin-top:5px">' + hint + '</div>' : '')
-        + '</div>';
-    };
-    tiles.innerHTML = tile('', 'Everyone')
-      + tile('overdue', 'Overdue', 'past their usual gap')
-      + tile('due', 'Due soon', 'within two days')
-      + tile('gone', 'Gone quiet', 'a whole cycle late')
-      + tile('on-track', 'On track');
+  // The counts are what the page is for, so they double as the filter. They
+  // were five boxed cards, which is a lot of chrome for five numbers; this is
+  // the tab strip the rest of the app already uses.
+  const tabs = document.getElementById('scotTabs');
+  if (tabs) {
+    const cur = document.getElementById('scotFilter').value;
+    const tab = (key, label) =>
+      '<div class="lv-tab' + (cur === key ? ' active' : '') + '"'
+      + ' onclick="scotPick(\'' + key + '\')">' + label
+      + '<span class="lv-tab-badge">' + n(d.counts[key === '' ? 'all' : key]) + '</span></div>';
+    tabs.innerHTML = tab('', 'Everyone') + tab('overdue', 'Overdue')
+      + tab('due', 'Due soon') + tab('gone', 'Gone quiet')
+      + tab('on-track', 'On track') + tab('one-time', 'One-time');
   }
 
   const note = document.getElementById('scotNote');
