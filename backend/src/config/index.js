@@ -96,6 +96,9 @@ module.exports = {
       gid: num(process.env.B2B_GID, 0),
       startRow: num(process.env.B2B_START_ROW, 2),
     },
+    scot: {
+      id: process.env.SCOT_SHEET_ID || '',
+    },
     samples: {
       id: process.env.SAMPLES_SHEET_ID || '',
       gid: num(process.env.SAMPLES_GID, 0),

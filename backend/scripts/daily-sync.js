@@ -48,6 +48,7 @@ const uniOrders = require(path.join(__dirname, '..', 'uni-orders-sync'));
 const vinReturns = require(path.join(__dirname, '..', 'returns-sync'));
 const uniReturns = require(path.join(__dirname, '..', 'uni-returns-sync'));
 const sfyOrders = require(path.join(__dirname, '..', 'shopify-sync'));
+const scotSheet = require(path.join(__dirname, '..', 'scot-sheet'));
 
 const uniMissing = () => uni.missingConfig().length
   ? 'Unicommerce configured nahi (' + uni.missingConfig().join(', ') + ')' : null;
@@ -126,6 +127,18 @@ step('Orders (Shopify)', async () => {
   const r = await sfyOrders.syncOrders({ days: Number(process.env.SHOPIFY_DAYS || 7) });
   return `${r.orders} orders, ${r.fresh} new or changed`;
 }, sfyMissing);
+
+// The calling list, pushed out to the sheet the team rings from. It knows its
+// own rhythm — the 12-month tab daily, the all-customers tab weekly — so eight
+// syncs a day do not become eight rewrites of a quarter of a million rows.
+step('SCOT sheet', async () => {
+  const r = await scotSheet.refresh({ log: () => {} });
+  if (r.skipped) return 'skip: ' + r.skipped;
+  const bits = [];
+  bits.push(r.scot.skipped ? 'SCOT ' + r.scot.skipped : `SCOT ${r.scot.rows} rows`);
+  bits.push(r.lifetime.skipped ? 'Lifetime ' + r.lifetime.skipped : `Lifetime ${r.lifetime.rows} rows`);
+  return bits.join(', ');
+}, () => (process.env.SCOT_SHEET_ID ? null : 'SCOT_SHEET_ID set nahi'));
 
 step('Returns (Unicommerce)', async () => {
   await uniReturns.ensureTables();
