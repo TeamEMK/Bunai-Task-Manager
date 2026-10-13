@@ -16,6 +16,8 @@
 // where the truth is "not decided yet".
 // ══════════════════════════════════════════════════════
 const express = require('express');
+const config = require('../config');
+const google = require('../services/google');
 const { db } = require('../db/pool');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
@@ -63,6 +65,68 @@ const COLS = ['style_id', 'image_url', 'notes', 'kurta_fabric', 'pant_fabric',
   'dupatta_fabric', 'fabric_remarks', 'has_lining', 'lining_fabric', 'status',
   'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra'];
 
+// ── The Google Sheet half ─────────────────────────────
+// Every style lands in two places, here and the client's sheet, on the same
+// terms as the B2B book: saved here first, written there second. None of this
+// throws — a style that saved and failed to reach the sheet is worth keeping
+// and worth saying so about, not worth losing.
+//
+// The sheet's column order is the workbook's, which is the client's: the
+// sixteen headings they sent, in their order, with Last Updated at the end.
+const SHEET_COLS = ['style_id', 'image_url', 'notes', 'kurta_fabric', 'pant_fabric',
+  'dupatta_fabric', 'fabric_remarks', 'has_lining', 'lining_fabric', 'status',
+  'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra'];
+const FIRST_COL = 'A';
+const LAST_COL = 'P';      // fifteen fields plus Last Updated
+const PROBE_COL = 'A';     // the style id — a row with none is a free row
+
+const MONEY = ['costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra'];
+
+// Money crosses as a bare number so the client can sum a column; a rupee sign
+// would turn every one of them into text. Blank stays blank, never 0.
+const asRow = (r) => [
+  ...SHEET_COLS.map((c) => {
+    if (MONEY.includes(c)) return (r[c] === null || r[c] === undefined || r[c] === '' ? '' : r[c]);
+    return r[c] || '';
+  }),
+  new Date().toLocaleDateString('en-GB'),   // Last Updated, as dd/mm/yyyy
+];
+
+const sheetConfigured = () => !!config.sheets.samples.id;
+const tab = () => google.resolveTabNameByGid(config.sheets.samples.id, config.sheets.samples.gid);
+
+// The first line with no style id on it, at or after the start row.
+async function nextRow(tabName) {
+  const { id, startRow } = config.sheets.samples;
+  const col = await google.readValues(
+    id, `${tabName}!${PROBE_COL}${startRow}:${PROBE_COL}100000`, { fresh: true });
+  for (let i = 0; i < col.length; i++) {
+    if (!col[i] || !String(col[i][0] || '').trim()) return startRow + i;
+  }
+  return startRow + col.length;
+}
+
+async function writeRow(row, record) {
+  if (!sheetConfigured()) return { ok: false, reason: 'no sheet configured' };
+  try {
+    const { id } = config.sheets.samples;
+    const tabName = await tab();
+    const at = row || await nextRow(tabName);
+    const api = await google.getWriteClient();
+    await api.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${tabName}!${FIRST_COL}${at}:${LAST_COL}${at}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [asRow(record)] },
+    });
+    google.invalidateSheet(id);
+    return { ok: true, row: at };
+  } catch (err) {
+    console.error('⚠️ Sampling sheet write failed:', err.message);
+    return { ok: false, reason: err.message };
+  }
+}
+
 router.get('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const q = txt(req.query.q, 120);
   const status = STATUSES.includes(txt(req.query.status, 20)) ? txt(req.query.status, 20) : '';
@@ -109,7 +173,10 @@ router.post('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) =
     `INSERT INTO sample_styles (${COLS.join(', ')}, created_by)
      VALUES (${COLS.map(() => '?').join(', ')}, ?)`,
     [...COLS.map(c => v[c]), req.user?.userId || null]);
-  res.json({ ok: true, id: r.insertId });
+
+  const sheet = await writeRow(null, v);
+  if (sheet.ok) await db.query('UPDATE sample_styles SET sheet_row=? WHERE id=?', [sheet.row, r.insertId]);
+  res.json({ ok: true, id: r.insertId, sheet });
 }));
 
 router.put('/samples/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
@@ -121,16 +188,42 @@ router.put('/samples/:id', requireAuth, requireAdmin, asyncRoute(async (req, res
     'SELECT id FROM sample_styles WHERE style_id = ? AND id <> ?', [v.style_id, id]);
   if (dup) throw httpError(409, `Sample Style ID "${v.style_id}" already exists`);
 
-  const [r] = await db.query(
+  const existing = await db.one('SELECT sheet_row FROM sample_styles WHERE id = ?', [id]);
+  if (!existing) throw httpError(404, 'Sample style not found');
+
+  await db.query(
     `UPDATE sample_styles SET ${COLS.map(c => c + ' = ?').join(', ')} WHERE id = ?`,
     [...COLS.map(c => v[c]), id]);
-  if (!r.affectedRows) throw httpError(404, 'Sample style not found');
-  res.json({ ok: true });
+
+  const sheet = await writeRow(existing.sheet_row || null, v);
+  if (sheet.ok && sheet.row !== existing.sheet_row) {
+    await db.query('UPDATE sample_styles SET sheet_row=? WHERE id=?', [sheet.row, id]);
+  }
+  res.json({ ok: true, sheet });
 }));
 
 router.delete('/samples/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
-  const [r] = await db.query('DELETE FROM sample_styles WHERE id = ?', [Number(req.params.id)]);
-  if (!r.affectedRows) throw httpError(404, 'Sample style not found');
+  const id = Number(req.params.id);
+  const existing = await db.one('SELECT sheet_row FROM sample_styles WHERE id = ?', [id]);
+  if (!existing) throw httpError(404, 'Sample style not found');
+
+  await db.query('DELETE FROM sample_styles WHERE id = ?', [id]);
+
+  // The sheet line is cleared, not removed. Deleting the row would shift every
+  // row under it up by one, and every other style's sheet_row would then point
+  // at its neighbour's line.
+  if (existing.sheet_row && sheetConfigured()) {
+    try {
+      const api = await google.getWriteClient();
+      await api.spreadsheets.values.clear({
+        spreadsheetId: config.sheets.samples.id,
+        range: `${await tab()}!${FIRST_COL}${existing.sheet_row}:${LAST_COL}${existing.sheet_row}`,
+      });
+      google.invalidateSheet(config.sheets.samples.id);
+    } catch (err) {
+      console.error('⚠️ Sampling sheet clear failed:', err.message);
+    }
+  }
   res.json({ ok: true });
 }));
 

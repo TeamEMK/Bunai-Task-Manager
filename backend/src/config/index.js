@@ -96,6 +96,11 @@ module.exports = {
       gid: num(process.env.B2B_GID, 0),
       startRow: num(process.env.B2B_START_ROW, 2),
     },
+    samples: {
+      id: process.env.SAMPLES_SHEET_ID || '',
+      gid: num(process.env.SAMPLES_GID, 0),
+      startRow: num(process.env.SAMPLES_START_ROW, 2),
+    },
     processFms: {
       id: process.env.PROCESS_FMS_SHEET_ID || '',
       gid: num(process.env.PROCESS_FMS_GID, 0),

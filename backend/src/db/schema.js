@@ -928,6 +928,9 @@ const TABLES = [
       final_costing  DECIMAL(12,2) DEFAULT NULL,
       price_website  DECIMAL(12,2) DEFAULT NULL,
       price_myntra   DECIMAL(12,2) DEFAULT NULL,
+      -- Which line of the client's sheet this style owns, so an edit rewrites
+      -- that line instead of leaving a second copy underneath it.
+      sheet_row      INT DEFAULT NULL,
       created_by     INT DEFAULT NULL,
       created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -978,6 +981,7 @@ const COLUMNS = [
   // not 0, for the runs that finished before this column existed: we do not
   // know their number, and 0 would claim they found nothing.
   ['uni_order_sync_log', 'orders_new', `INT NULL AFTER orders_seen`],
+  ['sample_styles', 'sheet_row', `INT DEFAULT NULL AFTER price_myntra`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.
