@@ -899,6 +899,19 @@ const TABLES = [
   // eight years of history from the SKU and unit figures without any error.
   // The export has no per-line status, so it is the order's: a cancelled order
   // cancels its lines, anything else counts.
+  // The live sync's own log. The history import does not write here — it runs
+  // by hand, once, and says what it did on the console.
+  ['sfy_order_sync_log', `CREATE TABLE sfy_order_sync_log (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      started_at  DATETIME NOT NULL,
+      ended_at    DATETIME NULL,
+      days        INT NULL,
+      orders_seen INT NOT NULL DEFAULT 0,
+      orders_new  INT NULL,
+      ok          TINYINT(1) NOT NULL DEFAULT 0,
+      error       TEXT NULL,
+      KEY idx_sfy_sl (started_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['sfy_order_items', `CREATE TABLE sfy_order_items (
       id           BIGINT AUTO_INCREMENT PRIMARY KEY,
       order_no     VARCHAR(60) NOT NULL,
@@ -1314,35 +1327,41 @@ const BACKFILLS = [
              v.order_amount, v.payment_method, v.customer_name, v.customer_phone,
              v.ship_city, v.ship_state, v.synced_at, 'vinculum' AS source
         FROM vin_orders v
-       WHERE v.order_date < (SELECT MIN(order_date) + INTERVAL 330 MINUTE FROM uni_orders)
+       WHERE v.channel_name NOT LIKE 'Shopify%'
+         AND (v.order_date < (SELECT MIN(order_date) + INTERVAL 330 MINUTE FROM uni_orders)
           OR NOT EXISTS (SELECT 1 FROM uni_orders u
                           WHERE u.code = v.ext_order_no OR u.display_code = v.ext_order_no
-                             OR u.code = v.order_id    OR u.display_code = v.order_id)
+                             OR u.code = v.order_id    OR u.display_code = v.order_id))
       UNION ALL
       SELECT u.code, u.display_code, u.order_date + INTERVAL 330 MINUTE, u.status, u.channel,
              u.order_amount, CASE WHEN u.cod = 1 THEN 'COD' ELSE 'Prepaid' END,
              u.customer_name, u.notification_mobile, u.ship_city, u.ship_state,
              u.synced_at, 'unicommerce'
         FROM uni_orders u
+       WHERE u.channel NOT LIKE 'Shopify%'
       UNION ALL
-      -- Shopify's own eight years, ending where the live feed begins.
+      -- Every Shopify order, from the store itself.
       --
-      -- The guard is a date, not a NOT EXISTS: Vin eRetail's first order is
-      -- 15 May 2026 and it has carried every Shopify order since, so one
-      -- comparison separates the two eras completely and costs nothing. A
-      -- per-row existence check against 450,000 rows would not.
+      -- It used to be only the orders before 15 May 2026, with Vin eRetail and
+      -- then Unicommerce owning everything after. That was right while they
+      -- were the only live feeds; it stopped being right once backend/
+      -- shopify-sync.js started reading Shopify directly.
       --
-      -- MIN(order_date) comes out of the data rather than being written in, so
-      -- the boundary stays correct if the history is ever reloaded or the feed
-      -- backfilled. Dates here are already IST, as Shopify exports in the
-      -- store's own timezone.
+      -- Splitting by CHANNEL rather than by date is what makes this safe.
+      -- Shopify holds every Shopify order and the other two hold the
+      -- marketplaces, so no order can be in two branches and nothing needs a
+      -- row-level match between 'Bunai483052' and '483052'.
+      --
+      -- It is also the end of the masking. Unicommerce returns '********' for
+      -- the customer's name, phone and email on every Shopify order, so those
+      -- 70 orders had no attributable customer at all; the same orders from
+      -- Shopify carry the real ones.
       SELECT s.order_no, s.order_ref, s.order_date,
              CASE WHEN s.cancelled_at IS NOT NULL THEN 'Cancelled'
                   ELSE COALESCE(NULLIF(s.fulfillment, ''), s.status) END,
              'Shopify', s.order_amount, s.payment_method, s.customer_name,
              s.customer_phone, s.ship_city, s.ship_state, NULL, 'shopify'
-        FROM sfy_orders s
-       WHERE s.order_date < (SELECT MIN(order_date) FROM vin_orders)`, 'view ims_orders'],
+        FROM sfy_orders s`, 'view ims_orders'],
 
   // Uniware has no quantity column: each saleOrderItem is one unit, so a
   // two-piece line is two rows. Hence the literal 1 — it is the honest
@@ -1366,7 +1385,8 @@ const BACKFILLS = [
              it.unit_price, it.discount_amt, it.tax_amount, 'vinculum' AS source
         FROM vin_order_items it
         JOIN vin_orders vo ON vo.order_id = it.order_id
-       WHERE NOT EXISTS (
+       WHERE vo.channel_name NOT LIKE 'Shopify%'
+         AND NOT EXISTS (
                SELECT 1 FROM vin_orders v JOIN uni_orders u
                  ON u.code = v.ext_order_no OR u.display_code = v.ext_order_no
                     OR u.code = v.order_id OR u.display_code = v.order_id
@@ -1384,6 +1404,7 @@ const BACKFILLS = [
              it.selling_price, it.discount, it.total_gst, 'unicommerce'
         FROM uni_order_items it
         JOIN uni_orders uo ON uo.code = it.order_code
+       WHERE uo.channel NOT LIKE 'Shopify%'
       UNION ALL
       -- The history's lines, behind the same cutover as its orders, so the two
       -- views always describe the same set of orders.
@@ -1394,8 +1415,7 @@ const BACKFILLS = [
              0,
              i.unit_price, i.discount_amt, NULL, 'shopify'
         FROM sfy_order_items i
-        JOIN sfy_orders s ON s.order_no = i.order_no
-       WHERE s.order_date < (SELECT MIN(order_date) FROM vin_orders)`,
+        JOIN sfy_orders s ON s.order_no = i.order_no`,
    'view ims_order_items'],
 
   // ── Returns: a union as well, and for the same reason as orders ──

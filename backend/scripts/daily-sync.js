@@ -47,9 +47,16 @@ const uniSync = require(path.join(__dirname, '..', 'unicommerce-sync'));
 const uniOrders = require(path.join(__dirname, '..', 'uni-orders-sync'));
 const vinReturns = require(path.join(__dirname, '..', 'returns-sync'));
 const uniReturns = require(path.join(__dirname, '..', 'uni-returns-sync'));
+const sfyOrders = require(path.join(__dirname, '..', 'shopify-sync'));
 
 const uniMissing = () => uni.missingConfig().length
   ? 'Unicommerce configured nahi (' + uni.missingConfig().join(', ') + ')' : null;
+
+const sfyMissing = () => {
+  const need = ['SHOPIFY_STORE', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET']
+    .filter(k => !process.env[k]);
+  return need.length ? 'Shopify configured nahi (' + need.join(', ') + ')' : null;
+};
 
 // Schema pehle. Sync scripts apni tables to bana leti hain, par maujooda table
 // mein naya COLUMN nahi jod sakti — CREATE TABLE IF NOT EXISTS us par kuch
@@ -110,6 +117,16 @@ step('Orders', async () => {
 // Vin eRetail wala step saath mein isliye hai ki purane returns ab bhi band
 // ho rahe hain — status badalta hai, refund aata hai. Dono ek saath chalenge
 // jab tak Vinculum ki taraf hilna band na ho jaye.
+// Shopify itself, which is where the orders are born — the other two are
+// systems they pass through. Seven days, not ORDER_DAYS: Shopify will not show
+// anything older than 60 regardless, and a week is enough to catch a status
+// that moved. It also returns the customer's real name and phone, which
+// Unicommerce masks on every Shopify order.
+step('Orders (Shopify)', async () => {
+  const r = await sfyOrders.syncOrders({ days: Number(process.env.SHOPIFY_DAYS || 7) });
+  return `${r.orders} orders, ${r.fresh} new or changed`;
+}, sfyMissing);
+
 step('Returns (Unicommerce)', async () => {
   await uniReturns.ensureTables();
   const r = await uniReturns.syncReturns({
