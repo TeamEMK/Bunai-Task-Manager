@@ -672,11 +672,7 @@
   </div>
 
   <div id="page-warehouse" class="page">
-    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 14px;flex-wrap:wrap">
-      <select id="whFacility" onchange="loadWarehouse()">
-        <option value="surat">Surat warehouse</option>
-        <option value="bunai">Bunai warehouse</option>
-      </select>
+    <div style="display:flex;align-items:center;gap:10px;margin:0 2px 14px;flex-wrap:wrap">
       <select id="whPeriod" onchange="whPeriodChanged()">
         <option value="lifetime">Lifetime</option>
         <option value="month">This month</option>
@@ -688,19 +684,23 @@
         <input type="date" id="whTo" onchange="loadWarehouse()"/>
       </span>
       <span style="flex:1"></span>
-      <input id="whSearch" type="text" placeholder="Search SKU or product…" oninput="whFilterRows()" style="min-width:220px"/>
+      <input id="whSearch" type="text" placeholder="Search SKU or product…" oninput="whFilterRows()" style="min-width:240px"/>
     </div>
 
-    <div id="whCompare" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
-    <div id="whTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:8px"></div>
-    <div id="whNote" style="margin:0 2px 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
+    <!-- The two cards ARE the switch: clicking one shows its variants below. -->
+    <div id="whCards" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px"></div>
 
-    <div class="table-wrap">
+    <div style="display:flex;align-items:baseline;gap:10px;margin:0 2px 8px;flex-wrap:wrap">
+      <div id="whTableTitle" style="font-size:14px;font-weight:700"></div>
+      <div id="whNote" style="font-size:12px;color:var(--muted-foreground)"></div>
+    </div>
+
+    <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table class="table">
         <thead>
           <tr>
             <th>SKU</th><th>Product</th>
-            <th style="text-align:right">Total stock</th>
+            <th style="text-align:right;white-space:nowrap">Total stock</th>
             <th style="text-align:right">Shipped</th>
             <th style="text-align:right">RTO</th>
             <th style="text-align:right">Return</th>
@@ -712,7 +712,7 @@
   </div>
 
   <div id="page-samples" class="page">
-    <div id="sampleTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+    <div id="sampleTiles" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
 
     <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
       <input id="sampleSearch" type="text" placeholder="Search style ID, fabric, notes…" oninput="sampleSearchDebounced()" style="min-width:260px;max-width:380px"/>
@@ -725,11 +725,21 @@
       <button class="btn btn-primary" onclick="sampleOpen()">+ Add style</button>
     </div>
 
-    <div class="table-wrap">
+    <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table class="table">
         <thead>
+          <!-- Grouped the way the client's workbook groups them. On their own,
+               "Us / Vendor / Final / Website / Myntra" say nothing. -->
           <tr>
-            <th>Style ID</th><th>Image</th>
+            <th></th>
+            <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Fabric</th>
+            <th colspan="2"></th>
+            <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Costing (&#8377;)</th>
+            <th colspan="2" style="text-align:center;border-bottom:1px solid var(--border)">Pricing (&#8377;)</th>
+            <th></th>
+          </tr>
+          <tr>
+            <th>Style ID</th>
             <th>Kurta</th><th>Pant</th><th>Dupatta</th>
             <th>Lining</th><th>Status</th>
             <th style="text-align:right">Us</th>
@@ -737,10 +747,10 @@
             <th style="text-align:right">Final</th>
             <th style="text-align:right">Website</th>
             <th style="text-align:right">Myntra</th>
-            <th>Updated</th><th></th>
+            <th></th>
           </tr>
         </thead>
-        <tbody id="sampleBody"><tr><td colspan="14" class="empty">Loading…</td></tr></tbody>
+        <tbody id="sampleBody"><tr><td colspan="12" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>

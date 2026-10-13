@@ -283,7 +283,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',warehouse:'Warehouse',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -10782,13 +10782,6 @@ function sampleSearchDebounced(){ clearTimeout(_sampleSearchTimer); _sampleSearc
 const sampleMoney = v => (v === null || v === undefined || v === ''
   ? '—' : '₹' + Number(v).toLocaleString('en-IN'));
 
-// Not fmtDate(): that one splits a 'YYYY-MM-DD' string on its dashes, and
-// updated_at arrives as a full ISO timestamp, which splits into three parts
-// as well and comes out as '13T11:20:00.000Z-10-2026'.
-const sampleWhen = ts => (ts
-  ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-  : '—');
-
 async function loadSamples() {
   const body = document.getElementById('sampleBody');
   if (!body) return;
@@ -10799,7 +10792,7 @@ async function loadSamples() {
   try {
     d = await api('/api/samples?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="14" class="empty">Could not load styles — '
+    body.innerHTML = '<tr><td colspan="12" class="empty">Could not load styles — '
       + dtEscape(e.message || 'error') + '</td></tr>';
     return;
   }
@@ -10808,11 +10801,13 @@ async function loadSamples() {
   const tiles = document.getElementById('sampleTiles');
   if (tiles) {
     const tile = (label, n, hint) =>
-      '<div class="card" style="padding:14px 16px"><div style="font-size:11.5px;font-weight:700;'
-      + 'letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">' + label + '</div>'
-      + '<div style="font-size:26px;font-weight:700;margin-top:4px">'
+      '<div style="flex:0 1 190px;background:var(--card);border:1px solid var(--border);'
+      + 'border-radius:14px;padding:14px 16px">'
+      + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;'
+      + 'color:var(--muted-foreground);margin-bottom:8px">' + label + '</div>'
+      + '<div style="font-size:23px;font-weight:800;line-height:1">'
       + Number(n || 0).toLocaleString('en-IN') + '</div>'
-      + (hint ? '<div style="font-size:12px;color:var(--muted-foreground)">' + hint + '</div>' : '')
+      + (hint ? '<div style="font-size:11.5px;color:var(--faint);margin-top:6px">' + hint + '</div>' : '')
       + '</div>';
     tiles.innerHTML = tile('All styles', d.counts.all)
       + tile('Production', d.counts.production, 'approved to make')
@@ -10820,26 +10815,26 @@ async function loadSamples() {
   }
 
   if (!_sampleRows.length) {
-    body.innerHTML = '<tr><td colspan="14" class="empty">'
+    body.innerHTML = '<tr><td colspan="12" class="empty">'
       + (q || status ? 'No styles match that.' : 'No sample styles yet — add the first one.')
       + '</td></tr>';
     return;
   }
 
   body.innerHTML = _sampleRows.map(r => {
-    const img = r.image_url
-      ? '<a href="' + dtEscape(r.image_url) + '" target="_blank" rel="noopener">view</a>'
-      : '<span style="color:var(--muted-foreground)">—</span>';
+    const id = r.image_url
+      ? '<a href="' + dtEscape(r.image_url) + '" target="_blank" rel="noopener"'
+        + ' title="Open the sample photo">' + dtEscape(r.style_id) + ' ↗</a>'
+      : dtEscape(r.style_id);
     const lining = r.has_lining === 'Yes'
       ? 'Yes' + (r.lining_fabric ? ' · ' + dtEscape(r.lining_fabric) : '')
       : dtEscape(r.has_lining || '—');
     const badge = r.status === 'Production'
-      ? '<span class="badge" style="background:#dcfce7;color:#166534">Production</span>'
-      : '<span class="badge" style="background:#fef3c7;color:#92400e">Outstanding</span>';
+      ? '<span class="status-badge completed">Production</span>'
+      : '<span class="status-badge revised">Outstanding</span>';
     const num = v => '<td style="text-align:right">' + sampleMoney(v) + '</td>';
     return '<tr>'
-      + '<td style="font-weight:600">' + dtEscape(r.style_id) + '</td>'
-      + '<td>' + img + '</td>'
+      + '<td style="font-weight:600;white-space:nowrap">' + id + '</td>'
       + '<td>' + dtEscape(r.kurta_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.pant_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.dupatta_fabric || '—') + '</td>'
@@ -10847,7 +10842,6 @@ async function loadSamples() {
       + '<td>' + badge + '</td>'
       + num(r.costing_us) + num(r.costing_vendor) + num(r.final_costing)
       + num(r.price_website) + num(r.price_myntra)
-      + '<td style="white-space:nowrap;color:var(--muted-foreground)">' + sampleWhen(r.updated_at) + '</td>'
       + '<td style="white-space:nowrap">'
       + '<button class="btn btn-sm" onclick="sampleOpen(' + r.id + ')">Edit</button> '
       + '<button class="btn btn-sm btn-outline" onclick="sampleDelete(' + r.id + ')">Delete</button>'
@@ -10945,17 +10939,27 @@ async function sampleDelete(id) {
 // WAREHOUSE — Bunai and Surat, kept apart
 //
 // They read as one business everywhere else and they are not one warehouse:
-// different ranges (not a single SKU in both), different channels. Four
-// numbers per variant — stock, shipped, RTO, return.
+// different ranges (not a single SKU in both), different channels.
+//
+// The two cards are the switch. There was a dropdown as well, and the four
+// numbers appeared twice — once on the card and again in a row of tiles under
+// it — which left the same figures on screen two ways and nothing to click.
 // ══════════════════════════════════════════════════════
 let _whRows = [];
+let _whFacility = 'surat';
 
 function whPeriodChanged() {
   const range = document.getElementById('whPeriod').value === 'range';
   document.getElementById('whRange').style.display = range ? 'inline-flex' : 'none';
-  // A range with only one end chosen would silently fall back to lifetime and
-  // show numbers nobody asked for, so wait until both are set.
+  // A range with only one end chosen falls back to lifetime on the server, so
+  // asking now would show numbers nobody picked.
   if (range && !(document.getElementById('whFrom').value && document.getElementById('whTo').value)) return;
+  loadWarehouse();
+}
+
+function whPick(key) {
+  if (key === _whFacility) return;
+  _whFacility = key;
   loadWarehouse();
 }
 
@@ -10971,16 +10975,50 @@ function whQuery() {
 
 const whNum = n => Number(n || 0).toLocaleString('en-IN');
 
+function whCard(w, active) {
+  // A fixed four-column grid, not a flex row. At 340px wide the four stats did
+  // not fit side by side and Return dropped onto a line of its own.
+  const stat = (label, value) =>
+    '<div>'
+    + '<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;'
+    + 'color:var(--muted-foreground)">' + label + '</div>'
+    + '<div style="font-size:20px;font-weight:800;line-height:1.3">' + whNum(value) + '</div></div>';
+
+  // The selected card is a wash in the brand tint, not a thick ring in the
+  // brand's mid tone. The brand here is a rose, and a 2px rose border with a
+  // solid rose badge reads as a warning rather than a choice.
+  const pick = "whPick('" + w.key + "')";
+  return '<div onclick="' + pick + '" role="button" tabindex="0"'
+    + ' onkeydown="if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();' + pick + '}"'
+    + ' style="flex:0 1 340px;cursor:pointer;border-radius:14px;padding:15px 17px;'
+    + 'border:1px solid ' + (active ? 'var(--brand-mid)' : 'var(--border)') + ';'
+    + 'background:' + (active ? 'var(--brand-tint)' : 'var(--card)') + ';'
+    + 'transition:background .12s,border-color .12s">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+    + '<div style="font-size:15px;font-weight:700">' + dtEscape(w.label) + '</div>'
+    + (active
+        ? '<span style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;'
+          + 'color:var(--brand-deep)">Showing</span>'
+        : '<span style="font-size:11.5px;color:var(--muted-foreground)">click to view</span>')
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'
+    + stat('Stock', w.stock) + stat('Shipped', w.shipped)
+    + stat('RTO', w.rto) + stat('Return', w.returned)
+    + '</div>'
+    + '<div style="font-size:11.5px;color:var(--faint);margin-top:10px">'
+    + whNum(w.skus) + ' variants in stock · ' + dtEscape(w.code) + '</div></div>';
+}
+
 async function loadWarehouse() {
   const body = document.getElementById('whBody');
   if (!body) return;
-  const facility = document.getElementById('whFacility').value;
   const q = whQuery();
+  body.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
 
   let d, cmp;
   try {
     [d, cmp] = await Promise.all([
-      api('/api/warehouse?facility=' + encodeURIComponent(facility) + '&' + q),
+      api('/api/warehouse?facility=' + encodeURIComponent(_whFacility) + '&' + q),
       api('/api/warehouse/compare?' + q),
     ]);
   } catch (e) {
@@ -10989,55 +11027,26 @@ async function loadWarehouse() {
     return;
   }
 
-  // Both warehouses side by side, so the split is the first thing visible.
-  const cw = document.getElementById('whCompare');
-  if (cw) {
-    cw.innerHTML = (cmp.warehouses || []).map(w => {
-      const on = w.key === facility;
-      return '<div class="card" style="padding:14px 16px'
-        + (on ? ';border-color:var(--brand-mid)' : '') + '">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between">'
-        + '<div style="font-weight:700">' + dtEscape(w.label) + '</div>'
-        + '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(w.code) + '</div></div>'
-        + '<div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">'
-        + '<div><div style="font-size:11px;color:var(--muted-foreground)">STOCK</div>'
-        + '<div style="font-size:19px;font-weight:700">' + whNum(w.stock) + '</div></div>'
-        + '<div><div style="font-size:11px;color:var(--muted-foreground)">SHIPPED</div>'
-        + '<div style="font-size:19px;font-weight:700">' + whNum(w.shipped) + '</div></div>'
-        + '<div><div style="font-size:11px;color:var(--muted-foreground)">RTO</div>'
-        + '<div style="font-size:19px;font-weight:700">' + whNum(w.rto) + '</div></div>'
-        + '<div><div style="font-size:11px;color:var(--muted-foreground)">RETURN</div>'
-        + '<div style="font-size:19px;font-weight:700">' + whNum(w.returned) + '</div></div>'
-        + '</div>'
-        + '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px">'
-        + whNum(w.skus) + ' SKUs stocked</div></div>';
-    }).join('');
+  const cards = document.getElementById('whCards');
+  if (cards) {
+    cards.innerHTML = (cmp.warehouses || [])
+      .map(w => whCard(w, w.key === _whFacility)).join('');
   }
 
   const t = d.totals || {};
-  const tiles = document.getElementById('whTiles');
-  if (tiles) {
-    const tile = (label, n) =>
-      '<div class="card" style="padding:12px 14px"><div style="font-size:11.5px;font-weight:700;'
-      + 'letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">' + label + '</div>'
-      + '<div style="font-size:22px;font-weight:700;margin-top:3px">' + whNum(n) + '</div></div>';
-    tiles.innerHTML = tile('Variants listed', t.skus) + tile('Total stock', t.stock)
-      + tile('Shipped', t.shipped) + tile('RTO', t.rto) + tile('Return', t.returned);
+  const title = document.getElementById('whTableTitle');
+  if (title) {
+    title.textContent = d.facility.label + ' — ' + whNum(t.skus) + ' variants';
   }
 
-  // Say which numbers the period applies to. Stock is what is on the shelf now
-  // — there is no per-SKU history to look back through — so a date range moves
-  // three of these four columns and not the first.
+  // One line, not a paragraph. The thing worth saying is that the period moves
+  // three of the four columns and not the first; the rest was explaining the
+  // difference between two counts that no longer sit next to each other.
   const note = document.getElementById('whNote');
   if (note) {
-    // Two things that look like contradictions and are not: the card above
-    // counts variants with stock, this table also lists ones that are out of
-    // stock but moved in the period, so its count is the larger of the two.
-    note.textContent = 'Shipped, RTO and Return are counted over ' + (d.period || 'Lifetime').toLowerCase()
-      + '. Total stock is what is on the shelf right now, whatever period is chosen.'
-      + ' The list includes variants that are out of stock but moved, so it runs longer'
-      + ' than the "SKUs stocked" count on the card above.'
-      + (d.truncated ? ' Showing the first 2,000 of ' + whNum(t.skus) + ' variants.' : '');
+    note.textContent = '· stock is live, shipped/RTO/return over '
+      + (d.period || 'Lifetime').toLowerCase()
+      + (d.truncated ? ' · showing the first 2,000' : '');
   }
 
   _whRows = d.rows || [];
@@ -11060,14 +11069,19 @@ function whFilterRows() {
   }
 
   body.innerHTML = rows.map(r => {
-    const dim = v => v ? whNum(v) : '<span style="color:var(--muted-foreground)">—</span>';
-    return '<tr>'
+    // A dash, not a nought: nothing happened here, rather than something that
+    // amounted to zero.
+    const n = (v, tone) => '<td style="text-align:right'
+      + (tone && v ? ';color:' + tone + ';font-weight:600' : '') + '">'
+      + (v ? whNum(v) : '<span style="color:var(--faint)">—</span>') + '</td>';
+    // Out of stock but still shipping is the row worth noticing.
+    const gone = !r.stock && r.shipped;
+    return '<tr' + (gone ? ' style="background:var(--muted)"' : '') + '>'
       + '<td style="font-weight:600;white-space:nowrap">' + dtEscape(r.sku) + '</td>'
-      + '<td>' + dtEscape(r.name || '—') + '</td>'
-      + '<td style="text-align:right">' + dim(r.stock) + '</td>'
-      + '<td style="text-align:right">' + dim(r.shipped) + '</td>'
-      + '<td style="text-align:right">' + dim(r.rto) + '</td>'
-      + '<td style="text-align:right">' + dim(r.returned) + '</td>'
+      + '<td>' + dtEscape(r.name || '—')
+      + (gone ? ' <span class="status-badge revised">out of stock</span>' : '')
+      + '</td>'
+      + n(r.stock) + n(r.shipped) + n(r.rto, 'var(--brand-deep)') + n(r.returned, '#b45309')
       + '</tr>';
   }).join('');
 }
