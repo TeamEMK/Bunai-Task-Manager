@@ -168,6 +168,7 @@ async function init() {
       document.getElementById('nav-returns').style.display = 'flex';
       document.getElementById('nav-shipments').style.display = 'flex';
       document.getElementById('nav-catalog').style.display = 'flex';
+      document.getElementById('nav-samples').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -370,6 +371,7 @@ function navigate(page, el, fromHash) {
   if (page === 'returns' && (!ME || ME.role !== 'admin')) return;
   if (page === 'shipments' && (!ME || ME.role !== 'admin')) return;
   if (page === 'catalog' && (!ME || ME.role !== 'admin')) return;
+  if (page === 'samples' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   _navCurrent = page;
@@ -404,6 +406,7 @@ function navigate(page, el, fromHash) {
   if (page==='returns') loadReturns();
   if (page==='shipments') loadShipments();
   if (page==='catalog') loadCatalog(1);
+  if (page==='samples') loadSamples();
   if (page==='inventory') loadInventory();
   window.scrollTo(0,0);
 }
@@ -10757,4 +10760,180 @@ async function loadCatalog(page) {
       <button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="loadCatalog(${p - 1})">‹ Prev</button>
       <button class="btn btn-sm" ${p >= last ? 'disabled' : ''} onclick="loadCatalog(${p + 1})">Next ›</button>
     </span>`;
+}
+
+// ══════════════════════════════════════════════════════
+// SAMPLE STYLE MIS
+//
+// The design stage, before a style is a product: sampled, costed against a
+// vendor's quote, priced for the website and for Myntra, then either in
+// production or outstanding. The columns are the client's own, taken from the
+// workbook they sent rather than invented.
+// ══════════════════════════════════════════════════════
+let _sampleRows = [];
+let _sampleSearchTimer = null;
+function sampleSearchDebounced(){ clearTimeout(_sampleSearchTimer); _sampleSearchTimer = setTimeout(loadSamples, 300); }
+
+// Blank stays blank. A style half way through costing has most of these empty
+// for weeks, and a 0 would read as "free" where the truth is "not decided yet".
+const sampleMoney = v => (v === null || v === undefined || v === ''
+  ? '—' : '₹' + Number(v).toLocaleString('en-IN'));
+
+// Not fmtDate(): that one splits a 'YYYY-MM-DD' string on its dashes, and
+// updated_at arrives as a full ISO timestamp, which splits into three parts
+// as well and comes out as '13T11:20:00.000Z-10-2026'.
+const sampleWhen = ts => (ts
+  ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  : '—');
+
+async function loadSamples() {
+  const body = document.getElementById('sampleBody');
+  if (!body) return;
+  const q = (document.getElementById('sampleSearch').value || '').trim();
+  const status = document.getElementById('sampleFilter').value;
+
+  let d;
+  try {
+    d = await api('/api/samples?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="14" class="empty">Could not load styles — '
+      + dtEscape(e.message || 'error') + '</td></tr>';
+    return;
+  }
+  _sampleRows = d.rows || [];
+
+  const tiles = document.getElementById('sampleTiles');
+  if (tiles) {
+    const tile = (label, n, hint) =>
+      '<div class="card" style="padding:14px 16px"><div style="font-size:11.5px;font-weight:700;'
+      + 'letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">' + label + '</div>'
+      + '<div style="font-size:26px;font-weight:700;margin-top:4px">'
+      + Number(n || 0).toLocaleString('en-IN') + '</div>'
+      + (hint ? '<div style="font-size:12px;color:var(--muted-foreground)">' + hint + '</div>' : '')
+      + '</div>';
+    tiles.innerHTML = tile('All styles', d.counts.all)
+      + tile('Production', d.counts.production, 'approved to make')
+      + tile('Outstanding', d.counts.outstanding, 'still being decided');
+  }
+
+  if (!_sampleRows.length) {
+    body.innerHTML = '<tr><td colspan="14" class="empty">'
+      + (q || status ? 'No styles match that.' : 'No sample styles yet — add the first one.')
+      + '</td></tr>';
+    return;
+  }
+
+  body.innerHTML = _sampleRows.map(r => {
+    const img = r.image_url
+      ? '<a href="' + dtEscape(r.image_url) + '" target="_blank" rel="noopener">view</a>'
+      : '<span style="color:var(--muted-foreground)">—</span>';
+    const lining = r.has_lining === 'Yes'
+      ? 'Yes' + (r.lining_fabric ? ' · ' + dtEscape(r.lining_fabric) : '')
+      : dtEscape(r.has_lining || '—');
+    const badge = r.status === 'Production'
+      ? '<span class="badge" style="background:#dcfce7;color:#166534">Production</span>'
+      : '<span class="badge" style="background:#fef3c7;color:#92400e">Outstanding</span>';
+    const num = v => '<td style="text-align:right">' + sampleMoney(v) + '</td>';
+    return '<tr>'
+      + '<td style="font-weight:600">' + dtEscape(r.style_id) + '</td>'
+      + '<td>' + img + '</td>'
+      + '<td>' + dtEscape(r.kurta_fabric || '—') + '</td>'
+      + '<td>' + dtEscape(r.pant_fabric || '—') + '</td>'
+      + '<td>' + dtEscape(r.dupatta_fabric || '—') + '</td>'
+      + '<td>' + lining + '</td>'
+      + '<td>' + badge + '</td>'
+      + num(r.costing_us) + num(r.costing_vendor) + num(r.final_costing)
+      + num(r.price_website) + num(r.price_myntra)
+      + '<td style="white-space:nowrap;color:var(--muted-foreground)">' + sampleWhen(r.updated_at) + '</td>'
+      + '<td style="white-space:nowrap">'
+      + '<button class="btn btn-sm" onclick="sampleOpen(' + r.id + ')">Edit</button> '
+      + '<button class="btn btn-sm btn-outline" onclick="sampleDelete(' + r.id + ')">Delete</button>'
+      + '</td></tr>';
+  }).join('');
+}
+
+function sampleLiningChanged() {
+  // A lining fabric left under a "No" is a leftover from changing the answer,
+  // and on the page it reads as a contradiction.
+  const yes = document.getElementById('sampleLining').value === 'Yes';
+  const f = document.getElementById('sampleLiningFabric');
+  f.disabled = !yes;
+  if (!yes) f.value = '';
+}
+
+function sampleOpen(id) {
+  const r = id ? _sampleRows.find(x => x.id === id) : null;
+  document.getElementById('sampleModalTitle').textContent = r ? 'Edit Sample Style' : 'Add Sample Style';
+  document.getElementById('sampleErr').style.display = 'none';
+  const set = (el, v) => { document.getElementById(el).value = (v === null || v === undefined) ? '' : v; };
+  set('sampleEditId', r ? r.id : '');
+  set('sampleStyleId', r ? r.style_id : '');
+  set('sampleStatus', r ? r.status : 'Outstanding');
+  set('sampleImage', r ? r.image_url : '');
+  set('sampleNotes', r ? r.notes : '');
+  set('sampleKurta', r ? r.kurta_fabric : '');
+  set('samplePant', r ? r.pant_fabric : '');
+  set('sampleDupatta', r ? r.dupatta_fabric : '');
+  set('sampleFabricRemarks', r ? r.fabric_remarks : '');
+  set('sampleLining', r ? r.has_lining : '');
+  set('sampleLiningFabric', r ? r.lining_fabric : '');
+  set('sampleCostUs', r ? r.costing_us : '');
+  set('sampleCostVendor', r ? r.costing_vendor : '');
+  set('sampleCostFinal', r ? r.final_costing : '');
+  set('samplePriceWeb', r ? r.price_website : '');
+  set('samplePriceMyntra', r ? r.price_myntra : '');
+  sampleLiningChanged();
+  document.getElementById('sampleModal').classList.add('open');
+}
+
+async function saveSample(btn) {
+  const val = el => document.getElementById(el).value.trim();
+  const id = val('sampleEditId');
+  const err = document.getElementById('sampleErr');
+  err.style.display = 'none';
+
+  if (!val('sampleStyleId')) {
+    err.textContent = 'Sample Style ID is required.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const payload = {
+    style_id: val('sampleStyleId'), image_url: val('sampleImage'), notes: val('sampleNotes'),
+    kurta_fabric: val('sampleKurta'), pant_fabric: val('samplePant'),
+    dupatta_fabric: val('sampleDupatta'), fabric_remarks: val('sampleFabricRemarks'),
+    has_lining: val('sampleLining'), lining_fabric: val('sampleLiningFabric'),
+    status: val('sampleStatus'),
+    costing_us: val('sampleCostUs'), costing_vendor: val('sampleCostVendor'),
+    final_costing: val('sampleCostFinal'),
+    price_website: val('samplePriceWeb'), price_myntra: val('samplePriceMyntra'),
+  };
+
+  btn.disabled = true;
+  const was = btn.textContent;
+  btn.textContent = 'Saving…';
+  try {
+    await api(id ? '/api/samples/' + id : '/api/samples', id ? 'PUT' : 'POST', payload);
+    closeModal('sampleModal');
+    showToast(id ? 'Style updated' : 'Style added');
+    loadSamples();
+  } catch (e) {
+    err.textContent = e.message || 'Could not save';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+async function sampleDelete(id) {
+  const r = _sampleRows.find(x => x.id === id);
+  if (!confirm('Delete ' + (r ? r.style_id : 'this style') + '? This cannot be undone.')) return;
+  try {
+    await api('/api/samples/' + id, 'DELETE');
+    showToast('Style deleted');
+    loadSamples();
+  } catch (e) {
+    showToast(e.message || 'Could not delete', 'error');
+  }
 }

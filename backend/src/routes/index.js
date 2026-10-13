@@ -42,6 +42,7 @@ api.use(require('./joining.routes').router);
 api.use(require('./offer.routes'));
 api.use(require('./influencers.routes'));
 api.use(require('./b2b.routes'));
+api.use(require('./samples.routes'));
 api.use(ims.apiRouter);
 
 module.exports = { api, pages: ims.pageRouter };

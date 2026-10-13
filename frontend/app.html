@@ -147,6 +147,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5h16M4 12h16M4 19h16M7 5v14"/></svg>
       <span class="nav-label-text">Catalog</span>
     </div>
+    <div class="nav-item" id="nav-samples" style="display:none" onclick="navigate('samples',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9l-6-6H7a2 2 0 00-2 2v14a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v6h6"/></svg>
+      <span class="nav-label-text">Sampling</span>
+    </div>
     <div class="nav-item" id="nav-shipments" style="display:none" onclick="navigate('shipments',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 5h11v12H3zM14 9h3l3 3v5h-6z"/></svg>
       <span class="nav-label-text">Shipments</span>
@@ -661,6 +665,40 @@
       </table>
     </div>
     <div id="catalogPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
+  </div>
+
+  <div id="page-samples" class="page">
+    <div id="sampleTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:16px"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="sampleSearch" type="text" placeholder="Search style ID, fabric, notes…" oninput="sampleSearchDebounced()" style="min-width:260px;max-width:380px"/>
+      <select id="sampleFilter" onchange="loadSamples()">
+        <option value="">All styles</option>
+        <option value="Production">Production</option>
+        <option value="Outstanding">Outstanding</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary" onclick="sampleOpen()">+ Add style</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Style ID</th><th>Image</th>
+            <th>Kurta</th><th>Pant</th><th>Dupatta</th>
+            <th>Lining</th><th>Status</th>
+            <th style="text-align:right">Us</th>
+            <th style="text-align:right">Vendor</th>
+            <th style="text-align:right">Final</th>
+            <th style="text-align:right">Website</th>
+            <th style="text-align:right">Myntra</th>
+            <th>Updated</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sampleBody"><tr><td colspan="14" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <div id="page-profile" class="page">
@@ -1439,6 +1477,86 @@
 
 <!-- ── HR: add / edit employee ── -->
 <!-- ── Recruitment: add / edit a candidate ── -->
+<div class="modal-overlay" id="sampleModal">
+  <div class="modal" style="width:860px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="sampleModalTitle">Add Sample Style</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      One row per sample style. Costing and pricing can be filled in later — leave them blank
+      until they are decided rather than entering zero.
+    </div>
+    <div id="sampleErr" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
+      border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <input type="hidden" id="sampleEditId"/>
+
+    <div style="margin:0 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">Style details</div>
+    <div class="form-row">
+      <div class="form-group"><label>Sample Style ID <span style="color:var(--brand-mid)">*</span></label>
+        <input type="text" id="sampleStyleId" placeholder="The style's own code"/></div>
+      <div class="form-group"><label>Status</label>
+        <select id="sampleStatus">
+          <option value="Outstanding">Outstanding</option>
+          <option value="Production">Production</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1"><label>Image link</label>
+        <input type="text" id="sampleImage" placeholder="https://… — a link to the sample photo"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1"><label>Notes</label>
+        <textarea id="sampleNotes" rows="2" placeholder="Anything worth remembering about this style"></textarea></div>
+    </div>
+
+    <div style="margin:14px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">Fabric</div>
+    <div class="form-row">
+      <div class="form-group"><label>Kurta fabric</label>
+        <input type="text" id="sampleKurta"/></div>
+      <div class="form-group"><label>Pant fabric</label>
+        <input type="text" id="samplePant"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Dupatta fabric</label>
+        <input type="text" id="sampleDupatta"/></div>
+      <div class="form-group"><label>Fabric remarks</label>
+        <input type="text" id="sampleFabricRemarks"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Lining?</label>
+        <select id="sampleLining" onchange="sampleLiningChanged()">
+          <option value="">—</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select></div>
+      <div class="form-group"><label>Lining fabric</label>
+        <input type="text" id="sampleLiningFabric" placeholder="Only when lining is Yes"/></div>
+    </div>
+
+    <div style="margin:14px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground)">Costing &amp; pricing (₹)</div>
+    <div class="form-row">
+      <div class="form-group"><label>Costing by us</label>
+        <input type="text" id="sampleCostUs" inputmode="decimal"/></div>
+      <div class="form-group"><label>Costing by vendor</label>
+        <input type="text" id="sampleCostVendor" inputmode="decimal"/></div>
+      <div class="form-group"><label>Final costing</label>
+        <input type="text" id="sampleCostFinal" inputmode="decimal"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Website pricing</label>
+        <input type="text" id="samplePriceWeb" inputmode="decimal"/></div>
+      <div class="form-group"><label>Myntra pricing</label>
+        <input type="text" id="samplePriceMyntra" inputmode="decimal"/></div>
+    </div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('sampleModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSample(this)">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="b2bModal">
   <div class="modal" style="width:780px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="b2bModalTitle">Add B2B Order</h3>

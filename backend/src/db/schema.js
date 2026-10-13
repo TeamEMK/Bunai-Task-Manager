@@ -899,6 +899,42 @@ const TABLES = [
   // eight years of history from the SKU and unit figures without any error.
   // The export has no per-line status, so it is the order's: a cancelled order
   // cancels its lines, anything else counts.
+  // ── Sample Style MIS ──────────────────────────────────────────────────
+  // The design side of the business, which nothing here has covered: a style
+  // is sampled, costed against a vendor quote, priced for the website and for
+  // Myntra, and either goes into production or does not. The columns are the
+  // client's own, taken from the workbook they sent rather than invented.
+  //
+  // Costing and pricing are DECIMAL and nullable on purpose. A style being
+  // costed has some of these and not others for weeks, and a zero would read
+  // as "free" where the truth is "not decided yet".
+  //
+  // final_costing is stored, not computed. It is a decision — often neither of
+  // the two quotes — and the sheet treats it that way.
+  ['sample_styles', `CREATE TABLE sample_styles (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      style_id       VARCHAR(120) NOT NULL,
+      image_url      VARCHAR(1000) DEFAULT '',
+      notes          TEXT NULL,
+      kurta_fabric   VARCHAR(255) DEFAULT '',
+      pant_fabric    VARCHAR(255) DEFAULT '',
+      dupatta_fabric VARCHAR(255) DEFAULT '',
+      fabric_remarks VARCHAR(1000) DEFAULT '',
+      has_lining     VARCHAR(3) DEFAULT '',
+      lining_fabric  VARCHAR(255) DEFAULT '',
+      status         VARCHAR(20) DEFAULT 'Outstanding',
+      costing_us     DECIMAL(12,2) DEFAULT NULL,
+      costing_vendor DECIMAL(12,2) DEFAULT NULL,
+      final_costing  DECIMAL(12,2) DEFAULT NULL,
+      price_website  DECIMAL(12,2) DEFAULT NULL,
+      price_myntra   DECIMAL(12,2) DEFAULT NULL,
+      created_by     INT DEFAULT NULL,
+      created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_sample_style (style_id),
+      KEY idx_sample_status (status),
+      KEY idx_sample_updated (updated_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // The live sync's own log. The history import does not write here — it runs
   // by hand, once, and says what it did on the console.
   ['sfy_order_sync_log', `CREATE TABLE sfy_order_sync_log (
