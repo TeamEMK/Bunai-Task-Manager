@@ -255,6 +255,34 @@ body{
 .btn-green{background:#10b981;color:#fff;}.btn-green:hover{background:#059669;}
 .btn-yellow{background:#f59e0b;color:#fff;}.btn-yellow:hover{background:#d97706;}
 .btn-sm{padding:5px 10px;font-size:12px;}
+/* ── Form controls ──
+   Every search box, select and date field in the app was a bare element, so
+   each one wore the browser's own square 1px outline — a hard, dark box sat
+   next to buttons and cards that are rounded and soft. One base rule, matched
+   on the element alone, so it is the floor: anything with a class (.dt-table
+   inputs, the month picker) still overrides it.
+
+   Checkboxes and the like are exempted below. They are painted by the browser,
+   and a border or padding on them draws a box around the tick. */
+input, select, textarea{
+  padding:8px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  font-size:13px;font-family:var(--font-sans);color:var(--foreground);
+  background:var(--card);outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+textarea{resize:vertical;}
+input:hover, select:hover, textarea:hover{border-color:var(--faint);}
+input:focus, select:focus, textarea:focus{
+  border-color:var(--ring);box-shadow:0 0 0 3px rgba(217,99,106,.15);
+}
+input::placeholder, textarea::placeholder{color:var(--muted-foreground);}
+input:disabled, select:disabled, textarea:disabled{background:var(--muted);color:var(--muted-foreground);cursor:not-allowed;}
+select{cursor:pointer;}
+
+input[type=checkbox], input[type=radio], input[type=file], input[type=range],
+input[type=color], input[type=submit], input[type=button], input[type=image]{
+  padding:0;border:none;border-radius:0;background:none;box-shadow:none;
+}
 
 /* ══════════════════════════════════════
    PAGES
