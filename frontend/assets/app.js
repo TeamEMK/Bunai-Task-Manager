@@ -170,6 +170,7 @@ async function init() {
       document.getElementById('nav-catalog').style.display = 'flex';
       document.getElementById('nav-samples').style.display = 'flex';
       document.getElementById('nav-warehouse').style.display = 'flex';
+      document.getElementById('nav-scot').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -283,7 +284,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',warehouse:'Warehouse',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -374,6 +375,7 @@ function navigate(page, el, fromHash) {
   if (page === 'catalog' && (!ME || ME.role !== 'admin')) return;
   if (page === 'samples' && (!ME || ME.role !== 'admin')) return;
   if (page === 'warehouse' && (!ME || ME.role !== 'admin')) return;
+  if (page === 'scot' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   _navCurrent = page;
@@ -410,6 +412,7 @@ function navigate(page, el, fromHash) {
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
   if (page==='warehouse') loadWarehouse();
+  if (page==='scot') loadScot();
   if (page==='inventory') loadInventory();
   window.scrollTo(0,0);
 }
@@ -11246,4 +11249,112 @@ async function b2bPartyDelete(id) {
   } catch (e) {
     showToast(e.message || 'Could not remove', 'error');
   }
+}
+
+// ══════════════════════════════════════════════════════
+// SCOT — the customer calling list
+//
+// The sheet draws 364 date columns because that is how a spreadsheet shows a
+// history. The question behind it is smaller: who to ring today, and who has
+// gone quiet. That is what this page answers.
+// ══════════════════════════════════════════════════════
+let _scotTimer = null;
+function scotDebounced(){ clearTimeout(_scotTimer); _scotTimer = setTimeout(loadScot, 300); }
+
+const SCOT_LOOK = {
+  overdue:    { label: 'Overdue',    cls: 'status-badge pending' },
+  due:        { label: 'Due soon',   cls: 'status-badge revised' },
+  gone:       { label: 'Gone quiet', cls: 'status-badge',
+                style: 'background:var(--muted);color:var(--muted-foreground)' },
+  'on-track': { label: 'On track',   cls: 'status-badge completed' },
+  'one-time': { label: 'One-time',   cls: 'status-badge',
+                style: 'background:var(--muted);color:var(--faint)' },
+};
+
+async function loadScot() {
+  const body = document.getElementById('scotBody');
+  if (!body) return;
+  const q = (document.getElementById('scotSearch').value || '').trim();
+  const status = document.getElementById('scotFilter').value;
+
+  let d;
+  try {
+    d = await api('/api/scot?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Could not load — '
+      + dtEscape(e.message || 'error') + '</td></tr>';
+    return;
+  }
+
+  const n = v => Number(v || 0).toLocaleString('en-IN');
+  const inr = v => '₹' + n(v);
+  const when = s => (s ? new Date(s + 'T00:00:00Z').toLocaleDateString('en-IN',
+    { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+
+  // The counts are what the page is for, so they double as the filter.
+  const tiles = document.getElementById('scotTiles');
+  if (tiles) {
+    const tile = (key, label, hint) => {
+      const on = document.getElementById('scotFilter').value === key;
+      return '<div onclick="scotPick(\'' + key + '\')" role="button" tabindex="0"'
+        + ' style="flex:0 1 165px;cursor:pointer;border-radius:14px;padding:13px 15px;'
+        + 'border:1px solid ' + (on ? 'var(--brand-mid)' : 'var(--border)') + ';'
+        + 'background:' + (on ? 'var(--brand-tint)' : 'var(--card)') + '">'
+        + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;'
+        + 'color:var(--muted-foreground);margin-bottom:7px">' + label + '</div>'
+        + '<div style="font-size:23px;font-weight:800;line-height:1">' + n(d.counts[key === '' ? 'all' : key]) + '</div>'
+        + (hint ? '<div style="font-size:11.5px;color:var(--faint);margin-top:5px">' + hint + '</div>' : '')
+        + '</div>';
+    };
+    tiles.innerHTML = tile('', 'Everyone')
+      + tile('overdue', 'Overdue', 'past their usual gap')
+      + tile('due', 'Due soon', 'within two days')
+      + tile('gone', 'Gone quiet', 'a whole cycle late')
+      + tile('on-track', 'On track');
+  }
+
+  const note = document.getElementById('scotNote');
+  if (note) {
+    note.textContent = (d.rows.length < d.total
+      ? 'first ' + n(d.rows.length) + ' of ' + n(d.total)
+      : n(d.total) + ' customers')
+      + ' · lifetime figures, all years';
+  }
+
+  if (!d.rows.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Nobody matches that.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = d.rows.map(r => {
+    const look = SCOT_LOOK[r.status] || SCOT_LOOK['on-track'];
+    // How late, in their own rhythm — "28 days late" means more to someone
+    // who buys fortnightly than a raw date does.
+    const late = (r.gap != null && r.daysSince != null) ? r.daysSince - r.gap : null;
+    return '<tr>'
+      + '<td><div style="font-weight:600">' + dtEscape(r.name) + '</div>'
+      + '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phone) + '</div></td>'
+      + '<td>' + dtEscape(r.city || '—') + '</td>'
+      + '<td><span class="' + look.cls + '"'
+      + (look.style ? ' style="' + look.style + '"' : '') + '>' + look.label + '</span>'
+      + (late > 0 ? '<div style="font-size:11px;color:var(--muted-foreground);margin-top:3px">'
+         + n(late) + ' days late</div>' : '')
+      + '</td>'
+      + '<td style="text-align:right">' + n(r.orders) + '</td>'
+      + '<td style="text-align:right">' + n(r.units) + '</td>'
+      + '<td style="text-align:right;font-weight:600">' + inr(r.value) + '</td>'
+      + '<td style="white-space:nowrap">' + when(r.lastOrder)
+      + (r.daysSince != null ? '<div style="font-size:11px;color:var(--muted-foreground)">'
+         + n(r.daysSince) + ' days ago</div>' : '')
+      + '</td>'
+      + '<td style="white-space:nowrap">' + when(r.callOn)
+      + (r.gap ? '<div style="font-size:11px;color:var(--muted-foreground)">buys every '
+         + n(r.gap) + ' days</div>' : '')
+      + '</td></tr>';
+  }).join('');
+}
+
+function scotPick(key) {
+  document.getElementById('scotFilter').value = key;
+  loadScot();
 }

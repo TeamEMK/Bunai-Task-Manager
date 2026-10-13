@@ -899,6 +899,37 @@ const TABLES = [
   // eight years of history from the SKU and unit figures without any error.
   // The export has no per-line status, so it is the order's: a cancelled order
   // cancels its lines, anything else counts.
+  // ── Shopify customers, rolled up ──────────────────────────────────────
+  // One row per customer, rebuilt by the Shopify sync. The calling list needs
+  // every customer's order count, spend and rhythm, and working that out from
+  // 450,000 orders — grouping on a phone number dug out with REGEXP_REPLACE,
+  // joined to the line items — took 43 seconds a page. The orders only change
+  // eight times a day, so it is worked out eight times a day instead of on
+  // every load.
+  //
+  // What is NOT stored is anything that depends on today: days since the last
+  // order, whether they are overdue. Those are read off these columns at query
+  // time, which is cheap, and storing them would make the table wrong by
+  // morning.
+  ['sfy_customers', `CREATE TABLE sfy_customers (
+      phone       VARCHAR(20) NOT NULL PRIMARY KEY,
+      name        VARCHAR(200) DEFAULT '',
+      email       VARCHAR(255) DEFAULT '',
+      city        VARCHAR(120) DEFAULT '',
+      state       VARCHAR(120) DEFAULT '',
+      orders      INT NOT NULL DEFAULT 0,
+      units       INT NOT NULL DEFAULT 0,
+      value       DECIMAL(14,2) NOT NULL DEFAULT 0,
+      first_order DATETIME NULL,
+      last_order  DATETIME NULL,
+      -- Average days between orders. Null for a one-time buyer, who has no
+      -- rhythm to be late against.
+      gap_days    INT NULL,
+      rebuilt_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_sfy_c_value (value),
+      KEY idx_sfy_c_last (last_order),
+      KEY idx_sfy_c_name (name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // ── Bunai B2B parties ────────────────────────────────────────────────
   // Everyone the wholesale side is talking to, whether or not they have
   // bought yet. b2b_orders only knows a party once an order exists, so a shop

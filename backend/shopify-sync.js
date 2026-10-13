@@ -200,13 +200,90 @@ async function syncOrders({ days = DAYS } = {}) {
       'UPDATE sfy_order_sync_log SET ended_at=UTC_TIMESTAMP(), orders_seen=?, orders_new=?, ok=1 WHERE id=?',
       [seen, fresh, runId]);
     log(`  ${fresh} new or changed, of ${seen} in the window`);
-    return { orders: seen, fresh, lines };
+
+    // The calling list reads customers, not orders. Rebuilt here so it is
+    // never more stale than the orders behind it.
+    const customers = await rebuildCustomers();
+    log(`  ${customers.toLocaleString('en-IN')} customers rolled up`);
+
+    return { orders: seen, fresh, lines, customers };
   } catch (e) {
     await db.query(
       'UPDATE sfy_order_sync_log SET ended_at=UTC_TIMESTAMP(), ok=0, error=? WHERE id=?',
       [String(e.message).slice(0, 2000), runId]);
     throw e;
   }
+}
+
+// ── The customer roll-up ──────────────────────────────
+// sfy_customers is one row per customer, and every page that asks "who should
+// we ring" reads it instead of grouping 450,000 orders on a phone number dug
+// out with REGEXP_REPLACE. That grouping took 43 seconds; this runs once a
+// sync.
+//
+// Rebuilt whole rather than merged. A customer whose orders were all cancelled
+// should disappear, and a phone number corrected on an old order moves that
+// order's history to a different customer — neither survives an upsert that
+// only touches the rows it happens to see.
+const CUST_KEY = `RIGHT(REGEXP_REPLACE(COALESCE(o.customer_phone,''), '[^0-9]', ''), 10)`;
+
+async function rebuildCustomers() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS sfy_customers (
+      phone       VARCHAR(20) NOT NULL PRIMARY KEY,
+      name        VARCHAR(200) DEFAULT '',
+      email       VARCHAR(255) DEFAULT '',
+      city        VARCHAR(120) DEFAULT '',
+      state       VARCHAR(120) DEFAULT '',
+      orders      INT NOT NULL DEFAULT 0,
+      units       INT NOT NULL DEFAULT 0,
+      value       DECIMAL(14,2) NOT NULL DEFAULT 0,
+      first_order DATETIME NULL,
+      last_order  DATETIME NULL,
+      gap_days    INT NULL,
+      rebuilt_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_sfy_c_value (value),
+      KEY idx_sfy_c_last (last_order),
+      KEY idx_sfy_c_name (name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+  // Into a fresh table, then swapped in. Emptying the live one first would
+  // leave the page with no customers for the minute the rebuild takes.
+  await db.query('DROP TABLE IF EXISTS sfy_customers_new');
+  await db.query('CREATE TABLE sfy_customers_new LIKE sfy_customers');
+
+  await db.query(`
+    INSERT INTO sfy_customers_new
+      (phone, name, email, city, state, orders, units, value,
+       first_order, last_order, gap_days)
+    SELECT ${CUST_KEY},
+           SUBSTRING(MAX(CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'),
+                                COALESCE(o.customer_name, ''))), 15),
+           SUBSTRING(MAX(CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'),
+                                COALESCE(NULLIF(o.customer_email, ''), ''))), 15),
+           SUBSTRING(MAX(CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'),
+                                COALESCE(NULLIF(o.ship_city, ''), ''))), 15),
+           SUBSTRING(MAX(CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'),
+                                COALESCE(NULLIF(o.ship_state, ''), ''))), 15),
+           COUNT(*),
+           COALESCE(SUM(it.n), 0),
+           ROUND(SUM(o.order_amount)),
+           MIN(o.order_date), MAX(o.order_date),
+           CASE WHEN COUNT(*) > 1
+                THEN GREATEST(1, ROUND(DATEDIFF(DATE(MAX(o.order_date)), DATE(MIN(o.order_date)))
+                                       / (COUNT(*) - 1)))
+                ELSE NULL END
+      FROM sfy_orders o
+      LEFT JOIN (SELECT order_no, SUM(order_qty) n FROM sfy_order_items GROUP BY order_no) it
+             ON it.order_no = o.order_no
+     WHERE o.cancelled_at IS NULL AND LENGTH(${CUST_KEY}) = 10
+     GROUP BY 1`);
+
+  await db.query('DROP TABLE IF EXISTS sfy_customers_old');
+  await db.query('RENAME TABLE sfy_customers TO sfy_customers_old, sfy_customers_new TO sfy_customers');
+  await db.query('DROP TABLE sfy_customers_old');
+
+  const r = await db.one('SELECT COUNT(*) n FROM sfy_customers');
+  return Number(r?.n) || 0;
 }
 
 async function status() {
@@ -216,7 +293,7 @@ async function status() {
   return r;
 }
 
-module.exports = { syncOrders, status };
+module.exports = { syncOrders, status, rebuildCustomers };
 
 if (require.main === module) {
   (async () => {
