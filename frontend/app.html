@@ -147,6 +147,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5h16M4 12h16M4 19h16M7 5v14"/></svg>
       <span class="nav-label-text">Catalog</span>
     </div>
+    <div class="nav-item" id="nav-warehouse" style="display:none" onclick="navigate('warehouse',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21V9l9-6 9 6v12M9 21v-6h6v6"/></svg>
+      <span class="nav-label-text">Warehouse</span>
+    </div>
     <div class="nav-item" id="nav-samples" style="display:none" onclick="navigate('samples',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9l-6-6H7a2 2 0 00-2 2v14a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v6h6"/></svg>
       <span class="nav-label-text">Sampling</span>
@@ -665,6 +669,46 @@
       </table>
     </div>
     <div id="catalogPager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted-foreground)"></div>
+  </div>
+
+  <div id="page-warehouse" class="page">
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 14px;flex-wrap:wrap">
+      <select id="whFacility" onchange="loadWarehouse()">
+        <option value="surat">Surat warehouse</option>
+        <option value="bunai">Bunai warehouse</option>
+      </select>
+      <select id="whPeriod" onchange="whPeriodChanged()">
+        <option value="lifetime">Lifetime</option>
+        <option value="month">This month</option>
+        <option value="range">Date range…</option>
+      </select>
+      <span id="whRange" style="display:none;gap:6px;align-items:center">
+        <input type="date" id="whFrom" onchange="loadWarehouse()"/>
+        <span style="color:var(--muted-foreground)">to</span>
+        <input type="date" id="whTo" onchange="loadWarehouse()"/>
+      </span>
+      <span style="flex:1"></span>
+      <input id="whSearch" type="text" placeholder="Search SKU or product…" oninput="whFilterRows()" style="min-width:220px"/>
+    </div>
+
+    <div id="whCompare" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:16px"></div>
+    <div id="whTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:8px"></div>
+    <div id="whNote" style="margin:0 2px 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>SKU</th><th>Product</th>
+            <th style="text-align:right">Total stock</th>
+            <th style="text-align:right">Shipped</th>
+            <th style="text-align:right">RTO</th>
+            <th style="text-align:right">Return</th>
+          </tr>
+        </thead>
+        <tbody id="whBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <div id="page-samples" class="page">

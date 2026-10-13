@@ -169,6 +169,7 @@ async function init() {
       document.getElementById('nav-shipments').style.display = 'flex';
       document.getElementById('nav-catalog').style.display = 'flex';
       document.getElementById('nav-samples').style.display = 'flex';
+      document.getElementById('nav-warehouse').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
@@ -372,6 +373,7 @@ function navigate(page, el, fromHash) {
   if (page === 'shipments' && (!ME || ME.role !== 'admin')) return;
   if (page === 'catalog' && (!ME || ME.role !== 'admin')) return;
   if (page === 'samples' && (!ME || ME.role !== 'admin')) return;
+  if (page === 'warehouse' && (!ME || ME.role !== 'admin')) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   _navCurrent = page;
@@ -407,6 +409,7 @@ function navigate(page, el, fromHash) {
   if (page==='shipments') loadShipments();
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
+  if (page==='warehouse') loadWarehouse();
   if (page==='inventory') loadInventory();
   window.scrollTo(0,0);
 }
@@ -10936,4 +10939,135 @@ async function sampleDelete(id) {
   } catch (e) {
     showToast(e.message || 'Could not delete', 'error');
   }
+}
+
+// ══════════════════════════════════════════════════════
+// WAREHOUSE — Bunai and Surat, kept apart
+//
+// They read as one business everywhere else and they are not one warehouse:
+// different ranges (not a single SKU in both), different channels. Four
+// numbers per variant — stock, shipped, RTO, return.
+// ══════════════════════════════════════════════════════
+let _whRows = [];
+
+function whPeriodChanged() {
+  const range = document.getElementById('whPeriod').value === 'range';
+  document.getElementById('whRange').style.display = range ? 'inline-flex' : 'none';
+  // A range with only one end chosen would silently fall back to lifetime and
+  // show numbers nobody asked for, so wait until both are set.
+  if (range && !(document.getElementById('whFrom').value && document.getElementById('whTo').value)) return;
+  loadWarehouse();
+}
+
+function whQuery() {
+  const p = document.getElementById('whPeriod').value;
+  let q = 'period=' + encodeURIComponent(p);
+  if (p === 'range') {
+    q += '&from=' + encodeURIComponent(document.getElementById('whFrom').value || '')
+       + '&to=' + encodeURIComponent(document.getElementById('whTo').value || '');
+  }
+  return q;
+}
+
+const whNum = n => Number(n || 0).toLocaleString('en-IN');
+
+async function loadWarehouse() {
+  const body = document.getElementById('whBody');
+  if (!body) return;
+  const facility = document.getElementById('whFacility').value;
+  const q = whQuery();
+
+  let d, cmp;
+  try {
+    [d, cmp] = await Promise.all([
+      api('/api/warehouse?facility=' + encodeURIComponent(facility) + '&' + q),
+      api('/api/warehouse/compare?' + q),
+    ]);
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Could not load — '
+      + dtEscape(e.message || 'error') + '</td></tr>';
+    return;
+  }
+
+  // Both warehouses side by side, so the split is the first thing visible.
+  const cw = document.getElementById('whCompare');
+  if (cw) {
+    cw.innerHTML = (cmp.warehouses || []).map(w => {
+      const on = w.key === facility;
+      return '<div class="card" style="padding:14px 16px'
+        + (on ? ';border-color:var(--brand-mid)' : '') + '">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between">'
+        + '<div style="font-weight:700">' + dtEscape(w.label) + '</div>'
+        + '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(w.code) + '</div></div>'
+        + '<div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">'
+        + '<div><div style="font-size:11px;color:var(--muted-foreground)">STOCK</div>'
+        + '<div style="font-size:19px;font-weight:700">' + whNum(w.stock) + '</div></div>'
+        + '<div><div style="font-size:11px;color:var(--muted-foreground)">SHIPPED</div>'
+        + '<div style="font-size:19px;font-weight:700">' + whNum(w.shipped) + '</div></div>'
+        + '<div><div style="font-size:11px;color:var(--muted-foreground)">RTO</div>'
+        + '<div style="font-size:19px;font-weight:700">' + whNum(w.rto) + '</div></div>'
+        + '<div><div style="font-size:11px;color:var(--muted-foreground)">RETURN</div>'
+        + '<div style="font-size:19px;font-weight:700">' + whNum(w.returned) + '</div></div>'
+        + '</div>'
+        + '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px">'
+        + whNum(w.skus) + ' SKUs stocked</div></div>';
+    }).join('');
+  }
+
+  const t = d.totals || {};
+  const tiles = document.getElementById('whTiles');
+  if (tiles) {
+    const tile = (label, n) =>
+      '<div class="card" style="padding:12px 14px"><div style="font-size:11.5px;font-weight:700;'
+      + 'letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">' + label + '</div>'
+      + '<div style="font-size:22px;font-weight:700;margin-top:3px">' + whNum(n) + '</div></div>';
+    tiles.innerHTML = tile('Variants listed', t.skus) + tile('Total stock', t.stock)
+      + tile('Shipped', t.shipped) + tile('RTO', t.rto) + tile('Return', t.returned);
+  }
+
+  // Say which numbers the period applies to. Stock is what is on the shelf now
+  // — there is no per-SKU history to look back through — so a date range moves
+  // three of these four columns and not the first.
+  const note = document.getElementById('whNote');
+  if (note) {
+    // Two things that look like contradictions and are not: the card above
+    // counts variants with stock, this table also lists ones that are out of
+    // stock but moved in the period, so its count is the larger of the two.
+    note.textContent = 'Shipped, RTO and Return are counted over ' + (d.period || 'Lifetime').toLowerCase()
+      + '. Total stock is what is on the shelf right now, whatever period is chosen.'
+      + ' The list includes variants that are out of stock but moved, so it runs longer'
+      + ' than the "SKUs stocked" count on the card above.'
+      + (d.truncated ? ' Showing the first 2,000 of ' + whNum(t.skus) + ' variants.' : '');
+  }
+
+  _whRows = d.rows || [];
+  whFilterRows();
+}
+
+function whFilterRows() {
+  const body = document.getElementById('whBody');
+  if (!body) return;
+  const q = (document.getElementById('whSearch').value || '').trim().toLowerCase();
+  const rows = q
+    ? _whRows.filter(r => (r.sku || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q))
+    : _whRows;
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">'
+      + (q ? 'No variant matches that.' : 'Nothing in this warehouse for the chosen period.')
+      + '</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.map(r => {
+    const dim = v => v ? whNum(v) : '<span style="color:var(--muted-foreground)">—</span>';
+    return '<tr>'
+      + '<td style="font-weight:600;white-space:nowrap">' + dtEscape(r.sku) + '</td>'
+      + '<td>' + dtEscape(r.name || '—') + '</td>'
+      + '<td style="text-align:right">' + dim(r.stock) + '</td>'
+      + '<td style="text-align:right">' + dim(r.shipped) + '</td>'
+      + '<td style="text-align:right">' + dim(r.rto) + '</td>'
+      + '<td style="text-align:right">' + dim(r.returned) + '</td>'
+      + '</tr>';
+  }).join('');
 }
