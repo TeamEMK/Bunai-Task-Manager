@@ -899,6 +899,29 @@ const TABLES = [
   // eight years of history from the SKU and unit figures without any error.
   // The export has no per-line status, so it is the order's: a cancelled order
   // cancels its lines, anything else counts.
+  // ── Bunai B2B parties ────────────────────────────────────────────────
+  // Everyone the wholesale side is talking to, whether or not they have
+  // bought yet. b2b_orders only knows a party once an order exists, so a shop
+  // being courted had nowhere to be written down.
+  //
+  // There is no 'customer' or 'prospect' column, deliberately. The difference
+  // is simply whether the party has an order: one arrives and they are a
+  // customer, with nobody having to remember to change a field. Which is what
+  // the two sub-tabs read.
+  ['b2b_parties', `CREATE TABLE b2b_parties (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      party_name     VARCHAR(255) NOT NULL,
+      contact_person VARCHAR(255) DEFAULT '',
+      email          VARCHAR(255) DEFAULT '',
+      phone          VARCHAR(50) DEFAULT '',
+      city           VARCHAR(160) DEFAULT '',
+      notes          VARCHAR(1000) DEFAULT '',
+      created_by     INT DEFAULT NULL,
+      created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_b2b_party (party_name),
+      KEY idx_b2b_party_city (city)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // ── Sample Style MIS ──────────────────────────────────────────────────
   // The design side of the business, which nothing here has covered: a style
   // is sampled, costed against a vendor quote, priced for the website and for

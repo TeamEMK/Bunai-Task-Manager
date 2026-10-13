@@ -1314,41 +1314,70 @@
 
   <!-- BUNAI B2B - the wholesale order book, kept by hand -->
   <div id="page-b2b" class="page">
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-      <div style="position:relative;flex:1 1 240px;max-width:340px">
-        <input type="text" id="b2bSearch" placeholder="Search party, contact, city, item…"
-          oninput="b2bDebounced()" style="width:100%"/>
-      </div>
-      <select id="b2bOrderFilter" onchange="loadB2B()" style="width:auto;min-width:140px">
-        <option value="">All order statuses</option>
-        <option value="New">New</option>
-        <option value="Processing">Processing</option>
-        <option value="Dispatched">Dispatched</option>
-        <option value="Delivered">Delivered</option>
-        <option value="Cancelled">Cancelled</option>
-      </select>
-      <select id="b2bPayFilter" onchange="loadB2B()" style="width:auto;min-width:140px">
-        <option value="">All payments</option>
-        <option value="Pending">Pending</option>
-        <option value="Partial">Partial</option>
-        <option value="Paid">Paid</option>
-      </select>
-      <div style="flex:1"></div>
-      <button class="btn btn-primary" onclick="openB2B()">+ Add Order</button>
+    <!-- One section, three views of it. Orders is what was sold; Customers and
+         Prospects are the same list of parties split by whether they have
+         bought yet, which nothing has to remember because the order says so. -->
+    <div class="lv-tabs">
+      <div class="lv-tab active" id="b2bTabOrders" onclick="b2bTab('orders')">Orders</div>
+      <div class="lv-tab" id="b2bTabCustomers" onclick="b2bTab('customers')">Customers
+        <span class="lv-tab-badge" id="b2bCustCount">0</span></div>
+      <div class="lv-tab" id="b2bTabProspects" onclick="b2bTab('prospects')">Prospects
+        <span class="lv-tab-badge" id="b2bProsCount">0</span></div>
     </div>
 
-    <div id="b2bTiles" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:8px"></div>
-    <div id="b2bNote" style="display:none;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;border-radius:9px"></div>
+    <div id="b2bViewOrders">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <div style="position:relative;flex:1 1 240px;max-width:340px">
+          <input type="text" id="b2bSearch" placeholder="Search party, contact, city, item…"
+            oninput="b2bDebounced()" style="width:100%"/>
+        </div>
+        <select id="b2bOrderFilter" onchange="loadB2B()" style="width:auto;min-width:140px">
+          <option value="">All order statuses</option>
+          <option value="New">New</option>
+          <option value="Processing">Processing</option>
+          <option value="Dispatched">Dispatched</option>
+          <option value="Delivered">Delivered</option>
+          <option value="Cancelled">Cancelled</option>
+        </select>
+        <select id="b2bPayFilter" onchange="loadB2B()" style="width:auto;min-width:140px">
+          <option value="">All payments</option>
+          <option value="Pending">Pending</option>
+          <option value="Partial">Partial</option>
+          <option value="Paid">Paid</option>
+        </select>
+        <div style="flex:1"></div>
+        <button class="btn btn-primary" onclick="openB2B()">+ Add Order</button>
+      </div>
 
-    <div class="table-container">
-      <table>
-        <thead><tr>
-          <th>Party</th><th>What was sold</th><th style="text-align:right">Order value</th>
-          <th>Payment</th><th>Ordered</th><th>Dispatched</th><th>Delivered</th>
-          <th>Status</th><th>Action</th>
-        </tr></thead>
-        <tbody id="b2bBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
-      </table>
+      <div id="b2bTiles" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <div id="b2bNote" style="display:none;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;border-radius:9px"></div>
+
+      <div class="table-container" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table>
+          <thead><tr>
+            <th>Party</th><th>What was sold</th><th style="text-align:right">Order value</th>
+            <th>Payment</th><th>Ordered</th><th>Dispatched</th><th>Delivered</th>
+            <th>Status</th><th>Action</th>
+          </tr></thead>
+          <tbody id="b2bBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="b2bViewParties" style="display:none">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <input type="text" id="b2bPartySearch" placeholder="Search party, contact, city…"
+          oninput="b2bPartyDebounced()" style="flex:1 1 240px;max-width:340px"/>
+        <div style="flex:1"></div>
+        <button class="btn btn-primary" id="b2bAddPartyBtn" onclick="b2bPartyOpen()">+ Add prospect</button>
+      </div>
+      <div id="b2bPartyNote" style="font-size:12.5px;color:var(--muted-foreground);margin:0 2px 12px"></div>
+      <div class="table-container" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table>
+          <thead id="b2bPartyHead"></thead>
+          <tbody id="b2bPartyBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1607,6 +1636,43 @@
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-outline" onclick="closeModal('sampleModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveSample(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="b2bPartyModal">
+  <div class="modal" style="width:620px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="b2bPartyModalTitle">Add Prospect</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      A party you are talking to but have not sold to yet. It moves to Customers by itself
+      the moment an order is entered in the same name.
+    </div>
+    <div id="b2bPartyErr" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
+      border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <input type="hidden" id="b2bPartyEditId"/>
+    <div class="form-row">
+      <div class="form-group"><label>Party name <span style="color:var(--brand-mid)">*</span></label>
+        <input type="text" id="b2bPartyName" placeholder="The shop or company"/></div>
+      <div class="form-group"><label>Contact person</label>
+        <input type="text" id="b2bPartyContact" placeholder="Who you speak to"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email ID</label>
+        <input type="text" id="b2bPartyEmail" placeholder="name@example.com"/></div>
+      <div class="form-group"><label>Phone</label>
+        <input type="text" id="b2bPartyPhone"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>City</label>
+        <input type="text" id="b2bPartyCity"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1"><label>Notes</label>
+        <textarea id="b2bPartyNotes" rows="2" placeholder="Where this stands — what they asked for, when to follow up"></textarea></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('b2bPartyModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveB2BParty(this)">Save</button>
     </div>
   </div>
 </div>

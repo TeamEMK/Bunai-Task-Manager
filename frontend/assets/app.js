@@ -391,7 +391,7 @@ function navigate(page, el, fromHash) {
   if (page==='hr') loadHr();
   if (page==='hrm') loadHrm();
   if (page==='influencers') loadInfluencers();
-  if (page==='b2b') loadB2B();
+  if (page==='b2b') { loadB2B(); loadB2BParties(); }
   if (page==='approvals') loadApprovals();
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
@@ -11084,4 +11084,166 @@ function whFilterRows() {
       + n(r.stock) + n(r.shipped) + n(r.rto, 'var(--brand-deep)') + n(r.returned, '#b45309')
       + '</tr>';
   }).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// BUNAI B2B — Customers and Prospects
+//
+// Two sub-tabs over one idea: a party with an order is a customer, one without
+// is a prospect. Nothing stores which. The first order moves them across by
+// itself, so nobody has to remember to change a field — and a prospect that
+// quietly became a customer cannot sit in the wrong list.
+// ══════════════════════════════════════════════════════
+let _b2bParties = { customers: [], prospects: [] };
+let _b2bTab = 'orders';
+let _b2bPartyTimer = null;
+function b2bPartyDebounced(){ clearTimeout(_b2bPartyTimer); _b2bPartyTimer = setTimeout(loadB2BParties, 300); }
+
+function b2bTab(which) {
+  _b2bTab = which;
+  for (const [t, id] of [['orders', 'b2bTabOrders'], ['customers', 'b2bTabCustomers'], ['prospects', 'b2bTabProspects']]) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', t === which);
+  }
+  document.getElementById('b2bViewOrders').style.display = which === 'orders' ? '' : 'none';
+  document.getElementById('b2bViewParties').style.display = which === 'orders' ? 'none' : '';
+
+  // Only a prospect can be added by hand. A customer becomes one by ordering,
+  // so a button offering to create one would be offering the wrong thing.
+  const addBtn = document.getElementById('b2bAddPartyBtn');
+  if (addBtn) addBtn.style.display = which === 'prospects' ? '' : 'none';
+
+  if (which === 'orders') loadB2B(); else b2bRenderParties();
+}
+
+async function loadB2BParties() {
+  const q = (document.getElementById('b2bPartySearch')?.value || '').trim();
+  try {
+    _b2bParties = await api('/api/b2b/parties?q=' + encodeURIComponent(q));
+  } catch (e) {
+    document.getElementById('b2bPartyBody').innerHTML =
+      '<tr><td colspan="8" class="empty">Could not load — ' + dtEscape(e.message || 'error') + '</td></tr>';
+    return;
+  }
+  const c = document.getElementById('b2bCustCount');
+  const p = document.getElementById('b2bProsCount');
+  if (c) c.textContent = _b2bParties.counts.customers;
+  if (p) p.textContent = _b2bParties.counts.prospects;
+  if (_b2bTab !== 'orders') b2bRenderParties();
+}
+
+function b2bRenderParties() {
+  const head = document.getElementById('b2bPartyHead');
+  const body = document.getElementById('b2bPartyBody');
+  const note = document.getElementById('b2bPartyNote');
+  if (!head || !body) return;
+
+  const inr = v => '₹' + Number(v || 0).toLocaleString('en-IN');
+  const when = d => (d ? new Date(d).toLocaleDateString('en-IN',
+    { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+
+  if (_b2bTab === 'customers') {
+    note.textContent = 'Parties that have placed at least one order. A prospect moves here on its first order.';
+    head.innerHTML = '<tr><th>Party</th><th>Contact</th><th>City</th>'
+      + '<th style="text-align:right">Orders</th><th style="text-align:right">Pieces</th>'
+      + '<th style="text-align:right">Value</th><th style="text-align:right">Balance</th>'
+      + '<th>Last order</th></tr>';
+    const rows = _b2bParties.customers || [];
+    body.innerHTML = rows.length ? rows.map(r =>
+      '<tr>'
+      + '<td style="font-weight:600">' + dtEscape(r.party_name) + '</td>'
+      + '<td>' + dtEscape(r.contact_person || '—')
+      + (r.phone ? '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phone) + '</div>' : '')
+      + '</td>'
+      + '<td>' + dtEscape(r.city || '—') + '</td>'
+      + '<td style="text-align:right">' + Number(r.orders).toLocaleString('en-IN') + '</td>'
+      + '<td style="text-align:right">' + Number(r.pieces || 0).toLocaleString('en-IN') + '</td>'
+      + '<td style="text-align:right">' + inr(r.value) + '</td>'
+      // Money still owed is the one number on this row worth catching the eye.
+      + '<td style="text-align:right' + (Number(r.balance) > 0 ? ';color:var(--brand-deep);font-weight:600' : '') + '">'
+      + (Number(r.balance) > 0 ? inr(r.balance) : '<span style="color:var(--faint)">—</span>') + '</td>'
+      + '<td style="white-space:nowrap">' + when(r.last_order) + '</td>'
+      + '</tr>').join('')
+      : '<tr><td colspan="8" class="empty">No customers yet — a party appears here once it has an order.</td></tr>';
+    return;
+  }
+
+  note.textContent = 'Parties being talked to that have not ordered yet. They move to Customers on their first order.';
+  head.innerHTML = '<tr><th>Party</th><th>Contact</th><th>Email</th><th>City</th>'
+    + '<th>Notes</th><th>Added</th><th></th></tr>';
+  const rows = _b2bParties.prospects || [];
+  body.innerHTML = rows.length ? rows.map(r =>
+    '<tr>'
+    + '<td style="font-weight:600">' + dtEscape(r.party_name) + '</td>'
+    + '<td>' + dtEscape(r.contact_person || '—')
+    + (r.phone ? '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phone) + '</div>' : '')
+    + '</td>'
+    + '<td>' + dtEscape(r.email || '—') + '</td>'
+    + '<td>' + dtEscape(r.city || '—') + '</td>'
+    + '<td style="max-width:280px">' + dtEscape(r.notes || '—') + '</td>'
+    + '<td style="white-space:nowrap">' + when(r.created_at) + '</td>'
+    + '<td style="white-space:nowrap">'
+    + '<button class="btn btn-sm" onclick="b2bPartyOpen(' + r.party_id + ')">Edit</button> '
+    + '<button class="btn btn-sm btn-outline" onclick="b2bPartyDelete(' + r.party_id + ')">Delete</button>'
+    + '</td></tr>').join('')
+    : '<tr><td colspan="7" class="empty">No prospects yet — add the first one.</td></tr>';
+}
+
+function b2bPartyOpen(id) {
+  const r = id ? (_b2bParties.prospects || []).find(x => x.party_id === id) : null;
+  document.getElementById('b2bPartyModalTitle').textContent = r ? 'Edit Prospect' : 'Add Prospect';
+  document.getElementById('b2bPartyErr').style.display = 'none';
+  const set = (el, v) => { document.getElementById(el).value = (v === null || v === undefined) ? '' : v; };
+  set('b2bPartyEditId', r ? r.party_id : '');
+  set('b2bPartyName', r ? r.party_name : '');
+  set('b2bPartyContact', r ? r.contact_person : '');
+  set('b2bPartyEmail', r ? r.email : '');
+  set('b2bPartyPhone', r ? r.phone : '');
+  set('b2bPartyCity', r ? r.city : '');
+  set('b2bPartyNotes', r ? r.notes : '');
+  document.getElementById('b2bPartyModal').classList.add('open');
+}
+
+async function saveB2BParty(btn) {
+  const val = el => document.getElementById(el).value.trim();
+  const id = val('b2bPartyEditId');
+  const err = document.getElementById('b2bPartyErr');
+  err.style.display = 'none';
+  if (!val('b2bPartyName')) {
+    err.textContent = 'Party name is required.';
+    err.style.display = 'block';
+    return;
+  }
+  const payload = {
+    party_name: val('b2bPartyName'), contact_person: val('b2bPartyContact'),
+    email: val('b2bPartyEmail'), phone: val('b2bPartyPhone'),
+    city: val('b2bPartyCity'), notes: val('b2bPartyNotes'),
+  };
+  btn.disabled = true;
+  const was = btn.textContent;
+  btn.textContent = 'Saving…';
+  try {
+    await api(id ? '/api/b2b/parties/' + id : '/api/b2b/parties', id ? 'PUT' : 'POST', payload);
+    closeModal('b2bPartyModal');
+    showToast(id ? 'Prospect updated' : 'Prospect added');
+    loadB2BParties();
+  } catch (e) {
+    err.textContent = e.message || 'Could not save';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+async function b2bPartyDelete(id) {
+  const r = (_b2bParties.prospects || []).find(x => x.party_id === id);
+  if (!confirm('Remove ' + (r ? r.party_name : 'this prospect') + ' from the list?')) return;
+  try {
+    await api('/api/b2b/parties/' + id, 'DELETE');
+    showToast('Prospect removed');
+    loadB2BParties();
+  } catch (e) {
+    showToast(e.message || 'Could not remove', 'error');
+  }
 }

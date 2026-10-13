@@ -266,4 +266,112 @@ router.delete('/b2b/:id', requireAuth, requireAdmin, asyncRoute(async (req, res)
   res.json({ success: true });
 }));
 
+
+// ── Parties: customers and prospects ──────────────────
+//
+// Two sub-tabs over one idea. A party with an order is a customer; one without
+// is a prospect. Nothing stores which — the first order moves them across on
+// its own, and nobody has to remember to change a field.
+//
+// b2b_orders is the record of what was sold and b2b_parties is the record of
+// who is being talked to. A party can appear in either or both: added as a
+// prospect and then bought, or never written down and simply ordered.
+
+const partyTxt = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
+
+function partyBody(req) {
+  const b = req.body || {};
+  return {
+    party_name: partyTxt(b.party_name, 255),
+    contact_person: partyTxt(b.contact_person, 255),
+    email: partyTxt(b.email, 255),
+    phone: partyTxt(b.phone, 50),
+    city: partyTxt(b.city, 160),
+    notes: partyTxt(b.notes, 1000),
+  };
+}
+
+const PARTY_COLS = ['party_name', 'contact_person', 'email', 'phone', 'city', 'notes'];
+
+router.get('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const q = partyTxt(req.query.q, 120);
+  const like = '%' + q + '%';
+
+  // Customers come out of the order book, because that is what makes one.
+  // b2b_parties is joined for the contact details, which an order may not
+  // carry if it was typed in a hurry.
+  const customers = await db.rows(
+    `SELECT o.party_name,
+            COALESCE(NULLIF(MAX(p.contact_person),''), MAX(o.contact_person)) contact_person,
+            COALESCE(NULLIF(MAX(p.email),''), MAX(o.email)) email,
+            COALESCE(NULLIF(MAX(p.phone),''), MAX(o.phone)) phone,
+            COALESCE(NULLIF(MAX(p.city),''), MAX(o.city)) city,
+            MAX(p.notes) notes, MAX(p.id) party_id,
+            COUNT(*) orders,
+            ROUND(SUM(COALESCE(o.total_order_value,0))) value,
+            ROUND(SUM(COALESCE(o.amount_received,0))) received,
+            ROUND(SUM(COALESCE(o.balance_amount,0))) balance,
+            SUM(COALESCE(o.pieces,0)) pieces,
+            MAX(o.order_date) last_order
+       FROM b2b_orders o
+       LEFT JOIN b2b_parties p ON p.party_name = o.party_name
+      WHERE o.party_name <> ''
+        ${q ? 'AND (o.party_name LIKE ? OR o.contact_person LIKE ? OR o.city LIKE ?)' : ''}
+      GROUP BY o.party_name
+      ORDER BY value DESC`, q ? [like, like, like] : []);
+
+  // Prospects are the ones the order book has never heard of.
+  const prospects = await db.rows(
+    `SELECT p.id party_id, p.party_name, p.contact_person, p.email, p.phone,
+            p.city, p.notes, p.created_at
+       FROM b2b_parties p
+      WHERE NOT EXISTS (SELECT 1 FROM b2b_orders o WHERE o.party_name = p.party_name)
+        ${q ? 'AND (p.party_name LIKE ? OR p.contact_person LIKE ? OR p.city LIKE ?)' : ''}
+      ORDER BY p.created_at DESC`, q ? [like, like, like] : []);
+
+  res.json({
+    customers, prospects,
+    counts: { customers: customers.length, prospects: prospects.length },
+  });
+}));
+
+router.post('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const v = partyBody(req);
+  if (!v.party_name) throw httpError(400, 'Party name is required');
+
+  const dup = await db.one('SELECT id FROM b2b_parties WHERE party_name = ?', [v.party_name]);
+  if (dup) throw httpError(409, `"${v.party_name}" is already on the list`);
+
+  const [r] = await db.query(
+    `INSERT INTO b2b_parties (${PARTY_COLS.join(', ')}, created_by)
+     VALUES (${PARTY_COLS.map(() => '?').join(', ')}, ?)`,
+    [...PARTY_COLS.map(c => v[c]), req.user?.userId || null]);
+  res.json({ ok: true, id: r.insertId });
+}));
+
+router.put('/b2b/parties/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const id = Number(req.params.id);
+  const v = partyBody(req);
+  if (!v.party_name) throw httpError(400, 'Party name is required');
+
+  const dup = await db.one(
+    'SELECT id FROM b2b_parties WHERE party_name = ? AND id <> ?', [v.party_name, id]);
+  if (dup) throw httpError(409, `"${v.party_name}" is already on the list`);
+
+  const [r] = await db.query(
+    `UPDATE b2b_parties SET ${PARTY_COLS.map(c => c + ' = ?').join(', ')} WHERE id = ?`,
+    [...PARTY_COLS.map(c => v[c]), id]);
+  if (!r.affectedRows) throw httpError(404, 'Party not found');
+  res.json({ ok: true });
+}));
+
+router.delete('/b2b/parties/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  // Only the contact record goes. Any orders in that party's name stay — they
+  // are what was actually sold, and deleting a contact card is not a reason to
+  // lose them.
+  const [r] = await db.query('DELETE FROM b2b_parties WHERE id = ?', [Number(req.params.id)]);
+  if (!r.affectedRows) throw httpError(404, 'Party not found');
+  res.json({ ok: true });
+}));
+
 module.exports = router;
