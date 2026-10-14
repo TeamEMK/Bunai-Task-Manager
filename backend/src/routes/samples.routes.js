@@ -133,6 +133,35 @@ async function writeRow(row, record) {
   }
 }
 
+// Says what actually went wrong with a Drive upload. The shared error handler
+// turns every Google 403 into "share this sheet with the service account" and
+// every 404 into "Sheet not found", which is true of Sheets and misleading for
+// Drive: the same 403 is also what Google answers when no upload folder is set,
+// because a service account has no storage of its own. Someone reading that
+// message goes off to share a folder that was shared all along.
+function driveFailure(e) {
+  const folder = config.google.poDriveFolderId;
+  const who = google.serviceAccountEmail() || 'the service account';
+  const msg = String((e && e.message) || e);
+  if (!folder) {
+    return 'No Drive folder is set for uploads on this server (PO_DRIVE_FOLDER_ID is empty). '
+      + 'A service account has no storage of its own, so it needs a folder in a Shared Drive.';
+  }
+  if (/storage quota/i.test(msg)) {
+    return 'Drive refused the upload: the service account has no storage quota. The folder must be inside a '
+      + 'Shared Drive, not in someone\'s My Drive, and ' + who + ' must be a member of it.';
+  }
+  if (e && e.code === 404) {
+    return 'The Drive folder was not found by ' + who + '. Check PO_DRIVE_FOLDER_ID, and that the Shared Drive '
+      + 'is shared with that address.';
+  }
+  if (e && e.code === 403) {
+    return 'Drive says ' + who + ' may not add files to that folder (' + msg + '). Make it a Content manager '
+      + 'of the Shared Drive.';
+  }
+  return 'Could not upload to Drive: ' + msg;
+}
+
 // Uploads the sample photo and returns the link to store in image_url. The
 // style row keeps holding a link, as it always did, so the sheet, the table and
 // every style entered before this existed carry on unchanged.
@@ -145,7 +174,12 @@ router.post('/samples/image', requireAuth, requirePage('samples'), (req, res, ne
 }, asyncRoute(async (req, res) => {
   if (!req.file) throw httpError(400, 'Choose a photo to upload.');
   if (!/^image\//i.test(req.file.mimetype || '')) throw httpError(400, 'That file is not an image.');
-  const url = await google.uploadToDrive(req.file.buffer, req.file.originalname, req.file.mimetype, 'SAMPLE');
+  let url;
+  try {
+    url = await google.uploadToDrive(req.file.buffer, req.file.originalname, req.file.mimetype, 'SAMPLE');
+  } catch (e) {
+    throw httpError(502, driveFailure(e));
+  }
   res.json({ url });
 }));
 
