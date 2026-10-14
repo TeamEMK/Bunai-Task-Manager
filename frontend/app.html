@@ -1410,14 +1410,9 @@
   <div id="page-influencers" class="page">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
       <div style="position:relative;flex:1 1 260px;max-width:380px">
-        <input type="text" id="infSearch" placeholder="🔍 Search name, email, phone, profile…"
+        <input type="text" id="infSearch" placeholder="🔍 Search name, email, phone, outfit…"
           oninput="infDebounced()" style="width:100%"/>
       </div>
-      <select id="infStatusFilter" onchange="loadInfluencers()" style="width:auto;min-width:150px">
-        <option value="">All statuses</option>
-        <option value="Approved">Approved</option>
-        <option value="Not Approved">Not Approved</option>
-      </select>
       <div style="flex:1"></div>
       <button class="btn btn-primary" onclick="openInfluencer()">+ Add Influencer</button>
     </div>
@@ -1428,10 +1423,10 @@
     <div class="table-container">
       <table>
         <thead><tr>
-          <th>Influencer</th><th>Status</th><th>Collaboration</th><th>Messaged</th>
-          <th>Shipped</th><th>Received</th><th>Posted</th><th>Action</th>
+          <th>Influencer</th><th>Collaboration</th><th>Outfit</th><th>Messaged</th>
+          <th>Shipped</th><th>Received</th><th>Posted</th><th>Remark</th><th>Action</th>
         </tr></thead>
-        <tbody id="infBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+        <tbody id="infBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1822,19 +1817,17 @@
         <input type="text" id="infProfile" placeholder="https://instagram.com/…"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Status</label>
-        <select id="infStatus">
-          <option value="">—</option>
-          <option value="Approved">Approved</option>
-          <option value="Not Approved">Not Approved</option>
-        </select></div>
       <div class="form-group"><label>Collaboration type</label>
         <select id="infType">
           <option value="">—</option>
           <option value="Barter">Barter</option>
           <option value="Paid">Paid</option>
           <option value="Sourcing">Sourcing</option>
+          <option value="Non Collab">Non Collab</option>
+          <option value="PR">PR</option>
         </select></div>
+      <div class="form-group"><label>Outfit</label>
+        <input type="text" id="infOutfit" placeholder="Name of the outfit(s), separated by commas"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Email ID</label>
@@ -1861,6 +1854,8 @@
       <div class="form-group"><label>Post date</label>
         <input type="date" id="infPosted"/></div>
     </div>
+    <div class="form-group"><label>Remark</label>
+      <textarea id="infRemark" rows="2" placeholder="Feedback on this influencer, for next time"></textarea></div>
 
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-outline" onclick="closeModal('infModal')">Cancel</button>

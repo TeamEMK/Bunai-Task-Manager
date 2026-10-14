@@ -8874,33 +8874,21 @@ const infDate = (d) => {
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-const INF_PILL = {
-  'Approved': ['#dcfce7', '#15803d'],
-  'Not Approved': ['#fee2e2', '#b91c1c'],
-};
-const infPill = (status) => {
-  if (!status) return '<span style="color:var(--faint);font-size:12.5px">—</span>';
-  const [bg, fg] = INF_PILL[status] || ['#f1f5f9', '#334155'];
-  return `<span style="background:${bg};color:${fg};font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap">${dtEscape(status)}</span>`;
-};
-
 async function loadInfluencers(){
   const body = document.getElementById('infBody');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
 
   const params = new URLSearchParams();
   const q = document.getElementById('infSearch').value.trim();
-  const st = document.getElementById('infStatusFilter').value;
   if (q) params.set('q', q);
-  if (st) params.set('status', st);
 
   try {
     const [rows, meta] = await Promise.all([
       api('/api/influencers' + (params.toString() ? '?' + params : '')),
       api('/api/influencers/meta'),
     ]);
-    if (rows.error) { body.innerHTML = `<tr><td colspan="8" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    if (rows.error) { body.innerHTML = `<tr><td colspan="9" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     INF_ROWS = Array.isArray(rows) ? rows : [];
 
     const tile = (label, value, sub, tone) => {
@@ -8914,7 +8902,6 @@ async function loadInfluencers(){
     const m = meta || {};
     document.getElementById('infTiles').innerHTML =
       tile('Influencers', Number(m.total || 0), 'on the list') +
-      tile('Approved', Number((m.byStatus || {})['Approved'] || 0), null, 'good') +
       tile('Awaiting delivery', Number(m.awaitingDelivery || 0), 'shipped, not confirmed', m.awaitingDelivery ? 'warn' : null) +
       tile('Posted', Number(m.posted || 0), 'post is live');
 
@@ -8932,7 +8919,7 @@ async function loadInfluencers(){
     }
 
     if (!INF_ROWS.length) {
-      body.innerHTML = `<tr><td colspan="8" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
       return;
     }
     body.innerHTML = INF_ROWS.map((r, i) => `<tr>
@@ -8942,19 +8929,20 @@ async function loadInfluencers(){
         ${r.profile_link ? `<a href="${dtEscape(r.profile_link)}" target="_blank"
             style="font-size:11.5px;color:var(--brand-deep);text-decoration:none">↗ profile</a>` : ''}
       </td>
-      <td>${infPill(r.status)}</td>
       <td style="font-size:13px">${dtEscape(r.collaboration_type || '—')}</td>
+      <td style="font-size:13px;max-width:200px">${dtEscape(r.outfit || '—')}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.message_sent_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.shipped_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.received_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.post_date)}</td>
+      <td style="font-size:12.5px;max-width:220px;color:var(--muted-foreground)" title="${dtEscape(r.remark || '')}">${dtEscape(r.remark || '—')}</td>
       <td style="white-space:nowrap">
         <button class="action-btn" onclick="openInfluencer(${i})">Edit</button>
         <button class="action-btn delete" style="margin-left:6px" onclick="deleteInfluencer(${r.id})">Delete</button>
       </td>
     </tr>`).join('');
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
   }
 }
 
@@ -8966,8 +8954,8 @@ function openInfluencer(idx){
   document.getElementById('infEditId').value = r ? r.id : '';
   set('infName', r?.name);
   set('infProfile', r?.profile_link);
-  set('infStatus', r?.status);
   set('infType', r?.collaboration_type);
+  set('infOutfit', r?.outfit);
   set('infEmail', r?.email);
   set('infPhone', r?.phone);
   set('infAddress', r?.shipping_address);
@@ -8975,6 +8963,7 @@ function openInfluencer(idx){
   set('infShipped', r?.shipped_on);
   set('infReceived', r?.received_on);
   set('infPosted', r?.post_date);
+  set('infRemark', r?.remark);
   document.getElementById('infModal').classList.add('open');
 }
 
@@ -8984,10 +8973,12 @@ async function saveInfluencer(btn){
   const val = (id) => document.getElementById(id).value.trim();
   const id = document.getElementById('infEditId').value;
   const body = {
-    name: val('infName'), profile_link: val('infProfile'), status: val('infStatus'),
-    collaboration_type: val('infType'), email: val('infEmail'), phone: val('infPhone'),
+    name: val('infName'), profile_link: val('infProfile'),
+    collaboration_type: val('infType'), outfit: val('infOutfit'),
+    email: val('infEmail'), phone: val('infPhone'),
     shipping_address: val('infAddress'), message_sent_on: val('infMessaged'),
     shipped_on: val('infShipped'), received_on: val('infReceived'), post_date: val('infPosted'),
+    remark: val('infRemark'),
   };
   if (!body.name) { err.textContent = 'The influencer’s name is required'; err.style.display = 'block'; return; }
 
@@ -8999,7 +8990,11 @@ async function saveInfluencer(btn){
     closeModal('infModal');
     // Saved either way; whether it reached the sheet is a separate fact and is
     // reported as one.
-    if (r.sheet) showToast('✅ Saved — and written to the sheet');
+    if (r.sheet && (r.sheetMissing || []).length) {
+      // Written, but the sheet has no column for the new fields yet. Said so,
+      // because otherwise the outfit typed here would never be seen there.
+      showToast('⚠️ Saved — but the sheet has no ' + r.sheetMissing.join(' / ') + ' column yet', 'error', 9000);
+    } else if (r.sheet) showToast('✅ Saved — and written to the sheet');
     else showToast('⚠️ Saved here, but not to the sheet — ' + (r.sheetError || 'no sheet configured'),
       'error', 9000);
     loadInfluencers();

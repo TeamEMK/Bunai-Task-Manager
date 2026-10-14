@@ -414,12 +414,14 @@ const TABLES = [
     status VARCHAR(40) DEFAULT '',
     message_sent_on DATE DEFAULT NULL,
     collaboration_type VARCHAR(40) DEFAULT '',
+    outfit VARCHAR(1000) DEFAULT '',
     shipping_address VARCHAR(1000) DEFAULT '',
     email VARCHAR(255) DEFAULT '',
     phone VARCHAR(50) DEFAULT '',
     shipped_on DATE DEFAULT NULL,
     received_on DATE DEFAULT NULL,
     post_date DATE DEFAULT NULL,
+    remark VARCHAR(2000) DEFAULT '',
     -- Which line of the Google Sheet this row owns. Null until the sheet is
     -- configured, or when a write to it failed - the record is kept either way.
     sheet_row INT DEFAULT NULL,
@@ -1048,6 +1050,12 @@ const COLUMNS = [
   // know their number, and 0 would claim they found nothing.
   ['uni_order_sync_log', 'orders_new', `INT NULL AFTER orders_seen`],
   ['sample_styles', 'sheet_row', `INT DEFAULT NULL AFTER price_myntra`],
+  // Which outfit(s) went to the influencer, and a note on how it went, for the
+  // next time anyone considers working with them. The old status column stays
+  // where it is: the tracker now only holds approved people, so nothing fills
+  // it any more, but there is no reason to throw away what was already there.
+  ['influencers', 'outfit', `VARCHAR(1000) DEFAULT '' AFTER collaboration_type`],
+  ['influencers', 'remark', `VARCHAR(2000) DEFAULT '' AFTER post_date`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.

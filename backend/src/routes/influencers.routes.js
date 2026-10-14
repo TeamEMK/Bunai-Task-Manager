@@ -22,15 +22,42 @@ const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
 
-// The sheet's own column order, which is the client's, not ours.
-const COLUMNS = [
-  'name', 'profile_link', 'status', 'message_sent_on', 'collaboration_type',
-  'shipping_address', 'email', 'phone', 'shipped_on', 'received_on', 'post_date',
-];
-const LAST_COL = 'K';                       // COLUMNS.length === 11
+// The sheet is the team's, and they rearrange it, so a field is found by the
+// words in its header, never by which letter it happens to sit under. That is
+// what lets a column be added, moved or deleted in the sheet without the app
+// quietly writing the phone number into the shipping address.
+const HEADER_FIELDS = {
+  'influencer name': 'name', 'name': 'name',
+  'profile link': 'profile_link',
+  'message sent on instagram': 'message_sent_on',
+  'collaboration type': 'collaboration_type',
+  'outfit': 'outfit', 'outfits': 'outfit', 'outfit name': 'outfit',
+  'shipping address': 'shipping_address',
+  'email id': 'email', 'email': 'email',
+  'phone number': 'phone', 'phone': 'phone',
+  'shipped on': 'shipped_on', 'received on': 'received_on', 'post date': 'post_date',
+  'remark': 'remark', 'remarks': 'remark',
+};
+// What a missing column is called when the page says so.
+const FIELD_LABEL = {
+  name: 'Influencer Name', profile_link: 'Profile Link', message_sent_on: 'Message Sent on Instagram',
+  collaboration_type: 'Collaboration Type', outfit: 'Outfit', shipping_address: 'Shipping Address',
+  email: 'Email ID', phone: 'Phone Number', shipped_on: 'Shipped On', received_on: 'Received On',
+  post_date: 'Post Date', remark: 'Remark',
+};
+const FIELDS = Object.keys(FIELD_LABEL);
+const DATE_FIELDS = ['message_sent_on', 'shipped_on', 'received_on', 'post_date'];
 
-const STATUSES = ['Approved', 'Not Approved'];
-const TYPES = ['Barter', 'Paid', 'Sourcing'];
+// Everyone in this tracker has been approved, so there is no status to record.
+// The list is the one the sheet's dropdown offers.
+const TYPES = ['Barter', 'Paid', 'Sourcing', 'Non Collab', 'PR'];
+
+// 0 -> A, 25 -> Z, 26 -> AA.
+const colLetter = (i) => {
+  let n = i + 1, out = '';
+  while (n > 0) { const r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+  return out;
+};
 
 const clean = (v, max = 255) => String(v ?? '').trim().slice(0, max);
 const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim()) ? String(v).trim() : null);
@@ -52,28 +79,25 @@ const SELECT = `
     LEFT JOIN users u ON u.id = i.created_by`;
 
 function fromBody(b) {
-  const status = STATUSES.includes(clean(b.status)) ? clean(b.status) : '';
   const type = TYPES.includes(clean(b.collaboration_type)) ? clean(b.collaboration_type) : '';
   return {
     name: clean(b.name),
     profile_link: clean(b.profile_link, 500),
-    status,
     message_sent_on: dateOrNull(b.message_sent_on),
     collaboration_type: type,
+    outfit: clean(b.outfit, 1000),
     shipping_address: clean(b.shipping_address, 1000),
     email: clean(b.email),
     phone: clean(b.phone, 50),
     shipped_on: dateOrNull(b.shipped_on),
     received_on: dateOrNull(b.received_on),
     post_date: dateOrNull(b.post_date),
+    remark: clean(b.remark, 2000),
   };
 }
 
-// The row as the sheet wants it: the same eleven columns, dates written the
-// way a person reads them.
-const asRow = (r) => COLUMNS.map((c) => (
-  ['message_sent_on', 'shipped_on', 'received_on', 'post_date'].includes(c) ? slash(r[c]) : (r[c] || '')
-));
+// One field as the sheet wants it: dates written the way a person reads them.
+const cellValue = (r, field) => (DATE_FIELDS.includes(field) ? slash(r[field]) : (r[field] || ''));
 
 // ── The Google Sheet half ─────────────────────────────
 // None of this throws. A record that saved here and failed to reach the sheet
@@ -88,33 +112,59 @@ async function tab() {
   return google.resolveTabNameByGid(id, gid);
 }
 
-// The first empty line at or after the start row, found by reading column A.
-// Appending blind puts a row under whatever stray data is furthest down the
-// sheet; this puts it under the last influencer.
-async function nextRow(tabName) {
+// Reads the header row and says which column each field lives in. The header is
+// the line above the first data line.
+async function layout(tabName) {
   const { id, startRow } = config.sheets.influencer;
-  const colA = await google.readValues(id, `${tabName}!A${startRow}:A100000`, { fresh: true });
-  for (let i = 0; i < colA.length; i++) {
-    if (!colA[i] || !String(colA[i][0] || '').trim()) return startRow + i;
-  }
-  return startRow + colA.length;
+  const headerRow = Math.max(1, startRow - 1);
+  const rows = await google.readValues(id, `${tabName}!A${headerRow}:AZ${headerRow}`, { fresh: true });
+  const cols = {};
+  (rows[0] || []).forEach((h, i) => {
+    const field = HEADER_FIELDS[String(h || '').trim().toLowerCase().replace(/\s+/g, ' ')];
+    if (field && !(field in cols)) cols[field] = colLetter(i);
+  });
+  return cols;
 }
 
+// The first empty line at or after the start row, found by reading the name
+// column. Appending blind puts a row under whatever stray data is furthest down
+// the sheet; this puts it under the last influencer.
+async function nextRow(tabName, nameCol) {
+  const { id, startRow } = config.sheets.influencer;
+  const col = await google.readValues(id, `${tabName}!${nameCol}${startRow}:${nameCol}100000`, { fresh: true });
+  for (let i = 0; i < col.length; i++) {
+    if (!col[i] || !String(col[i][0] || '').trim()) return startRow + i;
+  }
+  return startRow + col.length;
+}
+
+// Writes only the cells of the fields it knows, each into its own column.
+// Whatever else the team keeps on that line - a note column of their own, a
+// status they still want - is not touched. A field with no column in the sheet
+// is reported rather than guessed at.
 async function writeRow(row, record) {
   if (!sheetConfigured()) return { ok: false, reason: 'no sheet configured' };
   try {
     const { id } = config.sheets.influencer;
     const tabName = await tab();
-    const at = row || await nextRow(tabName);
+    const cols = await layout(tabName);
+    if (!cols.name) {
+      return { ok: false, reason: 'the sheet has no "Influencer Name" column in its header row' };
+    }
+    const at = row || await nextRow(tabName, cols.name);
+    const data = FIELDS.filter(f => cols[f]).map(f => ({
+      range: `${tabName}!${cols[f]}${at}`, values: [[cellValue(record, f)]],
+    }));
     const api = await google.getWriteClient();
-    await api.spreadsheets.values.update({
+    await api.spreadsheets.values.batchUpdate({
       spreadsheetId: id,
-      range: `${tabName}!A${at}:${LAST_COL}${at}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [asRow(record)] },
+      requestBody: { valueInputOption: 'USER_ENTERED', data },
     });
     google.invalidateSheet(id);
-    return { ok: true, row: at };
+    // Only the two new ones are worth a warning: the others have always been
+    // there, and a sheet that lacks them is the team's own choice.
+    const missing = ['outfit', 'remark'].filter(f => !cols[f]).map(f => FIELD_LABEL[f]);
+    return { ok: true, row: at, missing };
   } catch (err) {
     console.error('⚠️ Influencer sheet write failed:', err.message);
     return { ok: false, reason: err.message };
@@ -125,14 +175,12 @@ async function writeRow(row, record) {
 
 router.get('/influencers', requireAuth, asyncRoute(async (req, res) => {
   const q = clean(req.query.q, 120);
-  const status = STATUSES.includes(req.query.status) ? req.query.status : '';
   const where = [];
   const args = [];
   if (q) {
-    where.push('(i.name LIKE ? OR i.email LIKE ? OR i.phone LIKE ? OR i.profile_link LIKE ?)');
-    args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    where.push('(i.name LIKE ? OR i.email LIKE ? OR i.phone LIKE ? OR i.profile_link LIKE ? OR i.outfit LIKE ? OR i.remark LIKE ?)');
+    args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
   }
-  if (status) { where.push('i.status = ?'); args.push(status); }
   const rows = await db.rows(
     `${SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY i.id DESC LIMIT 1000`, args);
@@ -141,21 +189,18 @@ router.get('/influencers', requireAuth, asyncRoute(async (req, res) => {
 
 // What the page needs to know without asking three times.
 router.get('/influencers/meta', requireAuth, asyncRoute(async (req, res) => {
-  const counts = await db.rows(
-    `SELECT status, COUNT(*) AS n FROM influencers GROUP BY status`);
-  const byStatus = Object.fromEntries(counts.map(c => [c.status || '—', Number(c.n) || 0]));
-  const total = counts.reduce((sum, c) => sum + Number(c.n || 0), 0);
+  const totalRow = await db.one('SELECT COUNT(*) AS n FROM influencers');
+  const total = Number(totalRow?.n || 0);
   const posted = await db.one('SELECT COUNT(*) AS n FROM influencers WHERE post_date IS NOT NULL');
   const awaiting = await db.one(
     'SELECT COUNT(*) AS n FROM influencers WHERE shipped_on IS NOT NULL AND received_on IS NULL');
   res.json({
-    statuses: STATUSES,
     types: TYPES,
     sheet: sheetConfigured(),
     // Worth saying out loud on the page: without this the team fills the app
     // and quietly wonders why their sheet is empty.
     serviceAccount: sheetConfigured() ? null : google.serviceAccountEmail(),
-    total, byStatus,
+    total,
     posted: Number(posted?.n || 0),
     awaitingDelivery: Number(awaiting?.n || 0),
   });
@@ -175,7 +220,7 @@ router.post('/influencers', requireAuth, asyncRoute(async (req, res) => {
   const sheet = await writeRow(null, d);
   if (sheet.ok) await db.query('UPDATE influencers SET sheet_row=? WHERE id=?', [sheet.row, id]);
 
-  res.json({ id, sheet: sheet.ok, sheetError: sheet.ok ? null : sheet.reason });
+  res.json({ id, sheet: sheet.ok, sheetError: sheet.ok ? null : sheet.reason, sheetMissing: sheet.missing || [] });
 }));
 
 router.put('/influencers/:id', requireAuth, asyncRoute(async (req, res) => {
@@ -197,7 +242,7 @@ router.put('/influencers/:id', requireAuth, asyncRoute(async (req, res) => {
     await db.query('UPDATE influencers SET sheet_row=? WHERE id=?', [sheet.row, id]);
   }
 
-  res.json({ success: true, sheet: sheet.ok, sheetError: sheet.ok ? null : sheet.reason });
+  res.json({ success: true, sheet: sheet.ok, sheetError: sheet.ok ? null : sheet.reason, sheetMissing: sheet.missing || [] });
 }));
 
 // Only the row here. The line in the sheet is left where it is: deleting it
