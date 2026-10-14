@@ -11468,7 +11468,8 @@ async function loadScot() {
     note.textContent = (d.rows.length < d.total
       ? 'first ' + n(d.rows.length) + ' of ' + n(d.total)
       : n(d.total) + ' customers')
-      + ' · lifetime figures, all years';
+      + ' · lifetime figures, all years'
+      + (d.sheet && d.sheet.scot ? ' · Google Sheet updated ' + d.sheet.scot + ' IST' : '');
   }
 
   if (!d.rows.length) {

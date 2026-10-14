@@ -36,6 +36,40 @@ const dmy = (iso) => { const [y, m, d] = iso.split('-').map(Number); return `${d
 
 const sheetId = () => (config.sheets.scot && config.sheets.scot.id) || '';
 
+// "Last updated: 14-Oct-2026, 1:11 PM IST", for the sheet to say about itself.
+// A sheet that fills itself overnight gives no sign of whether it did, and
+// the only way to find out was to ask someone with access to the logs. The
+// time is the moment the write finished, written last, so a half-finished run
+// leaves the previous stamp standing rather than a false new one.
+function stampText(at = new Date()) {
+  const [date, time] = at.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ');
+  const [y, m, d] = date.split('-').map(Number);
+  let [hh, mm] = time.split(':').map(Number);
+  const ap = hh >= 12 ? 'PM' : 'AM';
+  hh = hh % 12 || 12;
+  return `Last updated: ${d}-${MON[m - 1]}-${y}, ${hh}:${String(mm).padStart(2, '0')} ${ap} IST`;
+}
+
+// A tab made with exactly the table's width has no column to put a note in.
+// Grows it, never shrinks it.
+async function ensureCols(sheets, id, tab, want) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: id });
+  const t = meta.data.sheets.find(x => x.properties.title === tab);
+  if (!t) throw new Error(`the sheet has no tab called "${tab}"`);
+  const have = t.properties.gridProperties.columnCount;
+  if (have < want) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [
+      { appendDimension: { sheetId: t.properties.sheetId, dimension: 'COLUMNS', length: want - have } }] } });
+  }
+}
+
+async function stamp(sheets, id, tab, cell, at) {
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: id, range: `'${tab}'!${cell}`,
+    valueInputOption: 'RAW', requestBody: { values: [[stampText(at)]] },
+  });
+}
+
 // The Dashboard's formulas, verbatim from the sheet. {S} is the SCOT row each
 // one covers, {D} its own row. Only the numbers are made to agree; none of
 // their logic is reinvented here.
@@ -189,6 +223,9 @@ async function writeScotSheet({ log = () => {} } = {}) {
     });
     await put(sheets, id, 'Dashboard', DASH_FIRST, dash, 'Q', 200);
     await put(sheets, id, 'SCOT Sheet', FIRST_ROW, rows, lastCol, 200);
+    // A1 anchors an empty merged block (A1:G2) beside the title. A2 would not do:
+    // it sits inside that merge, and a value written there is simply dropped.
+    await stamp(sheets, id, 'SCOT Sheet', 'A1');
 
     google.invalidateSheet(id);
     await logDone(runId, rows.length);
@@ -245,6 +282,9 @@ async function writeLifetimeTab({ log = () => {} } = {}) {
       valueInputOption: 'RAW', requestBody: { values: [HEAD] },
     });
     await put(sheets, id, 'SCOT Lifetime', 2, rows, 'O', LIFETIME_CHUNK);
+    // Column Q: two columns clear of the table, which is cleared as A:O.
+    await ensureCols(sheets, id, 'SCOT Lifetime', 17);
+    await stamp(sheets, id, 'SCOT Lifetime', 'Q1');
 
     google.invalidateSheet(id);
     await logDone(runId, rows.length);
@@ -305,12 +345,38 @@ async function refresh({ log = () => {}, force = false } = {}) {
   return out;
 }
 
-module.exports = { refresh, writeScotSheet, writeLifetimeTab };
+// Writes each tab's "Last updated" line from the log, using the time its last
+// successful write actually finished. For a sheet that was filled before the
+// stamp existed: stamping it "now" would claim a freshness it does not have.
+// The time is formatted to an ISO string in SQL rather than read as a Date,
+// because the driver reads the DATETIME as local time and would shift it.
+async function stampFromLog() {
+  const id = sheetId();
+  if (!id) return { skipped: 'no sheet configured' };
+  await ensureLog();
+  const rows = await db.rows(
+    `SELECT tab, DATE_FORMAT(MAX(ended_at), '%Y-%m-%dT%H:%i:%sZ') at
+       FROM scot_sheet_log WHERE ok = 1 GROUP BY tab`);
+  const sheets = await google.getWriteClient();
+  const done = {};
+  for (const r of rows) {
+    const where = r.tab === 'SCOT Lifetime' ? ['SCOT Lifetime', 'Q1'] : r.tab === 'SCOT Sheet' ? ['SCOT Sheet', 'A1'] : null;
+    if (!where || !r.at) continue;
+    if (where[0] === 'SCOT Lifetime') await ensureCols(sheets, id, 'SCOT Lifetime', 17);
+    await stamp(sheets, id, where[0], where[1], new Date(r.at));
+    done[r.tab] = stampText(new Date(r.at));
+  }
+  google.invalidateSheet(id);
+  return done;
+}
+
+module.exports = { refresh, writeScotSheet, writeLifetimeTab, stampFromLog };
 
 if (require.main === module) {
   require('dotenv').config();
   const force = process.argv.includes('--force');
-  refresh({ log: console.log, force })
+  const run = process.argv.includes('--stamp') ? stampFromLog() : refresh({ log: console.log, force });
+  run
     .then(r => { console.log(JSON.stringify(r, null, 2)); process.exit(0); })
     .catch(e => { console.error('FAILED: ' + e.message); process.exit(1); });
 }

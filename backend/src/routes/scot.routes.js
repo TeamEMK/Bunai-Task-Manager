@@ -85,7 +85,20 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   ]);
 
   const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
+
+  // When each tab of the Google Sheet was last written, in India's time. The
+  // log is in UTC; the table may not exist yet on a database the sheet has
+  // never been written from, and that is not an error worth failing the page.
+  let sheet = null;
+  try {
+    const w = await db.rows(
+      `SELECT tab, DATE_FORMAT(MAX(ended_at) + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
+         FROM scot_sheet_log WHERE ok = 1 GROUP BY tab`);
+    sheet = Object.fromEntries(w.map(r => [r.tab === 'SCOT Lifetime' ? 'lifetime' : 'scot', r.at]));
+  } catch (_) { /* no log yet */ }
+
   res.json({
+    sheet,
     counts: {
       all: counts.reduce((a, c) => a + Number(c.n), 0),
       ...STATUSES.reduce((a, s) => (a[s] = by[s] || 0, a), {}),
