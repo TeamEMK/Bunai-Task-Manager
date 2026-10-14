@@ -11,7 +11,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ const TRANSIT  = ['SHIPPED', 'DISPATCHED', 'MANIFESTED'];
 const DONE     = ['DELIVERED'];
 const list = a => a.map(() => '?').join(',');
 
-router.get('/shipments', requireAuth, requireAdmin, async (req, res) => {
+router.get('/shipments', requireAuth, requirePage('shipments'), async (req, res) => {
   try {
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
@@ -106,7 +106,7 @@ router.get('/shipments', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // One shipment in full, with the order lines it is carrying.
-router.get('/shipments/detail', requireAuth, requireAdmin, async (req, res) => {
+router.get('/shipments/detail', requireAuth, requirePage('shipments'), async (req, res) => {
   try {
     const id = String(req.query.id || '').trim();
     if (!id) return res.status(400).json({ error: 'No shipment id' });

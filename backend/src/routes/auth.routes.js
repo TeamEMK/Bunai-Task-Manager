@@ -6,7 +6,7 @@ const express = require('express');
 const config = require('../config');
 const { db, isDbConnError, DB_DOWN_MESSAGE } = require('../db/pool');
 const { runMigrations, seedDefaultAdmin } = require('../db/migrations');
-const { signToken, requireAuth } = require('../middleware/auth');
+const { signToken, requireAuth, GRANTABLE_KEYS, grantedPages } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 const passwords = require('../services/passwords');
 
@@ -80,6 +80,9 @@ router.get('/me', requireAuth, asyncRoute(async (req, res) => {
     if (row) row.extra_off = '';
   }
   if (!row) return res.status(404).json({ error: 'User not found' });
+  // Pages beyond the role. An Admin has all of them, so the screen can ask one
+  // question - does this person have page X - without special-casing the role.
+  row.pages = row.role === 'admin' ? GRANTABLE_KEYS : await grantedPages(row.id);
   res.json(row);
 }));
 

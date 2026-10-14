@@ -20,7 +20,7 @@ const multer = require('multer');
 const config = require('../config');
 const google = require('../services/google');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
@@ -136,7 +136,7 @@ async function writeRow(row, record) {
 // Uploads the sample photo and returns the link to store in image_url. The
 // style row keeps holding a link, as it always did, so the sheet, the table and
 // every style entered before this existed carry on unchanged.
-router.post('/samples/image', requireAuth, requireAdmin, (req, res, next) => {
+router.post('/samples/image', requireAuth, requirePage('samples'), (req, res, next) => {
   photoUpload.single('file')(req, res, (err) => {
     if (!err) return next();
     const big = err.code === 'LIMIT_FILE_SIZE';
@@ -149,7 +149,7 @@ router.post('/samples/image', requireAuth, requireAdmin, (req, res, next) => {
   res.json({ url });
 }));
 
-router.get('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const q = txt(req.query.q, 120);
   const status = STATUSES.includes(txt(req.query.status, 20)) ? txt(req.query.status, 20) : '';
 
@@ -184,7 +184,7 @@ router.get('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) =>
   });
 }));
 
-router.post('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.post('/samples', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const v = body(req);
   if (!v.style_id) throw httpError(400, 'Sample Style ID is required');
 
@@ -201,7 +201,7 @@ router.post('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) =
   res.json({ ok: true, id: r.insertId, sheet });
 }));
 
-router.put('/samples/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.put('/samples/:id', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const id = Number(req.params.id);
   const v = body(req);
   if (!v.style_id) throw httpError(400, 'Sample Style ID is required');
@@ -224,7 +224,7 @@ router.put('/samples/:id', requireAuth, requireAdmin, asyncRoute(async (req, res
   res.json({ ok: true, sheet });
 }));
 
-router.delete('/samples/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.delete('/samples/:id', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const id = Number(req.params.id);
   const existing = await db.one('SELECT sheet_row FROM sample_styles WHERE id = ?', [id]);
   if (!existing) throw httpError(404, 'Sample style not found');

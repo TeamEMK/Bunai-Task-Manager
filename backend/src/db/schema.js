@@ -26,6 +26,18 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Pages an Admin has handed to one person on top of what their role gives
+  // them. A row per (user, page); no row means the role decides, as before.
+  // Deliberately no foreign key: deleting a user removes their rows in the
+  // route, and a stray row for a missing user opens nothing.
+  ['user_page_access', `CREATE TABLE user_page_access (
+    user_id INT NOT NULL,
+    page_key VARCHAR(40) NOT NULL,
+    granted_by INT DEFAULT NULL,
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, page_key)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // HR employee master (Phase 1). One record per employee. user_id links it to
   // the login account when there is one, but is nullable so non-login staff
   // (interns, field, ex-employees) can still be recorded. Admin-only data —

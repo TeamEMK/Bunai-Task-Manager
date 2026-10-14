@@ -6,11 +6,11 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/returns', requireAuth, requireAdmin, async (req, res) => {
+router.get('/returns', requireAuth, requirePage('returns'), async (req, res) => {
   try {
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
@@ -83,7 +83,7 @@ router.get('/returns', requireAuth, requireAdmin, async (req, res) => {
 
 // Paginated + searchable + filterable list — the full set, powers the table and
 // the KPI/breakdown drill-downs.
-router.get('/returns/list', requireAuth, requireAdmin, async (req, res) => {
+router.get('/returns/list', requireAuth, requirePage('returns'), async (req, res) => {
   try {
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
@@ -132,7 +132,7 @@ router.get('/returns/list', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // A single return's full detail — every stored field, the raw payload, items.
-router.get('/returns/detail', requireAuth, requireAdmin, async (req, res) => {
+router.get('/returns/detail', requireAuth, requirePage('returns'), async (req, res) => {
   try {
     const id = String(req.query.id || '').trim();
     if (!id) return res.status(400).json({ error: 'No return id' });

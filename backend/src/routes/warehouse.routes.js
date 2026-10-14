@@ -21,7 +21,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 
 const router = express.Router();
@@ -61,7 +61,7 @@ function window(req, col) {
   return { sql: '', args: [], label: 'Lifetime' };
 }
 
-router.get('/warehouse', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/warehouse', requireAuth, requirePage('warehouse'), asyncRoute(async (req, res) => {
   const key = String(req.query.facility || 'surat').toLowerCase();
   const wh = WAREHOUSES[key] || WAREHOUSES.surat;
   const code = wh.code;
@@ -131,7 +131,7 @@ router.get('/warehouse', requireAuth, requireAdmin, asyncRoute(async (req, res) 
 }));
 
 // Both warehouses side by side, for the headline comparison.
-router.get('/warehouse/compare', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/warehouse/compare', requireAuth, requirePage('warehouse'), asyncRoute(async (req, res) => {
   const o = window(req, 'o.order_date');
   const r = window(req, 'rr.return_date');
   const out = [];

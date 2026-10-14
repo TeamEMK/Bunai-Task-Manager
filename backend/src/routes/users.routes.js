@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin, GRANTABLE_PAGES, GRANTABLE_KEYS } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { isYmd } = require('../utils/dates');
 const passwords = require('../services/passwords');
@@ -34,37 +34,61 @@ router.get('/users/with-pending-tasks', requireAuth, asyncRoute(async (req, res)
   res.json(rows);
 }));
 
+// The pages an Admin can hand out, for the checkboxes on the Users form.
+router.get('/access/pages', requireAuth, requireAdmin, (req, res) => res.json(GRANTABLE_PAGES));
+
+// Replaces one person's extra pages with exactly this list. Unknown keys are
+// dropped rather than stored, so a stale form cannot invent access.
+async function setPages(userId, wanted, grantedBy) {
+  const keys = [...new Set((Array.isArray(wanted) ? wanted : []).filter(k => GRANTABLE_KEYS.includes(k)))];
+  await db.query('DELETE FROM user_page_access WHERE user_id=?', [userId]);
+  for (const k of keys) {
+    await db.query(
+      'INSERT INTO user_page_access (user_id, page_key, granted_by) VALUES (?,?,?)', [userId, k, grantedBy]);
+  }
+}
+
 router.get('/users', requireAuth, asyncRoute(async (req, res) => {
-  res.json(await db.rows(
+  const users = await db.rows(
     `SELECT id,name,email,notification_email,role,
             COALESCE(user_role, role) AS user_role,
             phone,department,week_off,extra_off,
             COALESCE(exclude_from_reminder,0) AS exclude_from_reminder,
             COALESCE(is_leave_approver,0) AS is_leave_approver
-       FROM users ORDER BY role DESC,name ASC`));
+       FROM users ORDER BY role DESC,name ASC`);
+  // Who has what is for Admins to see; everyone else uses this list only to
+  // pick a name.
+  if (req.session.role === 'admin') {
+    const grants = await db.rows('SELECT user_id, page_key FROM user_page_access ORDER BY page_key');
+    const by = {};
+    grants.forEach(g => { (by[g.user_id] = by[g.user_id] || []).push(g.page_key); });
+    users.forEach(u => { u.pages = (by[u.id] || []).filter(k => GRANTABLE_KEYS.includes(k)); });
+  }
+  res.json(users);
 }));
 
 router.post('/users', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const { name, email, notification_email, password, role, user_role, phone,
-          department, week_off, extra_off, exclude_from_reminder, is_leave_approver } = req.body;
+          department, week_off, extra_off, exclude_from_reminder, is_leave_approver, pages } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'All fields required' });
 
   const existing = await db.one('SELECT id FROM users WHERE email=?', [email]);
   if (existing) return res.status(400).json({ error: 'Email already exists' });
 
   const appRole = pickRole(role, 'user');
-  await db.query(
+  const [made] = await db.query(
     `INSERT INTO users (name,email,notification_email,password,role,user_role,phone,department,week_off,extra_off,exclude_from_reminder,is_leave_approver)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [name, email, notification_email || '', await passwords.hash(password), appRole,
      pickRole(user_role, appRole), phone || null, department || '', week_off || '',
      extra_off || '', exclude_from_reminder ? 1 : 0, is_leave_approver ? 1 : 0]);
+  if (Array.isArray(pages) && appRole !== 'admin') await setPages(made.insertId, pages, req.session.userId);
   res.json({ success: true });
 }));
 
 router.put('/users/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const { name, email, notification_email, role, user_role, password, phone,
-          department, week_off, extra_off, exclude_from_reminder, is_leave_approver } = req.body;
+          department, week_off, extra_off, exclude_from_reminder, is_leave_approver, pages } = req.body;
   const appRole = pickRole(role, 'user');
   const common = [name, email, notification_email || '', appRole, pickRole(user_role, appRole)];
   const tail = [phone || null, department || '', week_off || '', extra_off || '',
@@ -81,6 +105,13 @@ router.put('/users/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) 
               phone=?,department=?,week_off=?,extra_off=?,exclude_from_reminder=?,is_leave_approver=? WHERE id=?`,
       [...common, ...tail]);
   }
+  // Only when the form sent the list: an older caller that knows nothing about
+  // pages must not wipe what was granted. An Admin already has every page, so
+  // making someone one clears their individual grants rather than leaving
+  // rows that would come back to life if they were ever demoted.
+  if (Array.isArray(pages) || appRole === 'admin') {
+    await setPages(req.params.id, appRole === 'admin' ? [] : pages, req.session.userId);
+  }
   res.json({ success: true });
 }));
 
@@ -89,6 +120,7 @@ router.delete('/users/:id', requireAuth, requireAdmin, asyncRoute(async (req, re
     return res.status(400).json({ error: 'Cannot delete yourself' });
   }
   await db.query('DELETE FROM users WHERE id=?', [req.params.id]);
+  await db.query('DELETE FROM user_page_access WHERE user_id=?', [req.params.id]);
   res.json({ success: true });
 }));
 

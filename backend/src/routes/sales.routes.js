@@ -6,14 +6,14 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Statuses vary in case ('delivered', 'Shipped complete', 'Cancelled').
 const LIVE = "LOWER(status) <> 'cancelled'";
 
-router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
+router.get('/sales', requireAuth, requirePage('sales'), async (req, res) => {
   try {
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
@@ -246,7 +246,7 @@ router.get('/sales', requireAuth, requireAdmin, async (req, res) => {
 
 // One product's detail — the orders that contain it, plus units, value and the
 // current stock. Same optional ?from&to window as /sales.
-router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
+router.get('/sales/sku', requireAuth, requirePage('sales'), async (req, res) => {
   try {
     // One SKU or several. A clubbed row on the Stock page is a product, not a
     // SKU, so its orders are all its sizes' orders put together — asking for them
@@ -338,7 +338,7 @@ router.get('/sales/sku', requireAuth, requireAdmin, async (req, res) => {
 //   channel / status / payment / state — one exact breakdown value
 // and returns the exact total count + revenue for the filtered set, so the
 // popup always agrees with the card (no more "latest 95 shown" wobble).
-router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
+router.get('/sales/orders', requireAuth, requirePage('sales'), async (req, res) => {
   try {
     const from = String(req.query.from || '').trim();
     const to = String(req.query.to || '').trim();
@@ -395,7 +395,7 @@ router.get('/sales/orders', requireAuth, requireAdmin, async (req, res) => {
 
 // A single order's full detail — every stored field, the raw payload, and its
 // line items.
-router.get('/sales/order', requireAuth, requireAdmin, async (req, res) => {
+router.get('/sales/order', requireAuth, requirePage('sales'), async (req, res) => {
   try {
     const id = String(req.query.id || '').trim();
     if (!id) return res.status(400).json({ error: 'No order id' });

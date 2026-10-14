@@ -2850,7 +2850,7 @@
     </div>
     <div class="form-row">
       <div class="form-group"><label>App Role <span style="color:var(--faint);font-weight:400;font-size:11px">(app permissions)</span></label>
-        <select id="uRole">
+        <select id="uRole" onchange="accessRoleChanged()">
           <option value="user">User</option>
           <option value="hod">HOD</option>
           <option value="pc">PC (View + Approve)</option>
@@ -2877,6 +2877,14 @@
         Everyone's leave goes to the people ticked here. Tick two and either can approve.
         Tick nobody and it falls back to the department HOD, then an admin.
       </div>
+    </div>
+
+    <!-- Pages handed to this person on top of their role. Users and HR are never
+         offered: they hold accounts, salaries and bank details. -->
+    <div class="form-group" style="margin-top:6px">
+      <label style="font-weight:600">Extra page access</label>
+      <div id="uAccessList" style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:6px"></div>
+      <div id="uAccessNote" style="font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5"></div>
     </div>
 
     <!-- Off-days are managed globally via the Holiday tab (applies to all users) -->

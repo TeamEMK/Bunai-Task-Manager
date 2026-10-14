@@ -8,7 +8,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const ims = require('../../ims');
 
 const apiRouter = express.Router();
@@ -17,7 +17,7 @@ const pageRouter = express.Router();
 // Dispatches to a ported read function and returns the SAME shape the Apps
 // Script returned, so the frontend works unchanged. Errors come back as
 // { __imsError } which the shim routes to the page's failure handler.
-apiRouter.post('/ims/:fn', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.post('/ims/:fn', requireAuth, requirePage('ims'), async (req, res) => {
   try {
     const fn = ims.HANDLERS[req.params.fn];
     if (typeof fn !== 'function') return res.json({ __imsError: 'Unknown IMS function: ' + req.params.fn });
@@ -55,7 +55,7 @@ function buildPage() {
   return html;
 }
 
-pageRouter.get('/ims', requireAuth, requireAdmin, (req, res) => {
+pageRouter.get('/ims', requireAuth, requirePage('ims'), (req, res) => {
   const html = buildPage();
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(html || NOT_INSTALLED_HTML);

@@ -37,6 +37,40 @@ const requireAdminOrHod = allowRoles(['admin', 'hod', 'pc'], 'Admin or HOD only'
 const requireAdminOrHodOnly = allowRoles(['admin', 'hod'], 'Admin or HOD (App Role) only');
 const requireAdminOrPC = allowRoles(['admin', 'pc'], 'Admin or PC only');
 
+// ── Per-user page access ──────────────────────────────
+// Pages an Admin can hand to a person one by one. Users and HR are left out on
+// purpose: they hold accounts, salaries and bank details, and stay Admin-only.
+// The Users page keeps its own copy of the labels, so a key added here needs
+// adding there too (PAGE_GRANTS in app.js).
+const GRANTABLE_PAGES = [
+  { key: 'sales', label: 'Sales' },
+  { key: 'returns', label: 'Returns' },
+  { key: 'shipments', label: 'Shipments' },
+  { key: 'catalog', label: 'Catalog' },
+  { key: 'scot', label: 'SCOT' },
+  { key: 'warehouse', label: 'Warehouse' },
+  { key: 'samples', label: 'Sampling' },
+  { key: 'ims', label: 'IMS' },
+];
+const GRANTABLE_KEYS = GRANTABLE_PAGES.map(p => p.key);
+
+async function grantedPages(userId) {
+  const rows = await db.rows('SELECT page_key FROM user_page_access WHERE user_id=?', [userId]);
+  return rows.map(r => r.page_key).filter(k => GRANTABLE_KEYS.includes(k));
+}
+
+// Admin always passes; anyone else needs a row. Read from the database on every
+// call, never from the token, so taking a page away works on the next request.
+const requirePage = (key) => (req, res, next) => {
+  (async () => {
+    if (req.session.role === 'admin') return next();
+    const hit = await db.one(
+      'SELECT 1 n FROM user_page_access WHERE user_id=? AND page_key=?', [req.session.userId, key]);
+    if (hit) return next();
+    res.status(403).json({ error: 'You do not have access to this page' });
+  })().catch(err => res.status(500).json({ error: err.message }));
+};
+
 // ── Department gates (PO section) ─────────────────────
 // The JWT has no department, so it comes from the row. Admin always passes.
 async function getUserDept(userId) {
@@ -70,6 +104,7 @@ function requireCronSecret(req, res, next) {
 module.exports = {
   signToken, requireAuth,
   requireAdmin, requireAdminOrHod, requireAdminOrHodOnly, requireAdminOrPC,
+  GRANTABLE_PAGES, GRANTABLE_KEYS, grantedPages, requirePage,
   getUserDept, requirePOFill, requirePOUpload, requirePOView,
   requireCronSecret,
 };

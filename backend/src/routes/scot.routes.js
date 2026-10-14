@@ -26,7 +26,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 
 const router = express.Router();
@@ -62,7 +62,7 @@ const ORDER = `
 
 const LIMIT = 1500;
 
-router.get('/scot', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 120);
   const status = STATUSES.includes(String(req.query.status || '')) ? String(req.query.status) : '';
 

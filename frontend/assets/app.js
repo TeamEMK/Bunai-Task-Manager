@@ -175,6 +175,20 @@ async function init() {
       document.getElementById('nav-compliance').style.display = 'flex';
       document.getElementById('bulkDeleteBtn').style.display = 'inline-flex';
     }
+    // Pages an Admin handed to this person one by one. An Admin already had
+    // them above; for everyone else this is what puts them in the menu.
+    PAGE_GRANT_KEYS.forEach(k => {
+      const n = document.getElementById('nav-' + k);
+      if (n && hasPage(k)) n.style.display = 'flex';
+    });
+    // "Sync now" starts a server-side pull, which stays Admin-only: seeing a
+    // page does not include the right to trigger it.
+    if (ME.role !== 'admin') {
+      ['sales', 'returns'].forEach(k => {
+        const b = document.getElementById(k + 'SyncGhBtn');
+        if (b) b.style.display = 'none';
+      });
+    }
     // PO — Production department fills it, Finance department uploads doc against it,
     // Admin sees/does everything.
     window.PO_DEPT = (ME.department || '').trim().toLowerCase();
@@ -329,16 +343,30 @@ function hideEmptyNavSections() {
   });
 }
 
+// Pages an Admin can hand to one person. The server has its own list and is the
+// one that enforces it; this one only draws the checkboxes and the menu, so a
+// key added there needs adding here.
+const PAGE_GRANTS = [
+  { key: 'sales', label: 'Sales' }, { key: 'returns', label: 'Returns' },
+  { key: 'shipments', label: 'Shipments' }, { key: 'catalog', label: 'Catalog' },
+  { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
+  { key: 'samples', label: 'Sampling' }, { key: 'ims', label: 'IMS' },
+];
+const PAGE_GRANT_KEYS = PAGE_GRANTS.map(g => g.key);
+
+// Does this person get the page - by being an Admin, or because one was handed
+// to them. /api/me sends every key for an Admin, but the role is checked too so
+// this is right even before that response is read.
+function hasPage(key) {
+  return !!ME && (ME.role === 'admin' || (Array.isArray(ME.pages) && ME.pages.includes(key)));
+}
+
 // A hash can be typed or bookmarked, so never trust it — the page must exist
 // and the signed-in role must be allowed to open it.
 function canOpenPage(page) {
   if (!page || !document.getElementById('page-' + page)) return false;
   if (page === 'mis') return ME && (ME.role === 'admin' || ME.role === 'hod');
-  if (page === 'ims') return ME && ME.role === 'admin';
-  if (page === 'sales') return ME && ME.role === 'admin';
-  if (page === 'returns') return ME && ME.role === 'admin';
-  if (page === 'shipments') return ME && ME.role === 'admin';
-  if (page === 'catalog') return ME && ME.role === 'admin';
+  if (PAGE_GRANT_KEYS.includes(page)) return hasPage(page);
   if (page === 'hr') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
@@ -363,19 +391,13 @@ function navigate(page, el, fromHash) {
   if (fromHash && page === _navCurrent) return;
   // MIS page — admin and HOD (App Role) only
   if (page === 'mis' && ME.role !== 'admin' && ME.role !== 'hod') return;
-  // IMS page — admin only
-  if (page === 'ims' && (!ME || ME.role !== 'admin')) return;
-  // Sales page — admin only
-  if (page === 'sales' && (!ME || ME.role !== 'admin')) return;
   // HR page — admin only
   if (page === 'hr' && (!ME || ME.role !== 'admin')) return;
-  // Returns page — admin only
-  if (page === 'returns' && (!ME || ME.role !== 'admin')) return;
-  if (page === 'shipments' && (!ME || ME.role !== 'admin')) return;
-  if (page === 'catalog' && (!ME || ME.role !== 'admin')) return;
-  if (page === 'samples' && (!ME || ME.role !== 'admin')) return;
-  if (page === 'warehouse' && (!ME || ME.role !== 'admin')) return;
-  if (page === 'scot' && (!ME || ME.role !== 'admin')) return;
+  // IMS, Sales, Returns, Shipments, Catalog, Sampling, Warehouse, SCOT — an
+  // Admin, or someone an Admin gave that page to. This used to be a line per
+  // page asking only "is this an Admin", which left a granted page in the menu
+  // that refused to open.
+  if (PAGE_GRANT_KEYS.includes(page) && !hasPage(page)) return;
   // Record where we are. Skipped when the hash is what triggered this call,
   // and skipped when unchanged — otherwise the hashchange handler would loop.
   _navCurrent = page;
@@ -646,7 +668,7 @@ async function loadStock() {
     const clubbed = (d.groupBy || 'sku') !== 'sku';
     // Orders live behind an admin-only endpoint, and Stock is not an admin-only
     // page — so the rows only become clickable for someone who could read them.
-    const canOrders = !!(ME && ME.role === 'admin');
+    const canOrders = hasPage('sales');
     window._stockRows = d.rows;
     const skuHdr = document.getElementById('stockSkuHeader');
     if (skuHdr) skuHdr.textContent = clubbed ? (d.groupBy === 'design' ? 'Design' : 'Style') : 'SKU';
@@ -776,10 +798,10 @@ async function liveCheckStock() {
 }
 
 // ══════════════════════════════════════════════════════
-// IMS (admin-only embedded Apps Script web app)
+// IMS (embedded Apps Script web app — Admin, or someone given the page)
 // ══════════════════════════════════════════════════════
 function loadIMS() {
-  if (!ME || ME.role !== 'admin') return;       // hard gate
+  if (!hasPage('ims')) return;                    // hard gate
   if (_imsLoaded) return;                         // load the iframe once
   const frame = document.getElementById('imsFrame');
   const note  = document.getElementById('imsConfigNote');
@@ -2449,6 +2471,7 @@ function renderUsersTable(users) {
       <td>
         <span class="role-badge ${u.role}" title="App Role — permissions">${roleLabel(u.role)}</span>
         ${showBoth ? `<br><span class="role-badge ${userRole}" style="font-size:10px;margin-top:3px;display:inline-block;opacity:.85" title="User Role — leave hierarchy">→ ${roleLabel(userRole)}</span>` : ''}
+        ${accessSummary(u)}
       </td>
       <td>
         <button class="action-btn edit" onclick="openEditUser(${u.id})">Edit</button>
@@ -2456,6 +2479,43 @@ function renderUsersTable(users) {
       </td>
     </tr>`;
   }).join('');
+}
+
+// One line under the role: which extra pages this person was given. An Admin
+// has everything already, so there is nothing to list for them.
+function accessSummary(u) {
+  if (u.role === 'admin') return '';
+  const names = (u.pages || [])
+    .map(k => (PAGE_GRANTS.find(g => g.key === k) || {}).label)
+    .filter(Boolean);
+  if (!names.length) return '';
+  return `<div style="font-size:11px;color:var(--muted-foreground);margin-top:4px;max-width:200px;line-height:1.4" title="Extra pages given by an Admin">+ ${names.join(', ')}</div>`;
+}
+
+// The checkboxes on the user form. `picked` is the list of keys already given.
+function renderAccessBoxes(picked) {
+  const box = document.getElementById('uAccessList');
+  if (!box) return;
+  box.innerHTML = PAGE_GRANTS.map(g => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;text-transform:none;letter-spacing:0;cursor:pointer;margin:0">
+      <input type="checkbox" class="uacc-cb" value="${g.key}" ${picked.includes(g.key) ? 'checked' : ''}
+        style="width:15px;height:15px;accent-color:var(--brand-deep);cursor:pointer"/>
+      ${g.label}
+    </label>`).join('');
+  accessRoleChanged();
+}
+
+// An Admin has every page already, so the boxes mean nothing for one - grey them
+// out and say why instead of leaving ticks that do nothing.
+function accessRoleChanged() {
+  const admin = document.getElementById('uRole').value === 'admin';
+  document.querySelectorAll('.uacc-cb').forEach(cb => { cb.disabled = admin; if (admin) cb.checked = false; });
+  const note = document.getElementById('uAccessNote');
+  if (note) {
+    note.textContent = admin
+      ? 'Admins already have every page.'
+      : 'Tick the pages this person can open, on top of what their role gives them. They get the whole page, but not the Sync button. Users and HR stay Admin-only.';
+  }
 }
 
 function _setWeekOff(s) {
@@ -2519,6 +2579,7 @@ function openAddUser() {
   // Checkboxes are not cleared by the value reset above, so a new user would
   // inherit the tick from whoever was edited last.
   document.getElementById('uLeaveApprover').checked=false;
+  renderAccessBoxes([]);
   document.getElementById('pwdOptional').style.display='none';
   document.getElementById('userErr').style.display='none';
   document.getElementById('userSuccess').style.display='none';
@@ -2538,6 +2599,7 @@ function openEditUser(id) {
   document.getElementById('uRole').value=u.role||'user';
   document.getElementById('uUserRole').value=u.user_role||u.role||'user';
   document.getElementById('uLeaveApprover').checked=Number(u.is_leave_approver)===1;
+  renderAccessBoxes(u.pages || []);
   document.getElementById('pwdOptional').style.display='inline';
   document.getElementById('userErr').style.display='none';
   document.getElementById('userSuccess').style.display='none';
@@ -2558,7 +2620,8 @@ async function saveUser() {
   const is_leave_approver=document.getElementById('uLeaveApprover').checked?1:0;
   if (!name||!email) { err.textContent='Name and email required'; err.style.display='block'; return; }
   if (!id&&!password) { err.textContent='Password required for new user'; err.style.display='block'; return; }
-  const body={name,email,role,user_role,phone,department,is_leave_approver};
+  const pages=[...document.querySelectorAll('.uacc-cb:checked')].map(cb=>cb.value);
+  const body={name,email,role,user_role,phone,department,is_leave_approver,pages};
   if (password) body.password=password;
   const r = id ? await api(`/api/users/${id}`,'PUT',body) : await api('/api/users','POST',body);
   if (r.error) { err.textContent=r.error; err.style.display='block'; return; }

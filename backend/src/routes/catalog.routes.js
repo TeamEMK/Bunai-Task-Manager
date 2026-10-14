@@ -12,13 +12,13 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 
 const router = express.Router();
 
 const PER = 200;
 
-router.get('/catalog', requireAuth, requireAdmin, async (req, res) => {
+router.get('/catalog', requireAuth, requirePage('catalog'), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     const page = Math.max(1, Number(req.query.page) || 1);
