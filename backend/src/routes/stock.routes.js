@@ -29,7 +29,15 @@ router.get('/stock', requireAuth, async (req, res) => {
     const low = req.query.low ? Number(req.query.low) : null;
     // Window for the "sold" / reorder column (days). Validated to a bare int so
     // it is safe to interpolate into the INTERVAL below.
-    const soldDays = Math.min(365, Math.max(1, parseInt(req.query.soldDays, 10) || 45));
+    // "mtd" is the window the page opens on: from the 1st of this month, India's
+    // month, through today. The window is counted back from today, so that is
+    // today's date minus one fewer than the day of the month - zero on the 1st,
+    // which the ordinary clamp to 1 would turn into "since yesterday" and pull
+    // last month's final day into a new month's figure.
+    const mtd = String(req.query.soldDays) === 'mtd';
+    const soldDays = mtd
+      ? new Date(Date.now() + 330 * 60000).getUTCDate() - 1
+      : Math.min(365, Math.max(1, parseInt(req.query.soldDays, 10) || 45));
     // Reorder view: only SKUs selling faster than they are stocked. Computed
     // after the sold column is joined in, so it can't be a plain WHERE.
     const reorder = req.query.reorder === '1';
@@ -152,7 +160,7 @@ router.get('/stock', requireAuth, async (req, res) => {
 
     // Period cards — units sold and how many SKUs need reorder in the chosen
     // window. Guarded: without synced orders these simply don't render.
-    let period = { soldDays, hasOrders: false };
+    let period = { soldDays, mtd, hasOrders: false };
     try {
       const u = await db.one(
         `SELECT ROUND(SUM(it.order_qty)) units, COUNT(DISTINCT it.sku) skus
@@ -173,7 +181,7 @@ router.get('/stock', requireAuth, async (req, res) => {
             WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0
          ) t`);
       period = {
-        soldDays, hasOrders: true,
+        soldDays, mtd, hasOrders: true,
         soldUnits: Number(u?.units) || 0,
         skusSold: Number(u?.skus) || 0,
         reorderCount: Number(rc?.n) || 0,
@@ -182,7 +190,7 @@ router.get('/stock', requireAuth, async (req, res) => {
 
     res.json({
       rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
-      totals, lastSync, lastOk, counts, soldDays, period,
+      totals, lastSync, lastOk, counts, soldDays, mtd, period,
       groupBy: grouping || 'sku',
       truncated: scanCutShort || (reorder
         ? outRows.length === ROW_LIMIT

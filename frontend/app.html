@@ -484,9 +484,10 @@
         <option value="design">Club sizes + colours</option>
       </select>
       <select id="stockSoldDays" onchange="loadStock()" title="Sales window for the Sold / reorder column">
+        <option value="mtd" selected>Sold: Month to date</option>
         <option value="7">Sold: 7 days</option>
         <option value="30">Sold: 30 days</option>
-        <option value="45" selected>Sold: 45 days</option>
+        <option value="45">Sold: 45 days</option>
         <option value="90">Sold: 90 days</option>
       </select>
       <button class="btn btn-sm" onclick="loadStock()">Refresh</button>
@@ -498,7 +499,7 @@
 
     <div class="table-container">
       <table>
-        <thead><tr><th style="width:44px">#</th><th id="stockSkuHeader">SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (45d)</th></tr></thead>
+        <thead><tr><th style="width:44px">#</th><th id="stockSkuHeader">SKU</th><th>Product</th><th>Warehouse</th><th style="text-align:right">Qty</th><th style="text-align:right" id="stockSoldHeader">Sold (MTD)</th></tr></thead>
         <tbody id="stockBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -568,12 +569,12 @@
       <div class="drp" id="returnsDrp">
         <button type="button" class="drp-btn" onclick="drpToggle('returns')">
           <span aria-hidden="true">🗓</span>
-          <span id="returnsDrpLabel">Last 45 days</span>
+          <span id="returnsDrpLabel">Month to date</span>
           <span class="drp-caret">▼</span>
         </button>
         <div class="drp-panel" id="returnsDrpPanel"></div>
       </div>
-      <input type="hidden" id="returnsRange" value="45"/>
+      <input type="hidden" id="returnsRange" value="mtd"/>
       <input type="hidden" id="returnsFrom"/>
       <input type="hidden" id="returnsTo"/>
       <button class="btn btn-sm" id="returnsSyncGhBtn" onclick="runVinSync('returns')" title="Pull the latest stock, orders & returns (runs on GitHub, ~2 min)" style="margin-left:auto">↻ Sync now</button>

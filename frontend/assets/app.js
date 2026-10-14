@@ -621,8 +621,8 @@ async function loadStock() {
             'bad') : '') +
       // Period cards — recompute whenever the "Sold: N days" window changes.
       (d.period && d.period.hasOrders
-        ? stockTile(`Sold (${d.period.soldDays}d)`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`) +
-          stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'), `stock below ${d.period.soldDays}d sales`, 'warn')
+        ? stockTile(`Sold (${d.period.mtd ? 'MTD' : d.period.soldDays + 'd'})`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`) +
+          stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'), `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn')
         : '');
 
     // The sync timestamp is the honest part of this page: stale data that looks
@@ -664,7 +664,7 @@ async function loadStock() {
     }
 
     const soldHdr = document.getElementById('stockSoldHeader');
-    if (soldHdr && d.soldDays) soldHdr.textContent = 'Sold (' + d.soldDays + 'd)';
+    if (soldHdr && (d.mtd || d.soldDays)) soldHdr.textContent = 'Sold (' + (d.mtd ? 'MTD' : d.soldDays + 'd') + ')';
     // Live check needs real SKUs to ask Vinculum about, and a clubbed row's
     // "SKU" is a key that exists nowhere in Vinculum — so send its members.
     window._stockSkus = [...new Set(d.rows.flatMap(r => r.skus || [r.sku]))];
@@ -728,7 +728,13 @@ async function stockOrders(i) {
   document.getElementById('salesDetailModal').classList.add('open');
 
   const params = new URLSearchParams({ skus: skus.join(',') });
-  if (days) params.set('days', days);
+  if (days === 'mtd') {
+    // The sales endpoint takes dates, which say "since the 1st" more exactly
+    // than a day count can. India's calendar, like the server's.
+    const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    params.set('from', today.slice(0, 8) + '01');
+    params.set('to', today);
+  } else if (days) params.set('days', days);
   // The row is one warehouse; the popup must count the same stock the row does.
   if (r.warehouse) params.set('warehouse', r.warehouse);
   const d = await api('/api/sales/sku?' + params.toString());
@@ -741,7 +747,7 @@ async function stockOrders(i) {
   const orders = d.orders || [];
   document.getElementById('salesDetailTitle').textContent = label + (r.description ? ' — ' + r.description : '');
   document.getElementById('salesDetailSummary').textContent =
-    `${Number(s.qty || 0).toLocaleString('en-IN')} units sold${days ? ' in the last ' + days + ' days' : ''}`
+    `${Number(s.qty || 0).toLocaleString('en-IN')} units sold${days === 'mtd' ? ' month to date' : days ? ' in the last ' + days + ' days' : ''}`
     + ` · ${inr(s.value)} · ${d.stock != null ? Number(d.stock).toLocaleString('en-IN') : '—'} in stock`
     + `${r.warehouse ? ' at ' + r.warehouse : ''} · ${Number(s.orders || 0)} orders`;
   // What the row clubbed, spelled out. A product can sit on stock and sell
