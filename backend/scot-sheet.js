@@ -25,12 +25,15 @@ const config = require('./src/config');
 
 const FIRST_ROW = 5;        // first SCOT data row
 const DASH_FIRST = 2;       // its Dashboard counterpart
-const GRID_START = 13;      // column N
-const GRID_COLS = 364;      // N to NM, which is what the sheet holds
+const GRID_START = 14;      // column O; column N is Last Order, the last of the fixed columns
+const GRID_COLS = 364;      // O to NN, which is what the sheet holds
 const LIFETIME_CHUNK = 5000;
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const colName = (i) => { let s = '', n = i; while (n >= 0) { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } return s; };
+// First and last column of the date grid, as letters. The Dashboard's formulas
+// reach into it, so they are built from these and not typed out.
+const G0 = colName(GRID_START), G1 = colName(GRID_START + GRID_COLS - 1);
 const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 const dmy = (iso) => { const [y, m, d] = iso.split('-').map(Number); return `${d}-${MON[m - 1]}-${y}`; };
 
@@ -63,6 +66,28 @@ async function ensureCols(sheets, id, tab, want) {
   }
 }
 
+// "Date for calling" is a formula, so Sheets gives it no date format of its own,
+// and only the first four hundred rows of the original template carried one:
+// everywhere below them it read 46365 instead of 9-Dec-2026. Last Order is
+// written as text Sheets parses, but the same applies as the list grows. Set on
+// every write, down to the last customer. Cosmetic, so a failure here is
+// reported and never fails the data write.
+async function formatDates(sheets, id, tab, cols, fromRow, toRow) {
+  try {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'sheets(properties(sheetId,title))' });
+    const t = meta.data.sheets.find(x => x.properties.title === tab);
+    if (!t) return;
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: cols.map(c => ({
+      repeatCell: {
+        range: { sheetId: t.properties.sheetId, startRowIndex: fromRow, endRowIndex: toRow, startColumnIndex: c, endColumnIndex: c + 1 },
+        cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd-mmm-yyyy' } } },
+        fields: 'userEnteredFormat.numberFormat',
+      } })) } });
+  } catch (e) {
+    console.error('⚠ SCOT Sheet date format not applied:', e.message);
+  }
+}
+
 async function stamp(sheets, id, tab, cell, at) {
   await sheets.spreadsheets.values.update({
     spreadsheetId: id, range: `'${tab}'!${cell}`,
@@ -79,14 +104,14 @@ const DASH_COLS = [
   `=IFERROR('SCOT Sheet'!I{S},"")`,
   `=IFERROR('SCOT Sheet'!J{S},"")`,
   `=IFERROR('SCOT Sheet'!K{S},"")`,
-  `=IF(B{D}="","",IFERROR(MAX(FILTER('SCOT Sheet'!$N$4:$NM$4,ISNUMBER('SCOT Sheet'!N{S}:NM{S}))),""))`,
-  `=IF(B{D}="","",IFERROR(INDEX(FILTER('SCOT Sheet'!N{S}:NM{S},ISNUMBER('SCOT Sheet'!N{S}:NM{S})),1,COUNT('SCOT Sheet'!N{S}:NM{S})),""))`,
+  `=IF(B{D}="","",IFERROR(MAX(FILTER('SCOT Sheet'!$${G0}$4:$${G1}$4,ISNUMBER('SCOT Sheet'!${G0}{S}:${G1}{S}))),""))`,
+  `=IF(B{D}="","",IFERROR(INDEX(FILTER('SCOT Sheet'!${G0}{S}:${G1}{S},ISNUMBER('SCOT Sheet'!${G0}{S}:${G1}{S})),1,COUNT('SCOT Sheet'!${G0}{S}:${G1}{S})),""))`,
   `=IF(F{D}="","",TODAY()-F{D})`,
-  `=IF(B{D}="","",COUNT('SCOT Sheet'!N{S}:NM{S}))`,
-  `=IF(B{D}="","",SUM('SCOT Sheet'!N{S}:NM{S}))`,
+  `=IF(B{D}="","",COUNT('SCOT Sheet'!${G0}{S}:${G1}{S}))`,
+  `=IF(B{D}="","",SUM('SCOT Sheet'!${G0}{S}:${G1}{S}))`,
   `=IFERROR(J{D}/I{D},"")`,
   `=IF(F{D}="","",F{D}+IFERROR(VALUE(REGEXEXTRACT(TO_TEXT(E{D}),"\\d+")),7))`,
-  `=IF(B{D}="","",IFERROR(MIN(FILTER('SCOT Sheet'!$N$4:$NM$4,ISNUMBER('SCOT Sheet'!N{S}:NM{S}))),""))`,
+  `=IF(B{D}="","",IFERROR(MIN(FILTER('SCOT Sheet'!$${G0}$4:$${G1}$4,ISNUMBER('SCOT Sheet'!${G0}{S}:${G1}{S}))),""))`,
   `=IF(OR(M{D}="",I{D}<2),"",ROUND((F{D}-M{D})/(I{D}-1),1))`,
   `=IF(M{D}="","",IFERROR(J{D}/MAX(1,TODAY()-M{D}+1),""))`,
   `=IFERROR(O{D}*7,"")`,
@@ -174,7 +199,8 @@ async function writeScotSheet({ log = () => {} } = {}) {
     const header = new Array(GRID_START + GRID_COLS).fill('');
     ['S. No.', 'Client Name', 'Contact No.', 'Customer Since', 'Lifetime Units',
      'Lifetime Orders', 'Email Id', 'Lifetime Value', 'Average Order Value',
-     'Order Frequency', 'Usual Order Days', 'Date for calling', 'Frequency Of Calling']
+     'Order Frequency', 'Usual Order Days', 'Date for calling', 'Frequency Of Calling',
+     'Last Order']
       .forEach((h, i) => { header[i] = h; });
     for (let i = 0; i < GRID_COLS; i++) header[GRID_START + i] = addDays(d.from_d, i);
 
@@ -196,6 +222,10 @@ async function writeScotSheet({ log = () => {} } = {}) {
       line[10] = gap == null ? '' : gap;
       line[11] = `=IFERROR(Dashboard!L${DASH_FIRST + i},"")`;
       line[12] = `=IFERROR(Dashboard!H${DASH_FIRST + i},"")`;
+      // When this customer last ordered. A plain value, not a lookup into the
+      // grid: it is the same date the Lifetime tab and the app show, and a
+      // customer whose last order is older than the grid still has one.
+      line[13] = r.last_order || '';
       for (const [day, v] of Object.entries(cells.get(r.phone) || {})) {
         const idx = dayIndex(day);
         if (idx >= GRID_START && idx < GRID_START + GRID_COLS) line[idx] = v;
@@ -214,7 +244,7 @@ async function writeScotSheet({ log = () => {} } = {}) {
       Dashboard: rows.length + DASH_FIRST + 1,
     });
 
-    for (const range of [`'SCOT Sheet'!A${FIRST_ROW}:NM100000`, `'Dashboard'!A${DASH_FIRST}:Q100000`]) {
+    for (const range of [`'SCOT Sheet'!A${FIRST_ROW}:${G1}100000`, `'Dashboard'!A${DASH_FIRST}:Q100000`]) {
       await sheets.spreadsheets.values.clear({ spreadsheetId: id, range });
     }
     await sheets.spreadsheets.values.update({
@@ -223,6 +253,8 @@ async function writeScotSheet({ log = () => {} } = {}) {
     });
     await put(sheets, id, 'Dashboard', DASH_FIRST, dash, 'Q', 200);
     await put(sheets, id, 'SCOT Sheet', FIRST_ROW, rows, lastCol, 200);
+    // L = Date for calling, N = Last Order; rows 5 down to the last customer.
+    await formatDates(sheets, id, 'SCOT Sheet', [11, 13], FIRST_ROW - 1, FIRST_ROW - 1 + rows.length);
     // A1 anchors an empty merged block (A1:G2) beside the title. A2 would not do:
     // it sits inside that merge, and a value written there is simply dropped.
     await stamp(sheets, id, 'SCOT Sheet', 'A1');
