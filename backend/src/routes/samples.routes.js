@@ -16,6 +16,7 @@
 // where the truth is "not decided yet".
 // ══════════════════════════════════════════════════════
 const express = require('express');
+const multer = require('multer');
 const config = require('../config');
 const google = require('../services/google');
 const { db } = require('../db/pool');
@@ -23,6 +24,11 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
+
+// The photo is held in memory just long enough to hand to Drive. The browser
+// shrinks it first, so this limit is a backstop, not the normal case - and it
+// sits under the 4.5 MB request cap a Vercel function enforces regardless.
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
 
 const STATUSES = ['Production', 'Outstanding'];
 
@@ -126,6 +132,22 @@ async function writeRow(row, record) {
     return { ok: false, reason: err.message };
   }
 }
+
+// Uploads the sample photo and returns the link to store in image_url. The
+// style row keeps holding a link, as it always did, so the sheet, the table and
+// every style entered before this existed carry on unchanged.
+router.post('/samples/image', requireAuth, requireAdmin, (req, res, next) => {
+  photoUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    const big = err.code === 'LIMIT_FILE_SIZE';
+    res.status(big ? 413 : 400).json({ error: big ? 'That photo is too large - keep it under 4 MB.' : err.message });
+  });
+}, asyncRoute(async (req, res) => {
+  if (!req.file) throw httpError(400, 'Choose a photo to upload.');
+  if (!/^image\//i.test(req.file.mimetype || '')) throw httpError(400, 'That file is not an image.');
+  const url = await google.uploadToDrive(req.file.buffer, req.file.originalname, req.file.mimetype, 'SAMPLE');
+  res.json({ url });
+}));
 
 router.get('/samples', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const q = txt(req.query.q, 120);

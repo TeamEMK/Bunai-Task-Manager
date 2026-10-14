@@ -10867,6 +10867,7 @@ function sampleOpen(id) {
   set('sampleStyleId', r ? r.style_id : '');
   set('sampleStatus', r ? r.status : 'Outstanding');
   set('sampleImage', r ? r.image_url : '');
+  sampleShowPhoto(r ? r.image_url : '');
   set('sampleNotes', r ? r.notes : '');
   set('sampleKurta', r ? r.kurta_fabric : '');
   set('samplePant', r ? r.pant_fabric : '');
@@ -10883,11 +10884,109 @@ function sampleOpen(id) {
   document.getElementById('sampleModal').classList.add('open');
 }
 
+// -- Sample photo: pick from the device, shrink in the browser, store as a link --
+// Phone photos run to 5-10 MB; a Vercel function refuses a body over 4.5 MB, and
+// nobody needs 12 megapixels to recognise a kurta. So the picture is scaled to
+// 1600px on its long side and re-encoded before it leaves the page, which lands
+// it well under a megabyte. What comes back from the server is a Drive link,
+// the same kind of value the old text box held.
+let _samplePhotoBusy = false;
+
+function sampleShowPhoto(url, localPreview) {
+  const q = id => document.getElementById(id);
+  q('sampleImage').value = url || '';
+  q('samplePhotoFile').value = '';
+  const thumb = q('samplePhotoThumb');
+  // A Drive link is a page, not an image file, so it cannot be drawn in an img.
+  // Only a photo picked a moment ago has something to show.
+  thumb.style.display = localPreview ? '' : 'none';
+  if (localPreview) thumb.src = localPreview;
+  q('samplePhotoNote').textContent = url ? 'Photo attached' : 'No photo yet';
+  q('samplePhotoBtn').textContent = url ? 'Replace photo' : 'Upload from device';
+  const view = q('samplePhotoView');
+  view.style.display = url ? '' : 'none';
+  if (url) view.href = url;
+  q('samplePhotoClear').style.display = url ? '' : 'none';
+}
+
+function samplePhotoClear() { sampleShowPhoto(''); }
+
+function sampleShrink(file) {
+  return new Promise((resolve, reject) => {
+    const src = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 1600;
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k));
+      c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const g = c.getContext('2d');
+      // JPEG has no transparency; a PNG cut-out would otherwise turn black.
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(src);
+      c.toBlob(b => b ? resolve({ blob: b, preview: c.toDataURL('image/jpeg', 0.5) })
+                      : reject(new Error('Could not process that image.')), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(src);
+      reject(new Error('Could not read that image. Please use a JPG or PNG.'));
+    };
+    img.src = src;
+  });
+}
+
+async function samplePhotoPicked(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const err = document.getElementById('sampleErr');
+  const note = document.getElementById('samplePhotoNote');
+  err.style.display = 'none';
+  if (!/^image\//i.test(file.type || '')) {
+    err.textContent = 'That file is not an image.';
+    err.style.display = 'block';
+    input.value = '';
+    return;
+  }
+  _samplePhotoBusy = true;
+  document.getElementById('samplePhotoBtn').disabled = true;
+  note.textContent = 'Uploading…';
+  try {
+    const { blob, preview } = await sampleShrink(file);
+    const fd = new FormData();
+    const base = (file.name || 'sample').replace(/\.[^.]+$/, '');
+    fd.append('file', blob, base + '.jpg');
+    const headers = {};
+    const token = localStorage.getItem('authToken');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const up = await fetch('/api/samples/image', { method: 'POST', credentials: 'include', headers, body: fd });
+    let j = {};
+    try { j = await up.json(); } catch (_) { /* non-JSON error page */ }
+    if (!up.ok || j.error || !j.url) throw new Error(j.error || 'Upload failed (' + up.status + ').');
+    sampleShowPhoto(j.url, preview);
+  } catch (e) {
+    err.textContent = 'Photo not uploaded — ' + e.message;
+    err.style.display = 'block';
+    sampleShowPhoto(document.getElementById('sampleImage').value);
+  } finally {
+    _samplePhotoBusy = false;
+    document.getElementById('samplePhotoBtn').disabled = false;
+  }
+}
+
 async function saveSample(btn) {
   const val = el => document.getElementById(el).value.trim();
   const id = val('sampleEditId');
   const err = document.getElementById('sampleErr');
   err.style.display = 'none';
+
+  if (_samplePhotoBusy) {
+    err.textContent = 'The photo is still uploading - give it a moment.';
+    err.style.display = 'block';
+    return;
+  }
 
   if (!val('sampleStyleId')) {
     err.textContent = 'Sample Style ID is required.';

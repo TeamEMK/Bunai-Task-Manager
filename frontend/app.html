@@ -1608,8 +1608,18 @@
         </select></div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>Image link</label>
-        <input type="text" id="sampleImage" placeholder="https://… — a link to the sample photo"/></div>
+      <div class="form-group" style="flex:1"><label>Sample photo</label>
+        <input type="hidden" id="sampleImage"/>
+        <input type="file" id="samplePhotoFile" accept="image/*" style="display:none" onchange="samplePhotoPicked(this)"/>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn btn-outline btn-sm" id="samplePhotoBtn"
+            onclick="document.getElementById('samplePhotoFile').click()">Upload from device</button>
+          <img id="samplePhotoThumb" alt="" style="display:none;width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"/>
+          <span id="samplePhotoNote" style="font-size:12.5px;color:var(--muted-foreground)">No photo yet</span>
+          <a id="samplePhotoView" href="#" target="_blank" rel="noopener" style="display:none;font-size:12.5px">View ↗</a>
+          <button type="button" class="btn btn-outline btn-sm" id="samplePhotoClear" style="display:none"
+            onclick="samplePhotoClear()">Remove</button>
+        </div></div>
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1"><label>Notes</label>
