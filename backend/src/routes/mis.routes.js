@@ -4,7 +4,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdminOrHodOnly } = require('../middleware/auth');
+const { requireAuth, requirePageOr } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 const { placeholders, N } = require('../utils/collections');
 const { deficitScore, fmsScore } = require('../utils/scores');
@@ -30,7 +30,7 @@ const perUserStatsSql = (table, withRevised, deptFilter, extraCols = '') => `
   WHERE t.due_date BETWEEN ? AND ? ${deptFilter}
   GROUP BY u.id, u.name${extraCols} ORDER BY u.name`;
 
-router.get('/mis', requireAuth, requireAdminOrHodOnly, asyncRoute(async (req, res) => {
+router.get('/mis', requireAuth, requirePageOr('mis', ['admin', 'hod']), asyncRoute(async (req, res) => {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'Dates required' });
   const { filter, params } = await deptScope(req, [start, end]);
@@ -48,7 +48,7 @@ router.get('/mis', requireAuth, requireAdminOrHodOnly, asyncRoute(async (req, re
   res.json({ delegation: decorate(delRows), checklist: decorate(chlRows) });
 }));
 
-router.get('/mis/detail', requireAuth, requireAdminOrHodOnly, asyncRoute(async (req, res) => {
+router.get('/mis/detail', requireAuth, requirePageOr('mis', ['admin', 'hod']), asyncRoute(async (req, res) => {
   const { userId, type, start, end } = req.query;
   if (!userId || !start || !end) return res.status(400).json({ error: 'Missing params' });
   const table = type === 'delegation' ? 'delegation_tasks' : 'checklist_tasks';
@@ -102,7 +102,7 @@ async function fmsStatsPerUser(start, end) {
 }
 
 // ── All MIS — one combined score per employee ─────────
-router.get('/mis/all', requireAuth, requireAdminOrHodOnly, asyncRoute(async (req, res) => {
+router.get('/mis/all', requireAuth, requirePageOr('mis', ['admin', 'hod']), asyncRoute(async (req, res) => {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'Dates required' });
   const isHod = req.session.role === 'hod';
@@ -184,7 +184,7 @@ router.get('/mis/all', requireAuth, requireAdminOrHodOnly, asyncRoute(async (req
 }));
 
 // ── FMS MIS — per sheet, per step ─────────────────────
-router.get('/mis/fms', requireAuth, requireAdminOrHodOnly, asyncRoute(async (req, res) => {
+router.get('/mis/fms', requireAuth, requirePageOr('mis', ['admin', 'hod']), asyncRoute(async (req, res) => {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'Dates required' });
   const isHod = req.session.role === 'hod';

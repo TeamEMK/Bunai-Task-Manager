@@ -4,7 +4,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 const { serverToday, istToday, addDays } = require('../utils/dates');
 
@@ -70,7 +70,7 @@ router.post('/daily-tasks', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 // Admin view — every entry, with filters.
-router.get('/daily-tasks/all', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/daily-tasks/all', requireAuth, requirePage('dailyreports'), asyncRoute(async (req, res) => {
   const { from, to, userId } = req.query;
   let where = '1=1';
   const params = [];
@@ -90,7 +90,7 @@ router.get('/daily-tasks/all', requireAuth, requireAdmin, asyncRoute(async (req,
 }));
 
 // Monthly report — summary + every entry of the month.
-router.get('/daily-tasks/report', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/daily-tasks/report', requireAuth, requirePage('dailyreports'), asyncRoute(async (req, res) => {
   const now = new Date();
   const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });

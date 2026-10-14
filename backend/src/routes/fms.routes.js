@@ -4,7 +4,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { placeholders, indexBy } = require('../utils/collections');
 const { serverToday } = require('../utils/dates');
@@ -131,7 +131,7 @@ router.get('/fms-dashboard', requireAuth, asyncRoute(async (req, res) => {
 // ══════════════════════════════════════════════════════
 // FMS ADMIN
 // ══════════════════════════════════════════════════════
-router.get('/fms', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/fms', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   res.json(await db.rows(
     `SELECT f.*,u.name AS createdByName FROM fms_sheets f
        JOIN users u ON f.created_by=u.id ORDER BY f.created_at DESC`));
@@ -140,7 +140,7 @@ router.get('/fms', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
 // IMPORTANT: must stay above /api/fms/:id, or ":id" swallows it.
 // Reads one column of a sheet and matches its values against user names, so
 // Step Doers can be populated from a "Doer Name" column.
-router.get('/fms/sheet-column-values', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/fms/sheet-column-values', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   const { sheetId, tabName, col, headerRow } = req.query;
   if (!sheetId || !col) return res.status(400).json({ error: 'sheetId and col required' });
   const colIdx = colToIdx(col);
@@ -180,7 +180,7 @@ router.get('/fms/sheet-column-values', requireAuth, requireAdmin, asyncRoute(asy
 // inputs. Nothing is saved: the admin sees the suggestion on the same screen
 // and corrects it before saving, which is why every rule here prefers an empty
 // field over a confident guess.
-router.post('/fms/detect-steps', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.post('/fms/detect-steps', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   const { sheetId, sheetName, headerRow } = req.body;
   if (!sheetId) return res.status(400).json({ error: 'sheetId required' });
 
@@ -281,7 +281,7 @@ async function runDetection(req, res) {
   });
 }
 
-router.get('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/fms/:id', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   const sheet = await db.one('SELECT * FROM fms_sheets WHERE id=?', [req.params.id]);
   if (!sheet) throw httpError(404, 'FMS not found');
   const steps = await db.rows(
@@ -350,7 +350,7 @@ async function currentHeaders(sheetId, sheetName, headerRow) {
   }
 }
 
-router.post('/fms', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.post('/fms', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -367,7 +367,7 @@ router.post('/fms', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   } finally { conn.release(); }
 }));
 
-router.put('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.put('/fms/:id', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -395,7 +395,7 @@ router.put('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) =>
   } finally { conn.release(); }
 }));
 
-router.delete('/fms/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.delete('/fms/:id', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   await db.query('DELETE FROM fms_sheets WHERE id=?', [req.params.id]);
   res.json({ success: true });
 }));
@@ -419,7 +419,7 @@ router.post('/fms/fetch-headers', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 // Full sync — returns every data row so the admin screen can preview them.
-router.get('/fms/:id/sync', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/fms/:id/sync', requireAuth, requirePage('fms'), asyncRoute(async (req, res) => {
   const sheet = await db.one('SELECT * FROM fms_sheets WHERE id=?', [req.params.id]);
   if (!sheet) throw httpError(404, 'FMS not found');
   const headerRowIdx = (sheet.header_row || 1) - 1;

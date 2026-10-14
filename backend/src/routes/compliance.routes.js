@@ -6,7 +6,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage, hasPageGrant } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { isYmd, istMondayOf, addDays } = require('../utils/dates');
 const { placeholders, indexBy, N } = require('../utils/collections');
@@ -15,11 +15,12 @@ const { loadHolidaysSet, isUserOffOn } = require('../services/holidays');
 
 const router = express.Router();
 
-// admin → anyone; hod/pc → their own department; everyone else → themselves.
+// admin, or anyone given the Compliance page → anyone; hod/pc → their own
+// department; everyone else → themselves.
 async function canViewEmployee(req, targetId) {
   const role = req.session.role;
   const uid = req.session.userId;
-  if (role === 'admin') return true;
+  if (await hasPageGrant(req.session, 'compliance')) return true;
   if (Number(targetId) === Number(uid)) return true;
   if (role === 'hod' || role === 'pc') {
     // Both departments in one query instead of two sequential ones.
@@ -263,7 +264,7 @@ router.get('/compliance/employee/:id/week-tasks', requireAuth, asyncRoute(async 
 }));
 
 // ── Last-7-days daily-report grid (admin) ─────────────
-router.get('/compliance/last7', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/compliance/last7', requireAuth, requirePage('compliance'), asyncRoute(async (req, res) => {
   const dates = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();

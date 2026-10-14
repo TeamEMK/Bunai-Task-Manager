@@ -351,6 +351,9 @@ const PAGE_GRANTS = [
   { key: 'shipments', label: 'Shipments' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' }, { key: 'ims', label: 'IMS' },
+  { key: 'mis', label: 'MIS Report' }, { key: 'fms', label: 'FMS Admin' },
+  { key: 'clients', label: 'Project Master' }, { key: 'dailyreports', label: 'Daily Reports' },
+  { key: 'compliance', label: 'Compliance Tracker' },
 ];
 const PAGE_GRANT_KEYS = PAGE_GRANTS.map(g => g.key);
 
@@ -365,7 +368,7 @@ function hasPage(key) {
 // and the signed-in role must be allowed to open it.
 function canOpenPage(page) {
   if (!page || !document.getElementById('page-' + page)) return false;
-  if (page === 'mis') return ME && (ME.role === 'admin' || ME.role === 'hod');
+  if (page === 'mis') return !!ME && (ME.role === 'hod' || hasPage('mis'));
   if (PAGE_GRANT_KEYS.includes(page)) return hasPage(page);
   if (page === 'hr') return ME && ME.role === 'admin';
   const el = navElFor(page);
@@ -390,7 +393,7 @@ let _navCurrent = null;
 function navigate(page, el, fromHash) {
   if (fromHash && page === _navCurrent) return;
   // MIS page — admin and HOD (App Role) only
-  if (page === 'mis' && ME.role !== 'admin' && ME.role !== 'hod') return;
+  if (page === 'mis' && ME.role !== 'hod' && !hasPage('mis')) return;
   // HR page — admin only
   if (page === 'hr' && (!ME || ME.role !== 'admin')) return;
   // IMS, Sales, Returns, Shipments, Catalog, Sampling, Warehouse, SCOT — an

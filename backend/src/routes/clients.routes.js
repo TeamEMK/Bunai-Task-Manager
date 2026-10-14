@@ -3,7 +3,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
@@ -12,7 +12,7 @@ router.get('/clients', requireAuth, asyncRoute(async (req, res) => {
   res.json(await db.rows('SELECT id, name FROM clients ORDER BY name ASC'));
 }));
 
-router.post('/clients', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.post('/clients', requireAuth, requirePage('clients'), asyncRoute(async (req, res) => {
   const name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Client name required' });
   try {
@@ -24,7 +24,7 @@ router.post('/clients', requireAuth, requireAdmin, asyncRoute(async (req, res) =
   res.json({ success: true });
 }));
 
-router.delete('/clients/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.delete('/clients/:id', requireAuth, requirePage('clients'), asyncRoute(async (req, res) => {
   await db.query('DELETE FROM clients WHERE id=?', [req.params.id]);
   res.json({ success: true });
 }));
@@ -32,7 +32,7 @@ router.delete('/clients/:id', requireAuth, requireAdmin, asyncRoute(async (req, 
 // Bulk add via CSV. Was one INSERT per name with the duplicate error used as
 // control flow; now it is one SELECT to find what already exists and one
 // multi-row INSERT for the rest.
-router.post('/clients/bulk', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.post('/clients/bulk', requireAuth, requirePage('clients'), asyncRoute(async (req, res) => {
   const { names } = req.body;
   if (!Array.isArray(names) || !names.length) return res.status(400).json({ error: 'No clients to add' });
 
@@ -65,7 +65,7 @@ router.post('/clients/bulk', requireAuth, requireAdmin, asyncRoute(async (req, r
 
 
 // Client stats — total hours + top 3 workers (all-time)
-router.get('/clients/:id/stats', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+router.get('/clients/:id/stats', requireAuth, requirePage('clients'), asyncRoute(async (req, res) => {
   const client = await db.one('SELECT name FROM clients WHERE id=?', [req.params.id]);
   if (!client) throw httpError(404, 'Client not found');
 

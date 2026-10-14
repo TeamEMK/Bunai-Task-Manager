@@ -51,6 +51,11 @@ const GRANTABLE_PAGES = [
   { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' },
   { key: 'ims', label: 'IMS' },
+  { key: 'mis', label: 'MIS Report' },
+  { key: 'fms', label: 'FMS Admin' },
+  { key: 'clients', label: 'Project Master' },
+  { key: 'dailyreports', label: 'Daily Reports' },
+  { key: 'compliance', label: 'Compliance Tracker' },
 ];
 const GRANTABLE_KEYS = GRANTABLE_PAGES.map(p => p.key);
 
@@ -59,16 +64,28 @@ async function grantedPages(userId) {
   return rows.map(r => r.page_key).filter(k => GRANTABLE_KEYS.includes(k));
 }
 
-// Admin always passes; anyone else needs a row. Read from the database on every
-// call, never from the token, so taking a page away works on the next request.
+// Does this session get the page: an Admin always, anyone else with a row.
+// Read from the database on every call, never from the token, so taking a page
+// away works on the next request.
+async function hasPageGrant(session, key) {
+  if (session.role === 'admin') return true;
+  const hit = await db.one(
+    'SELECT 1 n FROM user_page_access WHERE user_id=? AND page_key=?', [session.userId, key]);
+  return !!hit;
+}
+
 const requirePage = (key) => (req, res, next) => {
   (async () => {
-    if (req.session.role === 'admin') return next();
-    const hit = await db.one(
-      'SELECT 1 n FROM user_page_access WHERE user_id=? AND page_key=?', [req.session.userId, key]);
-    if (hit) return next();
+    if (await hasPageGrant(req.session, key)) return next();
     res.status(403).json({ error: 'You do not have access to this page' });
   })().catch(err => res.status(500).json({ error: err.message }));
+};
+
+// A page some roles already had before grants existed (MIS is Admin and HOD):
+// those roles keep it, and a grant adds anyone else.
+const requirePageOr = (key, roles) => (req, res, next) => {
+  if (roles.includes(req.session.role)) return next();
+  return requirePage(key)(req, res, next);
 };
 
 // ── Department gates (PO section) ─────────────────────
@@ -104,7 +121,7 @@ function requireCronSecret(req, res, next) {
 module.exports = {
   signToken, requireAuth,
   requireAdmin, requireAdminOrHod, requireAdminOrHodOnly, requireAdminOrPC,
-  GRANTABLE_PAGES, GRANTABLE_KEYS, grantedPages, requirePage,
+  GRANTABLE_PAGES, GRANTABLE_KEYS, grantedPages, hasPageGrant, requirePage, requirePageOr,
   getUserDept, requirePOFill, requirePOUpload, requirePOView,
   requireCronSecret,
 };
