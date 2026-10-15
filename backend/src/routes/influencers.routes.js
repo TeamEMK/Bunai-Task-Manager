@@ -182,6 +182,7 @@ router.get('/influencers', requireAuth, asyncRoute(async (req, res) => {
   const q = clean(req.query.q, 120);
   const where = [];
   const args = [];
+  if (PROJECTS.includes(req.query.project)) { where.push('i.project = ?'); args.push(req.query.project); }
   if (q) {
     where.push('(i.name LIKE ? OR i.email LIKE ? OR i.phone LIKE ? OR i.profile_link LIKE ? OR i.outfit LIKE ? OR i.remark LIKE ?)');
     args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
@@ -194,11 +195,16 @@ router.get('/influencers', requireAuth, asyncRoute(async (req, res) => {
 
 // What the page needs to know without asking three times.
 router.get('/influencers/meta', requireAuth, asyncRoute(async (req, res) => {
-  const totalRow = await db.one('SELECT COUNT(*) AS n FROM influencers');
+  // The tiles describe what the list below is showing, so they follow its
+  // project filter; otherwise "Influencers: 14" sits over a list of three.
+  const pj = PROJECTS.includes(req.query.project) ? req.query.project : '';
+  const only = pj ? ' AND project = ?' : '';
+  const arg = pj ? [pj] : [];
+  const totalRow = await db.one(`SELECT COUNT(*) AS n FROM influencers WHERE 1=1${only}`, arg);
   const total = Number(totalRow?.n || 0);
-  const posted = await db.one('SELECT COUNT(*) AS n FROM influencers WHERE post_date IS NOT NULL');
+  const posted = await db.one(`SELECT COUNT(*) AS n FROM influencers WHERE post_date IS NOT NULL${only}`, arg);
   const awaiting = await db.one(
-    'SELECT COUNT(*) AS n FROM influencers WHERE shipped_on IS NOT NULL AND received_on IS NULL');
+    `SELECT COUNT(*) AS n FROM influencers WHERE shipped_on IS NOT NULL AND received_on IS NULL${only}`, arg);
   res.json({
     types: TYPES,
     projects: PROJECTS,

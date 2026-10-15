@@ -8882,11 +8882,14 @@ async function loadInfluencers(){
   const params = new URLSearchParams();
   const q = document.getElementById('infSearch').value.trim();
   if (q) params.set('q', q);
+  // The tiles ask the same question the list does, so both get the project.
+  const pj = document.getElementById('infProjectFilter').value;
+  if (pj) params.set('project', pj);
 
   try {
     const [rows, meta] = await Promise.all([
       api('/api/influencers' + (params.toString() ? '?' + params : '')),
-      api('/api/influencers/meta'),
+      api('/api/influencers/meta' + (pj ? '?project=' + encodeURIComponent(pj) : '')),
     ]);
     if (rows.error) { body.innerHTML = `<tr><td colspan="10" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     INF_ROWS = Array.isArray(rows) ? rows : [];
