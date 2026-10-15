@@ -8877,7 +8877,7 @@ const infDate = (d) => {
 async function loadInfluencers(){
   const body = document.getElementById('infBody');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
 
   const params = new URLSearchParams();
   const q = document.getElementById('infSearch').value.trim();
@@ -8888,7 +8888,7 @@ async function loadInfluencers(){
       api('/api/influencers' + (params.toString() ? '?' + params : '')),
       api('/api/influencers/meta'),
     ]);
-    if (rows.error) { body.innerHTML = `<tr><td colspan="9" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    if (rows.error) { body.innerHTML = `<tr><td colspan="10" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     INF_ROWS = Array.isArray(rows) ? rows : [];
 
     const tile = (label, value, sub, tone) => {
@@ -8919,7 +8919,7 @@ async function loadInfluencers(){
     }
 
     if (!INF_ROWS.length) {
-      body.innerHTML = `<tr><td colspan="9" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="10" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
       return;
     }
     body.innerHTML = INF_ROWS.map((r, i) => `<tr>
@@ -8929,6 +8929,7 @@ async function loadInfluencers(){
         ${r.profile_link ? `<a href="${dtEscape(r.profile_link)}" target="_blank"
             style="font-size:11.5px;color:var(--brand-deep);text-decoration:none">↗ profile</a>` : ''}
       </td>
+      <td style="font-size:13px">${dtEscape(r.project || '—')}</td>
       <td style="font-size:13px">${dtEscape(r.collaboration_type || '—')}</td>
       <td style="font-size:13px;max-width:200px">${dtEscape(r.outfit || '—')}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.message_sent_on)}</td>
@@ -8942,7 +8943,7 @@ async function loadInfluencers(){
       </td>
     </tr>`).join('');
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="9" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
   }
 }
 
@@ -8954,6 +8955,7 @@ function openInfluencer(idx){
   document.getElementById('infEditId').value = r ? r.id : '';
   set('infName', r?.name);
   set('infProfile', r?.profile_link);
+  set('infProject', r?.project);
   set('infType', r?.collaboration_type);
   set('infOutfit', r?.outfit);
   set('infEmail', r?.email);
@@ -8974,7 +8976,7 @@ async function saveInfluencer(btn){
   const id = document.getElementById('infEditId').value;
   const body = {
     name: val('infName'), profile_link: val('infProfile'),
-    collaboration_type: val('infType'), outfit: val('infOutfit'),
+    project: val('infProject'), collaboration_type: val('infType'), outfit: val('infOutfit'),
     email: val('infEmail'), phone: val('infPhone'),
     shipping_address: val('infAddress'), message_sent_on: val('infMessaged'),
     shipped_on: val('infShipped'), received_on: val('infReceived'), post_date: val('infPosted'),

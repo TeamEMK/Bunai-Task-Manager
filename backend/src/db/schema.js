@@ -413,6 +413,7 @@ const TABLES = [
     profile_link VARCHAR(500) DEFAULT '',
     status VARCHAR(40) DEFAULT '',
     message_sent_on DATE DEFAULT NULL,
+    project VARCHAR(40) DEFAULT '',
     collaboration_type VARCHAR(40) DEFAULT '',
     outfit VARCHAR(1000) DEFAULT '',
     shipping_address VARCHAR(1000) DEFAULT '',
@@ -1056,6 +1057,8 @@ const COLUMNS = [
   // it any more, but there is no reason to throw away what was already there.
   ['influencers', 'outfit', `VARCHAR(1000) DEFAULT '' AFTER collaboration_type`],
   ['influencers', 'remark', `VARCHAR(2000) DEFAULT '' AFTER post_date`],
+  // Which of the brands the collaboration is for.
+  ['influencers', 'project', `VARCHAR(40) DEFAULT '' AFTER message_sent_on`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.

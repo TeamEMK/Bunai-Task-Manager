@@ -29,6 +29,7 @@ const router = express.Router();
 const HEADER_FIELDS = {
   'influencer name': 'name', 'name': 'name',
   'profile link': 'profile_link',
+  'project': 'project',
   'message sent on instagram': 'message_sent_on',
   'collaboration type': 'collaboration_type',
   'outfit': 'outfit', 'outfits': 'outfit', 'outfit name': 'outfit',
@@ -41,7 +42,7 @@ const HEADER_FIELDS = {
 // What a missing column is called when the page says so.
 const FIELD_LABEL = {
   name: 'Influencer Name', profile_link: 'Profile Link', message_sent_on: 'Message Sent on Instagram',
-  collaboration_type: 'Collaboration Type', outfit: 'Outfit', shipping_address: 'Shipping Address',
+  project: 'Project', collaboration_type: 'Collaboration Type', outfit: 'Outfit', shipping_address: 'Shipping Address',
   email: 'Email ID', phone: 'Phone Number', shipped_on: 'Shipped On', received_on: 'Received On',
   post_date: 'Post Date', remark: 'Remark',
 };
@@ -51,6 +52,8 @@ const DATE_FIELDS = ['message_sent_on', 'shipped_on', 'received_on', 'post_date'
 // Everyone in this tracker has been approved, so there is no status to record.
 // The list is the one the sheet's dropdown offers.
 const TYPES = ['Barter', 'Paid', 'Sourcing', 'Non Collab', 'PR'];
+// The brands the team works for; the sheet's Project dropdown offers the same.
+const PROJECTS = ['Bunai', 'Mulmul', 'Aaheli'];
 
 // 0 -> A, 25 -> Z, 26 -> AA.
 const colLetter = (i) => {
@@ -80,10 +83,12 @@ const SELECT = `
 
 function fromBody(b) {
   const type = TYPES.includes(clean(b.collaboration_type)) ? clean(b.collaboration_type) : '';
+  const project = PROJECTS.includes(clean(b.project)) ? clean(b.project) : '';
   return {
     name: clean(b.name),
     profile_link: clean(b.profile_link, 500),
     message_sent_on: dateOrNull(b.message_sent_on),
+    project,
     collaboration_type: type,
     outfit: clean(b.outfit, 1000),
     shipping_address: clean(b.shipping_address, 1000),
@@ -161,9 +166,9 @@ async function writeRow(row, record) {
       requestBody: { valueInputOption: 'USER_ENTERED', data },
     });
     google.invalidateSheet(id);
-    // Only the two new ones are worth a warning: the others have always been
+    // Only the newer ones are worth a warning: the others have always been
     // there, and a sheet that lacks them is the team's own choice.
-    const missing = ['outfit', 'remark'].filter(f => !cols[f]).map(f => FIELD_LABEL[f]);
+    const missing = ['project', 'outfit', 'remark'].filter(f => !cols[f]).map(f => FIELD_LABEL[f]);
     return { ok: true, row: at, missing };
   } catch (err) {
     console.error('⚠️ Influencer sheet write failed:', err.message);
@@ -196,6 +201,7 @@ router.get('/influencers/meta', requireAuth, asyncRoute(async (req, res) => {
     'SELECT COUNT(*) AS n FROM influencers WHERE shipped_on IS NOT NULL AND received_on IS NULL');
   res.json({
     types: TYPES,
+    projects: PROJECTS,
     sheet: sheetConfigured(),
     // Worth saying out loud on the page: without this the team fills the app
     // and quietly wonders why their sheet is empty.

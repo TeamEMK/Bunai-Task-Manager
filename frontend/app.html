@@ -1423,10 +1423,10 @@
     <div class="table-container">
       <table>
         <thead><tr>
-          <th>Influencer</th><th>Collaboration</th><th>Outfit</th><th>Messaged</th>
+          <th>Influencer</th><th>Project</th><th>Collaboration</th><th>Outfit</th><th>Messaged</th>
           <th>Shipped</th><th>Received</th><th>Posted</th><th>Remark</th><th>Action</th>
         </tr></thead>
-        <tbody id="infBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+        <tbody id="infBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1817,6 +1817,13 @@
         <input type="text" id="infProfile" placeholder="https://instagram.com/…"/></div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label>Project</label>
+        <select id="infProject">
+          <option value="">—</option>
+          <option value="Bunai">Bunai</option>
+          <option value="Mulmul">Mulmul</option>
+          <option value="Aaheli">Aaheli</option>
+        </select></div>
       <div class="form-group"><label>Collaboration type</label>
         <select id="infType">
           <option value="">—</option>
@@ -1826,9 +1833,9 @@
           <option value="Non Collab">Non Collab</option>
           <option value="PR">PR</option>
         </select></div>
-      <div class="form-group"><label>Outfit</label>
-        <input type="text" id="infOutfit" placeholder="Name of the outfit(s), separated by commas"/></div>
     </div>
+    <div class="form-group"><label>Outfit</label>
+      <input type="text" id="infOutfit" placeholder="Name of the outfit(s), separated by commas"/></div>
     <div class="form-row">
       <div class="form-group"><label>Email ID</label>
         <input type="text" id="infEmail" placeholder="name@example.com"/></div>
