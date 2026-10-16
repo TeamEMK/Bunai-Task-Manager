@@ -11435,17 +11435,26 @@ const SCOT_LOOK = {
                 style: 'background:var(--muted);color:var(--faint)' },
 };
 
+// Each load takes a ticket; only the newest may draw. Typing in the search box
+// fires several loads, and the unfiltered one can come back last - the table
+// then showed everyone while the box said one phone number, and an entry made
+// from that table went onto the wrong customer.
+let _scotLoadSeq = 0;
+
 async function loadScot() {
   const body = document.getElementById('scotBody');
   if (!body) return;
   const q = (document.getElementById('scotSearch').value || '').trim();
   const status = document.getElementById('scotFilter').value;
+  const ticket = ++_scotLoadSeq;
 
   let d;
   try {
     d = await api('/api/scot?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
+    if (ticket !== _scotLoadSeq) return;     // a newer load is on its way
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="9" class="empty">Could not load — '
+    if (ticket !== _scotLoadSeq) return;
+    body.innerHTML = '<tr><td colspan="12" class="empty">Could not load — '
       + dtEscape(e.message || 'error') + '</td></tr>';
     return;
   }
@@ -11478,6 +11487,7 @@ async function loadScot() {
       + tab('abroad', 'Outside India');
   }
 
+  window._scotRows = d.rows;
   const note = document.getElementById('scotNote');
   if (note) {
     note.textContent = (d.rows.length < d.total
@@ -11488,11 +11498,11 @@ async function loadScot() {
   }
 
   if (!d.rows.length) {
-    body.innerHTML = '<tr><td colspan="9" class="empty">Nobody matches that.</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" class="empty">Nobody matches that.</td></tr>';
     return;
   }
 
-  body.innerHTML = d.rows.map(r => {
+  body.innerHTML = d.rows.map((r, i) => {
     const look = SCOT_LOOK[r.status] || SCOT_LOOK['on-track'];
     // How late, in their own rhythm — "28 days late" means more to someone
     // who buys fortnightly than a raw date does.
@@ -11517,8 +11527,211 @@ async function loadScot() {
       + '<td style="white-space:nowrap">' + when(r.callOn)
       + (r.gap ? '<div style="font-size:11px;color:var(--muted-foreground)">buys every '
          + n(r.gap) + ' days</div>' : '')
-      + '</td></tr>';
+      + '</td>'
+      + scContactCell(r, i, 'whatsapp') + scContactCell(r, i, 'email') + scContactCell(r, i, 'call')
+      + '</tr>';
   }).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// SCOT contact log: WhatsApp, Email and Calling
+//
+// Three columns beside "Call on", each showing only ITS OWN latest entry, so a
+// newer WhatsApp never hides an older email. Clicking one opens a popup with
+// the form and the whole history of that channel for that customer.
+// ══════════════════════════════════════════════════════
+const SC_CH = {
+  whatsapp: { label: 'WhatsApp', icon: '\u{1F4AC}', msg: 'Message sent', noun: 'message' },
+  email:    { label: 'Email',    icon: '✉️', msg: 'Message / what was sent', noun: 'email' },
+  call:     { label: 'Calling',  icon: '\u{1F4DE}', msg: 'What was discussed', noun: 'call' },
+};
+const scDate = (iso) => (iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN',
+  { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+const scPlural = (n, noun) => n + ' ' + noun + (n === 1 ? '' : 's');
+let SC = { phone: '', name: '', row: null, channel: 'whatsapp', files: [], uploading: 0, data: null };
+
+function scContactCell(r, i, ch) {
+  const c = (r.contacts || {})[ch];
+  const meta = SC_CH[ch];
+  const base = '<td style="cursor:pointer;min-width:150px;max-width:210px" onclick="scotOpenContact(' + i + ",'" + ch + "')\">";
+  if (!c) {
+    return base + '<span style="color:var(--brand-deep);font-size:12.5px;font-weight:600">'
+      + meta.icon + ' + Add</span></td>';
+  }
+  const next = (ch === 'call' && c.nextCall)
+    ? '<div style="font-size:11px;color:var(--brand-deep);margin-top:2px">Next call ' + dtEscape(scDate(c.nextCall)) + '</div>' : '';
+  return base + '<div style="font-weight:600;white-space:nowrap">' + meta.icon + ' ' + dtEscape(scDate(c.date))
+    + ' <span style="font-weight:500;font-size:11px;color:var(--muted-foreground)">· '
+    + dtEscape(scPlural(c.count, meta.noun)) + '</span></div>'
+    + '<div style="font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'
+    + dtEscape(c.text) + '">' + dtEscape(c.text || '—') + '</div>'
+    + next + '</td>';
+}
+
+function scotOpenContact(i, ch) {
+  const r = (window._scotRows || [])[i];
+  if (!r) return;
+  SC = { phone: r.phone, name: r.name, row: r, channel: ch, files: [], uploading: 0, data: null };
+  const meta = SC_CH[ch];
+  document.getElementById('scTitle').textContent = meta.icon + ' ' + meta.label;
+  document.getElementById('scSub').textContent = r.name + ' · ' + r.phone;
+  document.getElementById('scMsgLabel').textContent = meta.msg;
+  document.getElementById('scCount').textContent = 'Loading…';
+  document.getElementById('scHistory').innerHTML = '';
+  document.getElementById('scErr').style.display = 'none';
+  scResetForm();
+  document.getElementById('scContactModal').classList.add('open');
+  scLoadHistory();
+}
+
+async function scLoadHistory() {
+  const box = document.getElementById('scHistory');
+  let d;
+  try { d = await api('/api/scot/contacts?phone=' + encodeURIComponent(SC.phone)); }
+  catch (e) { d = { error: e.message || 'error' }; }
+  if (d.error) { box.innerHTML = '<div style="color:#b91c1c;font-size:13px">' + dtEscape(d.error) + '</div>'; return; }
+  SC.data = d;
+  const ch = SC.channel, list = d.entries[ch] || [], meta = SC_CH[ch];
+  document.getElementById('scCount').textContent = list.length
+    ? 'Total so far: ' + scPlural(list.length, meta.noun) : 'Nothing logged yet';
+  if (!list.length) {
+    box.innerHTML = '<div style="font-size:13px;color:var(--faint);padding:6px 0">No ' + meta.noun + 's logged for this customer yet.</div>';
+    return;
+  }
+  box.innerHTML = list.map((e, k) => {
+    const files = (e.files || []).map(f => '<a href="' + dtEscape(f.url) + '" target="_blank" rel="noopener" '
+      + 'style="font-size:12px;color:var(--brand-deep);text-decoration:none;margin-right:10px">\u{1F4CE} ' + dtEscape(f.name) + '</a>').join('');
+    const part = (label, text) => text
+      ? '<div style="font-size:13px;margin-top:5px;white-space:pre-wrap"><span style="font-size:11px;font-weight:700;'
+        + 'color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.05em">' + label + '</span> ' + dtEscape(text) + '</div>' : '';
+    return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:8px'
+      + (k === 0 ? ';background:var(--brand-tint)' : '') + '">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+      + '<b style="font-size:13.5px">' + dtEscape(scDate(e.date)) + (k === 0 ? ' <span style="font-size:10.5px;font-weight:700;color:var(--brand-deep)">LATEST</span>' : '') + '</b>'
+      + '<span style="white-space:nowrap"><button class="action-btn" onclick="scEdit(' + e.id + ')">Edit</button>'
+      + '<button class="action-btn delete" style="margin-left:6px" onclick="scDelete(' + e.id + ')">Delete</button></span></div>'
+      + (e.email ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:3px">To: ' + dtEscape(e.email) + '</div>' : '')
+      + part(ch === 'call' ? 'Discussed' : 'Sent', e.message)
+      + part('Reply', e.reply)
+      + (e.nextCall ? '<div style="font-size:12.5px;margin-top:5px;color:var(--brand-deep)">Next call: ' + dtEscape(scDate(e.nextCall)) + '</div>' : '')
+      + (files ? '<div style="margin-top:6px">' + files + '</div>' : '')
+      + '<div style="font-size:11px;color:var(--faint);margin-top:6px">By ' + dtEscape(e.by || '—')
+      + ' · added ' + dtEscape(e.at) + ' · <b>last updated ' + dtEscape(e.updated) + '</b></div>'
+      + '</div>';
+  }).join('');
+}
+
+// Empties the form for a new entry. The date starts as today (India's), and
+// the email as the one on file unless that is the placeholder Shopify wrote.
+function scResetForm() {
+  const ch = SC.channel;
+  const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  const have = SC.row && SC.row.email && !/noemail|^sfy@/i.test(SC.row.email) ? SC.row.email : '';
+  document.getElementById('scEditId').value = '';
+  document.getElementById('scDate').value = today;
+  document.getElementById('scEmail').value = ch === 'email' ? have : '';
+  document.getElementById('scNext').value = '';
+  document.getElementById('scMessage').value = '';
+  document.getElementById('scReply').value = '';
+  document.getElementById('scFile').value = '';
+  SC.files = [];
+  scDrawFiles();
+  document.getElementById('scEmailWrap').style.display = ch === 'email' ? '' : 'none';
+  document.getElementById('scNextWrap').style.display = ch === 'call' ? '' : 'none';
+  document.getElementById('scReplyWrap').style.display = ch === 'call' ? 'none' : '';
+  document.getElementById('scFilesWrap').style.display = ch === 'call' ? 'none' : '';
+  document.getElementById('scFormTitle').textContent = 'Add an entry';
+  document.getElementById('scSave').textContent = 'Save entry';
+  document.getElementById('scCancelEdit').style.display = 'none';
+}
+
+function scEdit(id) {
+  const e = ((SC.data && SC.data.entries[SC.channel]) || []).find(x => x.id === id);
+  if (!e) return;
+  document.getElementById('scErr').style.display = 'none';
+  document.getElementById('scEditId').value = e.id;
+  document.getElementById('scDate').value = e.date;
+  document.getElementById('scEmail').value = e.email || '';
+  document.getElementById('scNext').value = e.nextCall || '';
+  document.getElementById('scMessage').value = e.message;
+  document.getElementById('scReply').value = e.reply;
+  SC.files = (e.files || []).map(f => ({ name: f.name, url: f.url }));
+  scDrawFiles();
+  document.getElementById('scFormTitle').textContent = 'Editing the entry of ' + scDate(e.date);
+  document.getElementById('scSave').textContent = 'Save changes';
+  document.getElementById('scCancelEdit').style.display = '';
+  document.getElementById('scMessage').focus();
+}
+
+function scDrawFiles() {
+  const box = document.getElementById('scFileList');
+  box.innerHTML = SC.files.map((f, k) =>
+    '<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--muted);'
+    + 'border:1px solid var(--border);border-radius:999px;padding:3px 10px">\u{1F4CE} ' + dtEscape(f.name)
+    + ' <a href="#" onclick="scDropFile(' + k + ');return false" style="color:#b91c1c;text-decoration:none" title="Remove">✕</a></span>').join('')
+    + (SC.uploading ? '<span style="font-size:12px;color:var(--muted-foreground)">Uploading…</span>' : '');
+}
+function scDropFile(k) { SC.files.splice(k, 1); scDrawFiles(); }
+
+async function scFilesPicked(input) {
+  const err = document.getElementById('scErr');
+  err.style.display = 'none';
+  const picked = [...input.files];
+  input.value = '';
+  for (const f of picked) {
+    if (f.size > 4 * 1024 * 1024) {
+      err.textContent = '"' + f.name + '" is over 4 MB, so it was not attached.';
+      err.style.display = 'block';
+      continue;
+    }
+    SC.uploading++; scDrawFiles();
+    try {
+      const fd = new FormData();
+      fd.append('file', f, f.name);
+      const headers = {};
+      const token = localStorage.getItem('authToken');
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const up = await fetch('/api/scot/attachment', { method: 'POST', credentials: 'include', headers, body: fd });
+      let j = {};
+      try { j = await up.json(); } catch (_) { /* a non-JSON error page */ }
+      if (!up.ok || j.error || !j.url) throw new Error(j.error || 'Upload failed (' + up.status + ').');
+      SC.files.push({ name: j.name || f.name, url: j.url });
+    } catch (e) {
+      err.textContent = 'Not attached — ' + e.message;
+      err.style.display = 'block';
+    } finally { SC.uploading--; scDrawFiles(); }
+  }
+}
+
+async function scSave(btn) {
+  const err = document.getElementById('scErr');
+  err.style.display = 'none';
+  if (SC.uploading) { err.textContent = 'A file is still uploading — give it a moment.'; err.style.display = 'block'; return; }
+  const val = (id) => document.getElementById(id).value.trim();
+  const id = val('scEditId');
+  const body = {
+    phone: SC.phone, channel: SC.channel, date: val('scDate'), email: val('scEmail'),
+    message: val('scMessage'), reply: val('scReply'), nextCall: val('scNext'), files: SC.files,
+  };
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = id ? await api('/api/scot/contacts/' + id, 'PUT', body) : await api('/api/scot/contacts', 'POST', body);
+    if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+    showToast('✅ Saved');
+    scResetForm();
+    await scLoadHistory();
+    loadScot();                       // the column behind the popup shows the new latest
+  } finally { done(); }
+}
+
+async function scDelete(id) {
+  if (!confirm('Delete this entry? This cannot be undone.')) return;
+  const r = await api('/api/scot/contacts/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  showToast('✅ Deleted');
+  if (document.getElementById('scEditId').value === String(id)) scResetForm();
+  await scLoadHistory();
+  loadScot();
 }
 
 function scotPick(key) {

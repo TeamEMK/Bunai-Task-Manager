@@ -926,6 +926,29 @@ const TABLES = [
   // order, whether they are overdue. Those are read off these columns at query
   // time, which is cheap, and storing them would make the table wrong by
   // morning.
+  // What the team did about a customer: a WhatsApp, an email, a call. One row
+  // per contact, never edited into the one before, so the history is the rows.
+  // Keyed on the customer's phone, because sfy_customers is rebuilt whole by
+  // every Shopify sync and a row id there means nothing from one run to the
+  // next. The times are written by the app from the database clock (UTC) and
+  // shown in India's time, like every other log here.
+  ['scot_contacts', `CREATE TABLE scot_contacts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    phone VARCHAR(20) NOT NULL,
+    channel VARCHAR(12) NOT NULL,
+    contact_date DATE NOT NULL,
+    email VARCHAR(255) NOT NULL DEFAULT '',
+    message TEXT NULL,
+    reply TEXT NULL,
+    next_call_date DATE NULL,
+    attachments TEXT NULL,
+    created_by INT NULL,
+    created_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    KEY idx_scot_contacts (phone, channel, contact_date, id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['sfy_customers', `CREATE TABLE sfy_customers (
       phone       VARCHAR(20) NOT NULL PRIMARY KEY,
       name        VARCHAR(200) DEFAULT '',

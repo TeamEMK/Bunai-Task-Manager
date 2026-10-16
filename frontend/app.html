@@ -695,8 +695,9 @@
           <th style="text-align:right">Units</th>
           <th style="text-align:right">Lifetime</th>
           <th>Last order</th><th>Call on</th>
+          <th>WhatsApp</th><th>Email</th><th>Calling</th>
         </tr></thead>
-        <tbody id="scotBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+        <tbody id="scotBody"><tr><td colspan="12" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1802,6 +1803,47 @@
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-outline" onclick="closeModal('b2bModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveB2B(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="scContactModal">
+  <div class="modal" style="width:700px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="scTitle">Contact</h3>
+    <div id="scSub" style="margin:-6px 0 4px;font-size:12.5px;color:var(--muted-foreground)"></div>
+    <div id="scCount" style="display:inline-block;margin:4px 0 12px;font-size:12.5px;font-weight:700;
+      padding:4px 12px;border-radius:999px;background:var(--brand-tint);color:var(--brand-deep)"></div>
+    <div id="scErr" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
+      border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
+    <input type="hidden" id="scEditId"/>
+
+    <div id="scFormTitle" style="font-size:11.5px;font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;color:var(--muted-foreground);margin-bottom:8px">Add an entry</div>
+    <div class="form-row">
+      <div class="form-group"><label>Date</label><input type="date" id="scDate"/></div>
+      <div class="form-group" id="scEmailWrap"><label>Email ID</label>
+        <input type="text" id="scEmail" placeholder="name@example.com"/></div>
+      <div class="form-group" id="scNextWrap"><label>Next call on <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(optional)</span></label>
+        <input type="date" id="scNext"/></div>
+    </div>
+    <div class="form-group"><label id="scMsgLabel">Message sent</label>
+      <textarea id="scMessage" rows="3"></textarea></div>
+    <div class="form-group" id="scReplyWrap"><label>Customer's reply <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(if any)</span></label>
+      <textarea id="scReply" rows="2"></textarea></div>
+    <div class="form-group" id="scFilesWrap"><label>Attachments <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(optional, up to 4 MB each)</span></label>
+      <input type="file" id="scFile" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.doc,.docx,.xls,.xlsx,.csv,.txt,.ppt,.pptx" onchange="scFilesPicked(this)"/>
+      <div id="scFileList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:6px">
+      <button class="btn btn-outline" id="scCancelEdit" style="display:none" onclick="scResetForm()">Cancel edit</button>
+      <button class="btn btn-primary" id="scSave" onclick="scSave(this)">Save entry</button>
+    </div>
+
+    <div style="margin:16px 0 8px;padding-top:14px;border-top:1px solid var(--border);font-size:11.5px;
+      font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">History — latest first</div>
+    <div id="scHistory"></div>
+
+    <div class="modal-footer" style="justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeModal('scContactModal')">Close</button>
     </div>
   </div>
 </div>

@@ -172,10 +172,13 @@ async function getDriveClient() {
 // PO_DRIVE_FOLDER_ID (optional) — if set, the file goes into that folder (which
 // must be shared with the service-account email as Editor); otherwise it lands
 // in the service account's own Drive, which has no storage quota of its own.
-async function uploadToDrive(buffer, originalName, mimeType, prefix = 'FILE') {
+// `folderId`, when given, is used instead of PO_DRIVE_FOLDER_ID, so a feature
+// can keep its files in a folder of its own (the SCOT contact log does).
+async function uploadToDrive(buffer, originalName, mimeType, prefix = 'FILE', folderId = '') {
   const drive = await getDriveClient();
   const fileMeta = { name: `${prefix}_${Date.now()}_${originalName}` };
-  if (config.google.poDriveFolderId) fileMeta.parents = [config.google.poDriveFolderId];
+  const parent = folderId || config.google.poDriveFolderId;
+  if (parent) fileMeta.parents = [parent];
   // supportsAllDrives is required whenever the parent is (or lives inside) a
   // Shared Drive — without it the API only looks at "My Drive" and 404s.
   const created = await drive.files.create({

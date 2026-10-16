@@ -66,6 +66,11 @@ module.exports = {
     // Either GOOGLE_CREDENTIALS (a one-line JSON blob) or a local credentials.json.
     credentialsJson: process.env.GOOGLE_CREDENTIALS || '',
     poDriveFolderId: process.env.PO_DRIVE_FOLDER_ID || '',
+    // Where files attached to a WhatsApp / email entry on the SCOT page go: a
+    // folder inside a Shared Drive that the service account is a member of. A
+    // folder id is not a secret - reaching it takes that membership - so the
+    // one the client gave us is the default; the variable only overrides it.
+    scotDriveFolderId: process.env.SCOT_DRIVE_FOLDER_ID || '1lERPrRpENxz8dyR-aBGgCuSbd6QXTdf2',
     // Sheet values are re-read by several MIS endpoints within seconds of each
     // other; this is how long one fetch is reused for. 0 disables the cache.
     valuesCacheMs: int(process.env.SHEETS_CACHE_MS, 60 * 1000),

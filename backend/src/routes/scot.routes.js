@@ -26,8 +26,11 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
+const multer = require('multer');
+const config = require('../config');
+const google = require('../services/google');
 const { requireAuth, requirePage } = require('../middleware/auth');
-const { asyncRoute } = require('../middleware/errors');
+const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
 
@@ -117,6 +120,29 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   ]);
 
   const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
+
+  // For the customers on this page: the latest entry in EACH channel and how
+  // many there are, so a new WhatsApp never hides the email beside it.
+  const last = {};
+  const phones = rows.map(r => r.phone);
+  if (phones.length) {
+    const L = await db.rows(
+      `SELECT phone, channel, id, message, next_call_date, cnt, contact_date, updated_at_ist
+         FROM (SELECT phone, channel, id, message,
+                      DATE_FORMAT(contact_date, '%Y-%m-%d') AS contact_date,
+                      DATE_FORMAT(next_call_date, '%Y-%m-%d') AS next_call_date,
+                      DATE_FORMAT(updated_at + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') AS updated_at_ist,
+                      ROW_NUMBER() OVER (PARTITION BY phone, channel ORDER BY contact_date DESC, id DESC) AS rn,
+                      COUNT(*) OVER (PARTITION BY phone, channel) AS cnt
+                 FROM scot_contacts WHERE phone IN (?)) t
+        WHERE rn = 1`, [phones]);
+    L.forEach(r => {
+      (last[r.phone] = last[r.phone] || {})[r.channel] = {
+        date: r.contact_date, text: (r.message || '').slice(0, 90), nextCall: r.next_call_date,
+        count: Number(r.cnt), updated: r.updated_at_ist,
+      };
+    });
+  }
   const abroad = await db.one(`SELECT COUNT(*) n FROM sfy_customers WHERE ${ABROAD}`);
 
   // When each tab of the Google Sheet was last written, in India's time. The
@@ -144,6 +170,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
       email: (r.email || '').trim(),
       city: (r.city || '').trim(),
       country: (r.country || '').trim(),
+      contacts: last[r.phone] || {},
       orders: Number(r.orders),
       units: Number(r.units) || 0,
       value: Number(r.value) || 0,
@@ -159,6 +186,160 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
       status: r.status,
     })),
   });
+}));
+
+// ══════════════════════════════════════════════════════
+// CONTACT LOG - what was done about a customer, by WhatsApp, email and phone.
+//
+// The three are kept apart on purpose. A newer WhatsApp must not push an older
+// email out of sight, so "the latest" is worked out per channel, and the list
+// carries one latest entry for each.
+//
+// Entries are added, not rewritten: ringing the same person two days later is
+// a second row. "Latest" is the newest contact DATE (the date typed, which may
+// be earlier than the day it was entered), and the later entry wins a tie.
+// ══════════════════════════════════════════════════════
+const CHANNELS = ['whatsapp', 'email', 'call'];
+
+// India's date, which is what "today" means to the person typing.
+const TODAY_IST = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v + 'T00:00:00Z'));
+const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+
+// Shown as typed; stored as a date. An entry can be for a day other than today.
+const SHOW = `DATE_FORMAT(contact_date, '%Y-%m-%d') AS contact_date,
+              DATE_FORMAT(next_call_date, '%Y-%m-%d') AS next_call_date,
+              DATE_FORMAT(created_at + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p') AS created_at_ist,
+              DATE_FORMAT(updated_at + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p') AS updated_at_ist,
+              updated_at > created_at AS edited`;
+
+function shape(r) {
+  let files = [];
+  try { files = JSON.parse(r.attachments || '[]'); } catch (_) { /* a bad cell is no attachments */ }
+  return {
+    id: r.id, channel: r.channel, date: r.contact_date, email: r.email || '',
+    message: r.message || '', reply: r.reply || '', nextCall: r.next_call_date,
+    files: (Array.isArray(files) ? files : []).filter(f => f && /^https?:\/\//.test(f.url || '')),
+    by: r.created_by_name || '', at: r.created_at_ist, updated: r.updated_at_ist, edited: !!Number(r.edited),
+  };
+}
+
+// Only what the form is allowed to carry for each channel. Email ID and
+// attachments belong to WhatsApp/email, the next call date to a call.
+function entryFromBody(b) {
+  const channel = String(b.channel || '');
+  if (!CHANNELS.includes(channel)) throw httpError(400, 'Choose WhatsApp, Email or Calling.');
+  const date = b.date ? String(b.date) : TODAY_IST();
+  if (!isYmd(date)) throw httpError(400, 'That date is not valid.');
+  const next = b.nextCall ? String(b.nextCall) : null;
+  if (next && !isYmd(next)) throw httpError(400, 'The next call date is not valid.');
+  const files = channel === 'call' ? [] : (Array.isArray(b.files) ? b.files : [])
+    .filter(f => f && /^https?:\/\//.test(String(f.url || '')))
+    .slice(0, 10).map(f => ({ name: clip(f.name, 200) || 'file', url: clip(f.url, 600) }));
+  return {
+    channel, date,
+    email: channel === 'email' ? clip(b.email, 255) : '',
+    message: clip(b.message, 4000),
+    reply: channel === 'call' ? '' : clip(b.reply, 4000),
+    nextCall: channel === 'call' ? next : null,
+    files: JSON.stringify(files),
+  };
+}
+
+async function customerOrFail(phone) {
+  const c = await db.one('SELECT phone FROM sfy_customers WHERE phone = ?', [clip(phone, 20)]);
+  if (!c) throw httpError(404, 'That customer is not on the list.');
+  return c.phone;
+}
+
+// One customer's whole history, newest first within each channel, with a count
+// per channel - the popup's "how many have we sent so far".
+router.get('/scot/contacts', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
+  const phone = await customerOrFail(req.query.phone);
+  const rows = await db.rows(
+    `SELECT id, channel, email, message, reply, attachments, created_by_name, ${SHOW}
+       FROM scot_contacts WHERE phone = ?
+      ORDER BY contact_date DESC, id DESC`, [phone]);
+  const out = { whatsapp: [], email: [], call: [] };
+  rows.forEach(r => { if (out[r.channel]) out[r.channel].push(shape(r)); });
+  res.json({ phone, entries: out, counts: { whatsapp: out.whatsapp.length, email: out.email.length, call: out.call.length } });
+}));
+
+router.post('/scot/contacts', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
+  const phone = await customerOrFail(req.body && req.body.phone);
+  const e = entryFromBody(req.body || {});
+  if (!e.message && !e.reply && e.files === '[]') throw httpError(400, 'Write what was said, or attach something.');
+  const me = await db.one('SELECT name FROM users WHERE id = ?', [req.session.userId]);
+  const [ins] = await db.query(
+    `INSERT INTO scot_contacts
+       (phone, channel, contact_date, email, message, reply, next_call_date, attachments,
+        created_by, created_by_name, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+    [phone, e.channel, e.date, e.email, e.message, e.reply, e.nextCall, e.files,
+     req.session.userId, (me && me.name) || req.session.name || '']);
+  res.json({ id: ins.insertId });
+}));
+
+router.put('/scot/contacts/:id', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const had = await db.one('SELECT id, channel FROM scot_contacts WHERE id = ?', [id]);
+  if (!had) throw httpError(404, 'That entry no longer exists.');
+  // An entry stays in the channel it was made in.
+  const e = entryFromBody({ ...(req.body || {}), channel: had.channel });
+  if (!e.message && !e.reply && e.files === '[]') throw httpError(400, 'Write what was said, or attach something.');
+  await db.query(
+    `UPDATE scot_contacts
+        SET contact_date=?, email=?, message=?, reply=?, next_call_date=?, attachments=?,
+            updated_at = UTC_TIMESTAMP()
+      WHERE id=?`,
+    [e.date, e.email, e.message, e.reply, e.nextCall, e.files, id]);
+  res.json({ success: true });
+}));
+
+router.delete('/scot/contacts/:id', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
+  await db.query('DELETE FROM scot_contacts WHERE id = ?', [parseInt(req.params.id, 10)]);
+  res.json({ success: true });
+}));
+
+// ── attachments ───────────────────────────────────────
+// A file goes to the client's Drive folder and the entry keeps the link, as the
+// sample photos do. Kept under the 4.5 MB request cap a Vercel function has.
+const FILE_OK = /\.(pdf|png|jpe?g|gif|webp|heic|docx?|xlsx?|csv|txt|pptx?)$/i;
+const attach = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
+
+router.post('/scot/attachment', requireAuth, requirePage('scot'), (req, res, next) => {
+  attach.single('file')(req, res, (err) => {
+    if (!err) return next();
+    const big = err.code === 'LIMIT_FILE_SIZE';
+    res.status(big ? 413 : 400).json({ error: big ? 'That file is too large - keep it under 4 MB.' : err.message });
+  });
+}, asyncRoute(async (req, res) => {
+  if (!req.file) throw httpError(400, 'Choose a file to attach.');
+  if (!FILE_OK.test(req.file.originalname || '')) {
+    throw httpError(400, 'That kind of file is not accepted. Use a PDF, image, Word, Excel, PowerPoint, CSV or text file.');
+  }
+  const folder = config.google.scotDriveFolderId;
+  const send = () => google.uploadToDrive(req.file.buffer, req.file.originalname, req.file.mimetype, 'SCOT', folder);
+  try {
+    let url;
+    try { url = await send(); }
+    catch (first) {
+      // Google answers "Internal Error" now and then for a call that works a
+      // second later (one of five test uploads did). Once more, and only for
+      // that kind of failure: a refused folder would fail the same way again.
+      const transient = Number(first && first.code) >= 500 || /internal error|backend error|try again/i.test(String(first && first.message));
+      if (!transient) throw first;
+      await new Promise(r => setTimeout(r, 800));
+      url = await send();
+    }
+    res.json({ name: req.file.originalname, url });
+  } catch (e) {
+    // The shared handler words every Google 403 as "share this sheet"; for a
+    // Drive upload the useful thing is which folder and which account.
+    const who = google.serviceAccountEmail() || 'the service account';
+    throw httpError(502, 'Could not save the file to Drive (' + String((e && e.message) || e).slice(0, 160)
+      + '). The folder must be in a Shared Drive that ' + who + ' belongs to.');
+  }
 }));
 
 module.exports = router;
