@@ -8271,9 +8271,9 @@ async function loadHrm(){
               style="font-size:11.5px;color:var(--brand-deep);text-decoration:none;margin-left:${c.cv_name ? '8px' : '0'}">↗ Resume</a>` : ''}
         </td>
         <td style="font-size:13px">${dtEscape(c.profile_position || '—')}
-          ${[c.location, c.expected_salary ? 'Exp. ' + c.expected_salary : '', c.notice_period ? 'Notice ' + c.notice_period : '']
-            .filter(Boolean).length ? `<div style="font-size:11.5px;color:var(--faint)">${dtEscape([c.location,
-              c.expected_salary ? 'Exp. ' + c.expected_salary : '', c.notice_period ? 'Notice ' + c.notice_period : ''].filter(Boolean).join(' · '))}</div>` : ''}</td>
+          ${(() => { const bits = [c.location, c.expected_salary ? 'Exp. ' + c.expected_salary : '',
+              c.notice_period ? 'Notice ' + c.notice_period : '', c.source ? 'via ' + c.source : ''].filter(Boolean);
+            return bits.length ? `<div style="font-size:11.5px;color:var(--faint)">${dtEscape(bits.join(' · '))}</div>` : ''; })()}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(d)}${t ? `<div style="font-size:11.5px;color:var(--faint)">${hrmTime(t)}</div>` : ''}</td>
         <td>${hrmPill(c.status)}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(c.joining_date)}</td>
@@ -8311,7 +8311,7 @@ function openHrmCandidate(idx){
   set('hrmTime', c?.interview_time);
   set('hrmSalary', c?.salary); set('hrmJoining', c?.joining_date); set('hrmNotes', c?.notes);
   set('hrmIntvEmail', c?.interviewer_email);
-  set('hrmLocation', c?.location); set('hrmNotice', c?.notice_period);
+  set('hrmLocation', c?.location); set('hrmNotice', c?.notice_period); set('hrmSource', c?.source);
   set('hrmExpSalary', c?.expected_salary); set('hrmResumeLink', c?.resume_link);
   document.getElementById('hrmSendEmail').checked = !c;
   // Editing never emails — only adding, and only then because an invitation is
@@ -8361,7 +8361,7 @@ async function hrmWriteCandidate(){
     interview_time: val('hrmTime'),
     interviewer_email: val('hrmIntvEmail'),
     salary: val('hrmSalary'), joining_date: val('hrmJoining'), notes: val('hrmNotes'),
-    location: val('hrmLocation'), notice_period: val('hrmNotice'),
+    location: val('hrmLocation'), notice_period: val('hrmNotice'), source: val('hrmSource'),
     expected_salary: val('hrmExpSalary'), resume_link: val('hrmResumeLink'),
     sendEmail: document.getElementById('hrmSendEmail').checked,
   };

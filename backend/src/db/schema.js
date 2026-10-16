@@ -1130,6 +1130,8 @@ const COLUMNS = [
   ['hrm_candidates', 'expected_salary', `VARCHAR(100) DEFAULT ''`],
   ['hrm_candidates', 'notice_period', `VARCHAR(100) DEFAULT ''`],
   ['hrm_candidates', 'resume_link', `VARCHAR(1000) DEFAULT ''`],
+  // Where the candidate came from: Naukri, LinkedIn, a referral, a walk-in.
+  ['hrm_candidates', 'source', `VARCHAR(120) DEFAULT ''`],
   // hrm_offers existed before this column did, and CREATE TABLE IF NOT EXISTS
   // does nothing to a table that is already there.
   ['hrm_offers', 'cc_emails', `VARCHAR(1000) DEFAULT '' AFTER signatory_phone`],
