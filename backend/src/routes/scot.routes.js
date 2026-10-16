@@ -37,6 +37,11 @@ const KEY = `RIGHT(REGEXP_REPLACE(COALESCE(o.customer_phone,''), '[^0-9]', ''), 
 
 const STATUSES = ['gone', 'overdue', 'due', 'on-track', 'one-time'];
 
+// "Outside India" is a filter on where they live, not a verdict on how they
+// buy, so it sits beside the statuses in the tab strip but is not one. A
+// customer with no country on file is in neither group.
+const ABROAD = `country <> '' AND country <> 'IN'`;
+
 // One row per customer already — sfy_customers is rebuilt by the Shopify sync.
 // Only the verdict is worked out here, because it depends on today and would
 // be wrong by morning if it were stored.
@@ -90,6 +95,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   const where = [];
   const args = [];
   if (status) { where.push('status = ?'); args.push(status); }
+  else if (req.query.status === 'abroad') where.push(ABROAD);
   if (q) {
     // Country is stored as its two-letter code, but people type "India" or
     // "australia". Whatever country names contain the text become the codes to
@@ -111,6 +117,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   ]);
 
   const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
+  const abroad = await db.one(`SELECT COUNT(*) n FROM sfy_customers WHERE ${ABROAD}`);
 
   // When each tab of the Google Sheet was last written, in India's time. The
   // log is in UTC; the table may not exist yet on a database the sheet has
@@ -127,6 +134,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
     sheet,
     counts: {
       all: counts.reduce((a, c) => a + Number(c.n), 0),
+      abroad: Number(abroad?.n) || 0,
       ...STATUSES.reduce((a, s) => (a[s] = by[s] || 0, a), {}),
     },
     total: Number(total?.n) || 0,

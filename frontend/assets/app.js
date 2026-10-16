@@ -11474,7 +11474,8 @@ async function loadScot() {
       + '<span class="lv-tab-badge">' + n(d.counts[key === '' ? 'all' : key]) + '</span></div>';
     tabs.innerHTML = tab('', 'Everyone') + tab('overdue', 'Overdue')
       + tab('due', 'Due soon') + tab('gone', 'Gone quiet')
-      + tab('on-track', 'On track') + tab('one-time', 'One-time');
+      + tab('on-track', 'On track') + tab('one-time', 'One-time')
+      + tab('abroad', 'Outside India');
   }
 
   const note = document.getElementById('scotNote');
