@@ -11180,6 +11180,7 @@ async function loadContentCal() {
   document.getElementById('ccTabs').innerHTML = d.months.map(m =>
     '<div class="lv-tab' + (m === d.month ? ' active' : '') + '" onclick="ccPick(\'' + m + '\')">' + dtEscape(ccMonthName(m)) + '</div>').join('');
   document.getElementById('ccDeleteMonth').style.display = d.month ? '' : 'none';
+  document.getElementById('ccBulkBtn').style.display = d.month ? '' : 'none';
   if (!d.month) {
     note.textContent = '';
     document.getElementById('ccToday').innerHTML = '';
@@ -11289,6 +11290,87 @@ async function ccCellSave(btn) {
       if (text) day.items.push({ channel: _ccCell.channel, text, done: null });
       ccDraw();
     }
+    loadContentCal();
+  } finally { done(); }
+}
+
+// ── many cells at once ────────────────────────────────
+let _ccBulkDates = new Set();
+const CC_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function ccBulkOpen() {
+  if (!CC || !CC.month) return;
+  _ccBulkDates = new Set();
+  document.getElementById('ccBulkTitle').textContent = 'Bulk edit — ' + ccMonthName(CC.month);
+  document.getElementById('ccBulkChannels').innerHTML = CC.channels.map(c =>
+    '<label style="display:flex;gap:6px;align-items:center;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;margin:0;cursor:pointer">'
+    + '<input type="checkbox" class="cc-bulk-ch" value="' + c.key + '" style="width:15px;height:15px;accent-color:var(--brand-deep)"/>' + dtEscape(c.label) + '</label>').join('');
+  document.getElementById('ccBulkQuick').innerHTML =
+    '<span class="cc-chip" onclick="ccBulkQuick(\'all\')">Every day</span>'
+    + '<span class="cc-chip" onclick="ccBulkQuick(\'none\')">None</span>'
+    + [1, 2, 3, 4, 5, 6, 0].map(w => '<span class="cc-chip" onclick="ccBulkQuick(' + w + ')">All ' + CC_WD[w] + '</span>').join('');
+  document.querySelector('input[name=ccBulkAction][value=add]').checked = true;
+  document.getElementById('ccBulkText').value = '';
+  document.getElementById('ccBulkErr').style.display = 'none';
+  ccBulkActionChanged();
+  ccBulkDraw();
+  document.getElementById('ccBulkModal').classList.add('open');
+}
+
+function ccBulkActionChanged() {
+  const a = document.querySelector('input[name=ccBulkAction]:checked').value;
+  document.getElementById('ccBulkTextWrap').style.display = a === 'clear' ? 'none' : '';
+  document.getElementById('ccBulkHint').textContent = {
+    add: 'Adds the text as a new line under whatever is already planned. A day that already has that line is left as it is.',
+    set: 'Replaces whatever is planned with this text.',
+    clear: 'Removes the plan for those channels on those dates.',
+  }[a];
+}
+
+// A month laid out by week, Monday first; click a date to pick or unpick it.
+function ccBulkDraw() {
+  const days = CC.days.map(x => x.date);
+  const lead = (new Date(days[0] + 'T00:00:00Z').getUTCDay() + 6) % 7;
+  document.getElementById('ccBulkDates').innerHTML =
+    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => '<div class="cc-day head">' + w + '</div>').join('')
+    + '<div></div>'.repeat(lead)
+    + days.map(d => '<div class="cc-day' + (_ccBulkDates.has(d) ? ' on' : '') + '" onclick="ccBulkToggle(\'' + d + '\')">' + Number(d.slice(8)) + '</div>').join('');
+  document.getElementById('ccBulkCount').textContent = _ccBulkDates.size ? _ccBulkDates.size + ' date' + (_ccBulkDates.size === 1 ? '' : 's') + ' chosen' : 'No dates chosen';
+}
+
+function ccBulkToggle(d) { _ccBulkDates.has(d) ? _ccBulkDates.delete(d) : _ccBulkDates.add(d); ccBulkDraw(); }
+
+function ccBulkQuick(w) {
+  const days = CC.days.map(x => x.date);
+  if (w === 'all') days.forEach(d => _ccBulkDates.add(d));
+  else if (w === 'none') _ccBulkDates.clear();
+  else {
+    const those = days.filter(d => new Date(d + 'T00:00:00Z').getUTCDay() === w);
+    // A second click on the same weekday takes it off again.
+    const allOn = those.every(d => _ccBulkDates.has(d));
+    those.forEach(d => (allOn ? _ccBulkDates.delete(d) : _ccBulkDates.add(d)));
+  }
+  ccBulkDraw();
+}
+
+async function ccBulkApply(btn) {
+  const err = document.getElementById('ccBulkErr');
+  err.style.display = 'none';
+  const action = document.querySelector('input[name=ccBulkAction]:checked').value;
+  const channels = [...document.querySelectorAll('.cc-bulk-ch:checked')].map(x => x.value);
+  const dates = [..._ccBulkDates].sort();
+  const text = document.getElementById('ccBulkText').value;
+  const fail = (m) => { err.textContent = m; err.style.display = 'block'; };
+  if (!channels.length) return fail('Choose at least one channel.');
+  if (!dates.length) return fail('Choose at least one date.');
+  if (action !== 'clear' && !text.trim()) return fail('Write what to put in.');
+  if (action === 'clear' && !confirm('Clear ' + channels.length + ' channel' + (channels.length === 1 ? '' : 's') + ' on ' + dates.length + ' date' + (dates.length === 1 ? '' : 's') + '?')) return;
+  const done = hrmBusy(btn, 'Applying…');
+  try {
+    const r = await api('/api/content-calendar/bulk', 'PUT', { month: CC.month, action, channels, dates, text });
+    if (r.error) return fail(r.error);
+    closeModal('ccBulkModal');
+    showToast('✅ ' + r.changed + ' cell' + (r.changed === 1 ? '' : 's') + ' updated');
     loadContentCal();
   } finally { done(); }
 }

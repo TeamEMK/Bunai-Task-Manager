@@ -105,6 +105,60 @@ router.put('/content-calendar/item', requireAuth, page, asyncRoute(async (req, r
   res.json({ success: true });
 }));
 
+// Many cells at once: for the channels and dates chosen, replace what is
+// planned, add a line to it, or clear it. "Add" skips a cell that already has
+// that exact line, so applying it twice does not write it twice.
+router.put('/content-calendar/bulk', requireAuth, page, asyncRoute(async (req, res) => {
+  const b = req.body || {};
+  if (!isYm(b.month)) throw httpError(400, 'Bad month.');
+  if (!(await db.one('SELECT 1 n FROM content_calendar_months WHERE ym = ?', [b.month]))) {
+    throw httpError(400, 'That month has not been made yet.');
+  }
+  const action = String(b.action || '');
+  if (!['set', 'add', 'clear'].includes(action)) throw httpError(400, 'Choose Replace, Add or Clear.');
+  const known = new Set((await db.rows('SELECT ch_key FROM content_calendar_channels')).map(r => r.ch_key));
+  const channels = [...new Set((Array.isArray(b.channels) ? b.channels : []).filter(c => known.has(c)))];
+  if (!channels.length) throw httpError(400, 'Choose at least one channel.');
+  const inMonth = new Set(datesOf(b.month));
+  const dates = [...new Set((Array.isArray(b.dates) ? b.dates : []).filter(d => inMonth.has(d)))];
+  if (!dates.length) throw httpError(400, 'Choose at least one date.');
+  const text = String(b.text || '').replace(/\r\n/g, '\n').trim().slice(0, 2000);
+  if (action !== 'clear' && !text) throw httpError(400, 'Write what to put in.');
+
+  let changed = 0;
+  if (action === 'clear') {
+    const [r] = await db.query('DELETE FROM content_calendar_items WHERE day_date IN (?) AND channel IN (?)', [dates, channels]);
+    changed = r.affectedRows;
+  } else {
+    const name = await whoAmI(req);
+    const have = await db.rows(
+      `SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, text FROM content_calendar_items
+        WHERE day_date IN (?) AND channel IN (?)`, [dates, channels]);
+    const cur = Object.fromEntries(have.map(h => [h.d + '|' + h.channel, h.text]));
+    const rows = [];
+    for (const d of dates) for (const c of channels) {
+      const old = cur[d + '|' + c];
+      let next = text;
+      if (action === 'add' && old) {
+        if (old.split('\n').some(l => l.trim().toLowerCase() === text.toLowerCase())) continue;
+        next = (old + '\n' + text).slice(0, 2000);
+      }
+      if (next === old) continue;
+      rows.push([d, c, next, name]);
+    }
+    for (let i = 0; i < rows.length; i += 300) {
+      const part = rows.slice(i, i + 300);
+      await db.query(
+        `INSERT INTO content_calendar_items (day_date, channel, text, updated_by_name, updated_at)
+         VALUES ${part.map(() => '(?,?,?,?, UTC_TIMESTAMP())').join(',')}
+         ON DUPLICATE KEY UPDATE text = VALUES(text), updated_by_name = VALUES(updated_by_name),
+                                 updated_at = UTC_TIMESTAMP()`, part.flat());
+    }
+    changed = rows.length;
+  }
+  res.json({ changed });
+}));
+
 // Make a month: blank, or from another month's weekday pattern for the
 // channels named.
 router.post('/content-calendar/months', requireAuth, page, asyncRoute(async (req, res) => {
