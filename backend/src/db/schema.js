@@ -976,6 +976,19 @@ const TABLES = [
     KEY idx_mulmul_lines (cost_id, position)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Which content-calendar items went out: one row per day and channel ticked.
+  // The plan itself stays in the team's Google Sheet; the text ticked against
+  // is kept so a plan reworded afterwards can be spotted.
+  ['content_calendar_done', `CREATE TABLE content_calendar_done (
+    day_date DATE NOT NULL,
+    channel VARCHAR(60) NOT NULL,
+    item_text TEXT NULL,
+    done_by INT NULL,
+    done_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    done_at DATETIME NOT NULL,
+    PRIMARY KEY (day_date, channel)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['sfy_customers', `CREATE TABLE sfy_customers (
       phone       VARCHAR(20) NOT NULL PRIMARY KEY,
       name        VARCHAR(200) DEFAULT '',

@@ -109,6 +109,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7V5a1 1 0 011-1h12a1 1 0 011 1v2M4 7l1 12a1 1 0 001 1h12a1 1 0 001-1l1-12M9 11v5M15 11v5"/></svg>
       <span class="nav-label-text">Bunai B2B</span>
     </div>
+    <div class="nav-item" id="nav-contentcal" style="display:none" onclick="navigate('contentcal',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      <span class="nav-label-text">Content Calendar</span>
+    </div>
     <div class="nav-item" id="nav-influencers" onclick="navigate('influencers',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 8a3 3 0 10-6 0 3 3 0 006 0zM4.5 19.5a7.5 7.5 0 0115 0M19 4l1.5 1.5L19 7M5 4L3.5 5.5 5 7"/></svg>
       <span class="nav-label-text">Influencers</span>
@@ -766,6 +770,20 @@
         </tr></thead>
         <tbody id="mcBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
+    </div>
+  </div>
+
+  <div id="page-contentcal" class="page">
+    <div class="lv-tabs" id="ccTabs"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin:0 2px 12px;flex-wrap:wrap">
+      <span id="ccNote" style="font-size:12.5px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <a id="ccSheetLink" href="#" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="text-decoration:none">↗ Open the sheet</a>
+      <button class="btn btn-outline btn-sm" onclick="loadContentCal(true)">↻ Refresh from sheet</button>
+    </div>
+    <div id="ccToday" style="margin-bottom:14px"></div>
+    <div style="overflow:auto;max-height:70vh;border:1px solid var(--border);border-radius:12px;background:var(--card)">
+      <table class="table" id="ccGrid" style="margin:0"></table>
     </div>
   </div>
 
@@ -1919,6 +1937,20 @@
   </div>
 </div>
 
+<style>
+  #ccGrid th, #ccGrid td { vertical-align: top; font-size: 12.5px; }
+  #ccGrid thead th { position: sticky; top: 0; z-index: 2; background: var(--muted); white-space: nowrap; }
+  #ccGrid .cc-date { position: sticky; left: 0; z-index: 1; background: var(--card); white-space: nowrap; font-weight: 600; }
+  #ccGrid thead .cc-date { z-index: 3; background: var(--muted); }
+  #ccGrid tr.cc-today td { background: #fffbeb; }
+  #ccGrid tr.cc-today td.cc-date { box-shadow: inset 3px 0 0 #d97706; }
+  #ccGrid tr td.cc-missed { background: #fef2f2; }
+  #ccGrid tr td.cc-done { background: #f0fdf4; }
+  .cc-cell { display: flex; gap: 6px; align-items: flex-start; min-width: 130px; max-width: 220px; }
+  .cc-cell input { width: 15px; height: 15px; margin-top: 1px; accent-color: var(--brand-deep); cursor: pointer; flex: none; }
+  .cc-text { white-space: pre-line; line-height: 1.35; }
+  .cc-text a { color: var(--brand-deep); word-break: break-all; }
+</style>
 <div class="modal-overlay" id="infModal">
   <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="infModalTitle">Add Influencer</h3>

@@ -104,6 +104,15 @@ module.exports = {
     scot: {
       id: process.env.SCOT_SHEET_ID || '',
     },
+    // The marketing team's content plan ("Bunai Content Calendar"), read live.
+    // An id is not a secret - reading it takes the share - so the one the
+    // client sent is the default.
+    contentCalendar: {
+      id: process.env.CONTENT_CALENDAR_SHEET_ID || '1FvCy5YQhJsEFJBO8mIrY_5YBg-2fmDz48We170RYM6g',
+      // Ticking started on this day. Days before it were never ticked, so they
+      // are not counted as missed.
+      trackFrom: process.env.CONTENT_CALENDAR_TRACK_FROM || '2026-10-16',
+    },
     samples: {
       id: process.env.SAMPLES_SHEET_ID || '',
       gid: num(process.env.SAMPLES_GID, 0),

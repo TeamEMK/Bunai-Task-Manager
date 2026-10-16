@@ -170,6 +170,7 @@ async function init() {
       document.getElementById('nav-catalog').style.display = 'flex';
       document.getElementById('nav-samples').style.display = 'flex';
       document.getElementById('nav-mulmulcost').style.display = 'flex';
+      document.getElementById('nav-contentcal').style.display = 'flex';
       document.getElementById('nav-warehouse').style.display = 'flex';
       document.getElementById('nav-scot').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
@@ -299,7 +300,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -352,6 +353,7 @@ const PAGE_GRANTS = [
   { key: 'shipments', label: 'Shipments' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' },
+  { key: 'contentcal', label: 'Content Calendar' },
   { key: 'ims', label: 'IMS' },
   { key: 'mis', label: 'MIS Report' }, { key: 'fms', label: 'FMS Admin' },
   { key: 'clients', label: 'Project Master' }, { key: 'dailyreports', label: 'Daily Reports' },
@@ -439,6 +441,7 @@ function navigate(page, el, fromHash) {
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
   if (page==='mulmulcost') loadMulmulCosts();
+  if (page==='contentcal') loadContentCal();
   if (page==='warehouse') loadWarehouse();
   if (page==='scot') loadScot();
   if (page==='inventory') loadInventory();
@@ -11147,6 +11150,105 @@ async function mcDelete(id) {
   if (r.error) return showToast('⚠️ ' + r.error, 'error');
   showToast('✅ Deleted');
   loadMulmulCosts();
+}
+
+// ══════════════════════════════════════════════════════
+// CONTENT CALENDAR
+// The team's plan, read from their Google Sheet, with a tick per item for
+// whether it went out. Today's plan sits on top; the month below it, with
+// today's row shaded, ticked items green and past unticked ones red.
+// ══════════════════════════════════════════════════════
+let CC = null, _ccTab = '', _ccScrolled = '';
+
+// Text from the sheet, with any link in it made clickable.
+function ccText(t) {
+  return dtEscape(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">link ↗</a>');
+}
+
+async function loadContentCal(fresh) {
+  const grid = document.getElementById('ccGrid');
+  if (!grid) return;
+  const note = document.getElementById('ccNote');
+  note.textContent = 'Loading…';
+  const q = new URLSearchParams();
+  if (_ccTab) q.set('tab', _ccTab);
+  if (fresh) q.set('fresh', '1');
+  const d = await api('/api/content-calendar?' + q.toString());
+  if (d.error) { note.textContent = ''; grid.innerHTML = '<tr><td class="empty">' + dtEscape(d.error) + '</td></tr>'; document.getElementById('ccToday').innerHTML = ''; return; }
+  CC = d; _ccTab = d.tab;
+  document.getElementById('ccSheetLink').href = d.sheetUrl;
+  document.getElementById('ccTabs').innerHTML = d.tabs.map(t =>
+    '<div class="lv-tab' + (t === d.tab ? ' active' : '') + '" onclick="ccPick(\'' + dtEscape(t).replace(/'/g, "\\'") + '\')">' + dtEscape(t) + '</div>').join('');
+  ccDraw();
+}
+
+function ccPick(tab) { _ccTab = tab; loadContentCal(); }
+
+function ccDraw() {
+  const d = CC; if (!d) return;
+  const label = Object.fromEntries(d.channels.map(c => [c.key, c.label]));
+  const all = d.days.flatMap(x => x.items.map(i => ({ ...i, date: x.date })));
+  // Counted only from the day ticking began; before it nothing was ever ticked.
+  const from = d.trackFrom || d.today;
+  const due = all.filter(i => i.date >= from && i.date <= d.today);
+  const doneN = due.filter(i => i.done).length;
+  const missed = due.filter(i => !i.done && i.date < d.today).length;
+  document.getElementById('ccNote').textContent = all.length
+    ? (due.length ? doneN + ' of ' + due.length + ' items done so far' + (missed ? ' · ' + missed + ' missed' : '') + ' · ' : '')
+      + all.length + ' planned this month'
+    : 'Nothing planned in this tab.';
+
+  // Today's plan, as a checklist.
+  const t = d.days.find(x => x.date === d.today);
+  const todayBox = document.getElementById('ccToday');
+  if (t) {
+    todayBox.innerHTML = '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">'
+      + '<div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--brand-deep);margin-bottom:8px">Today · '
+      + dtEscape(t.day) + ', ' + dtEscape(new Date(t.date + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })) + '</div>'
+      + (t.items.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px 18px">'
+        + t.items.map(i => '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;margin:0">'
+          + '<input type="checkbox" ' + (i.done ? 'checked ' : '') + 'onchange="ccTick(\'' + t.date + '\',\'' + i.channel + '\',this.checked)" style="width:16px;height:16px;accent-color:var(--brand-deep);margin-top:2px;flex:none"/>'
+          + '<span><b>' + dtEscape(label[i.channel] || i.channel) + '</b> — <span class="cc-text">' + ccText(i.text) + '</span>'
+          + (i.done ? '<span style="display:block;font-size:11px;color:#15803d">✓ ' + dtEscape(i.done.by) + ', ' + dtEscape(i.done.at) + '</span>' : '')
+          + '</span></label>').join('') + '</div>'
+        : '<div style="font-size:13px;color:var(--faint)">Nothing planned for today.</div>')
+      + '</div>';
+  } else todayBox.innerHTML = '';
+
+  // The month.
+  const head = '<thead><tr><th class="cc-date">Date</th>' + d.channels.map(c => '<th>' + dtEscape(c.label) + '</th>').join('') + '</tr></thead>';
+  const body = d.days.map(x => {
+    const by = Object.fromEntries(x.items.map(i => [i.channel, i]));
+    return '<tr class="' + (x.date === d.today ? 'cc-today' : '') + '"><td class="cc-date">'
+      + dtEscape(new Date(x.date + 'T00:00:00Z').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' }))
+      + '<div style="font-size:11px;font-weight:400;color:var(--muted-foreground)">' + dtEscape(x.day) + '</div></td>'
+      + d.channels.map(c => {
+        const i = by[c.key];
+        if (!i) return '<td></td>';
+        const cls = i.done ? 'cc-done' : (x.date < d.today && x.date >= from ? 'cc-missed' : '');
+        return '<td class="' + cls + '"><div class="cc-cell"><input type="checkbox" ' + (i.done ? 'checked ' : '')
+          + 'title="' + (i.done ? dtEscape('Done by ' + i.done.by + ', ' + i.done.at) : 'Mark as done') + '" '
+          + 'onchange="ccTick(\'' + x.date + '\',\'' + c.key + '\',this.checked)"/><span class="cc-text">' + ccText(i.text) + '</span></div></td>';
+      }).join('') + '</tr>';
+  }).join('');
+  document.getElementById('ccGrid').innerHTML = head + '<tbody>' + body + '</tbody>';
+  // Bring today into view once per month opened, not on every tick.
+  const row = document.querySelector('#ccGrid tr.cc-today');
+  // Scrolls the grid's own box, not the page, so the tabs stay in view.
+  // Another month opens at its top, not where the last one was left.
+  if (_ccScrolled !== d.tab) {
+    _ccScrolled = d.tab;
+    const box = document.getElementById('ccGrid').parentElement;
+    box.scrollTop = row ? Math.max(0, row.offsetTop - 60) : 0;
+  }
+}
+
+async function ccTick(date, channel, done) {
+  const day = CC && CC.days.find(x => x.date === date);
+  const item = day && day.items.find(i => i.channel === channel);
+  const r = await api('/api/content-calendar/done', 'POST', { date, channel, done, text: item ? item.text : '' });
+  if (r.error) { showToast('⚠️ ' + r.error, 'error'); return loadContentCal(); }
+  loadContentCal();
 }
 
 async function loadSamples() {
