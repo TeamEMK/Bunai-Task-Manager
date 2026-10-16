@@ -593,11 +593,29 @@ function stockDrawWhTabs(list, current) {
   host.innerHTML = tab('', 'All warehouses', all) + list.map(w => tab(w.warehouse, stockWhName(w.warehouse), w.units)).join('');
 }
 
+// The tab answers the click at once and the old figures fade, so it is plain
+// that the page is fetching - the new ones take a second or two to arrive.
 function stockPickWh(key) {
   document.getElementById('stockWarehouse').value = key;
+  document.querySelectorAll('#stockWhTabs .lv-tab').forEach(t => {
+    t.classList.toggle('active', (t.getAttribute('onclick') || '').includes("'" + key + "'"));
+  });
+  stockFade(true);
   loadStock();
   loadStockMovement();
 }
+
+function stockFade(on) {
+  ['stockTiles', 'stockMovement', 'stockBody'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.transition = 'opacity .15s'; el.style.opacity = on ? '0.4' : ''; }
+  });
+}
+
+// Only the newest request may draw. Two quick tab clicks send two loads, and
+// the first can come back last; without this the page would show the warehouse
+// that was clicked first under the tab that was clicked second.
+let _stockSeq = 0, _stockMoveSeq = 0;
 
 async function loadStock() {
   const body = document.getElementById('stockBody');
@@ -622,7 +640,10 @@ async function loadStock() {
     const wh = (document.getElementById('stockWarehouse') || {}).value || '';
     if (wh) params.set('warehouse', wh);
 
+    const ticket = ++_stockSeq;
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
+    if (ticket !== _stockSeq) return;
+    stockFade(false);
     stockDrawWhTabs(d.warehouses || [], d.warehouse || '');
 
     if (d.notConfigured) {
@@ -10696,11 +10717,16 @@ function renderShipmentsList() {
 async function loadStockMovement() {
   const host = document.getElementById('stockMovement');
   if (!host) return;
-  host.innerHTML = '';
 
+  // The old card stays (faded) until the new one is ready, rather than the
+  // section vanishing for the second the request takes.
   let d;
   const wh = (document.getElementById('stockWarehouse') || {}).value || '';
+  const ticket = ++_stockMoveSeq;
   try { d = await api('/api/stock/movement?days=30&limit=12' + (wh ? '&warehouse=' + encodeURIComponent(wh) : '')); } catch (_) { return; }
+  if (ticket !== _stockMoveSeq) return;
+  host.innerHTML = '';
+  host.style.opacity = '';
   if (!d || d.notConfigured || d.error) return;
 
   // One snapshot cannot show a change. Say so plainly rather than drawing an

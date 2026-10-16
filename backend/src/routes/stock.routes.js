@@ -21,6 +21,39 @@ const ROW_LIMIT = 500;
 // reported as truncated, the same as any other trim.
 const GROUP_SCAN_LIMIT = 50000;
 
+// The Sold and Needs reorder cards, for the chosen window and warehouse, in one
+// query. Orders carry no warehouse; the two warehouses share no SKU, so a sale
+// is counted for the warehouse whose list holds that SKU. Without synced orders
+// the cards simply do not render.
+async function periodFigures(soldDays, mtd, wh) {
+  const since = `DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)`;
+  try {
+    const r = await db.one(
+      `SELECT
+         (SELECT ROUND(SUM(it.order_qty)) FROM ims_order_items it
+           WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}
+             ${wh ? 'AND it.sku IN (SELECT sku FROM ims_inventory WHERE warehouse = ?)' : ''}) AS units,
+         (SELECT COUNT(DISTINCT it.sku) FROM ims_order_items it
+           WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}
+             ${wh ? 'AND it.sku IN (SELECT sku FROM ims_inventory WHERE warehouse = ?)' : ''}) AS skus,
+         (SELECT COUNT(*) FROM ims_inventory i
+            LEFT JOIN (SELECT it.sku, SUM(it.order_qty) s FROM ims_order_items it
+                        WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}
+                        GROUP BY it.sku) sold ON sold.sku = i.sku
+           WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0
+             ${wh ? 'AND i.warehouse = ?' : ''}) AS reorder_n`,
+      wh ? [wh, wh, wh] : []);
+    return {
+      soldDays, mtd, hasOrders: true,
+      soldUnits: Number(r && r.units) || 0,
+      skusSold: Number(r && r.skus) || 0,
+      reorderCount: Number(r && r.reorder_n) || 0,
+    };
+  } catch (_) {
+    return { soldDays, mtd, hasOrders: false };
+  }
+}
+
 router.get('/stock', requireAuth, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
@@ -47,13 +80,10 @@ router.get('/stock', requireAuth, async (req, res) => {
     const asked = String(req.query.groupBy || 'sku');
     const grouping = (skuGroup.isMode(asked) && asked !== 'sku') ? asked : null;
 
-    // One warehouse, or all of them. Only a warehouse that exists is taken, so
-    // the value can go into the queries as a parameter without a second check.
-    const allWh = await db.rows(
-      `SELECT warehouse, COALESCE(SUM(CASE WHEN qty > 0 THEN qty END), 0) AS units,
-              SUM(qty > 0) AS skus
-         FROM ims_inventory GROUP BY warehouse ORDER BY warehouse`);
-    const wh = allWh.some(w => w.warehouse === req.query.warehouse) ? String(req.query.warehouse) : '';
+    // One warehouse, or all of them. It only ever reaches a query as a bound
+    // parameter; the shape check just keeps nonsense out. A name that is not a
+    // real warehouse finds no rows, and the reply says no warehouse was chosen.
+    const wh = /^[A-Za-z0-9_-]{1,40}$/.test(String(req.query.warehouse || '')) ? String(req.query.warehouse) : '';
     // The same filter, for each query below that reads ims_inventory as "i".
     const whI = wh ? ' AND i.warehouse = ?' : '';
     const whA = wh ? [wh] : [];
@@ -69,7 +99,16 @@ router.get('/stock', requireAuth, async (req, res) => {
     if (!reorder && !grouping && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
 
     // Five independent reads, issued together.
-    let [rows, totals, lastSync, lastOk, counts, inStock] = await Promise.all([
+    // Started now and awaited at the end, so it runs while the rows are read
+    // and their sales looked up, instead of after.
+    const periodP = periodFigures(soldDays, mtd, wh);
+
+    // Every query here is a round trip to a database in another region (about
+    // a quarter of a second each), through a pool of two connections. So
+    // anything that can be one query is: the warehouse cards, the warehouse
+    // tabs and the styles count all come from one read of the stocked SKUs,
+    // and both sync-log rows from one.
+    let [rows, syncPair, counts, inStockAll] = await Promise.all([
       db.rows(
         `SELECT i.sku, i.warehouse, i.qty, i.synced_at, COALESCE(s.description, '') AS description
            FROM ims_inventory i
@@ -77,19 +116,16 @@ router.get('/stock', requireAuth, async (req, res) => {
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY i.qty ASC, i.sku ASC
           LIMIT ${grouping ? GROUP_SCAN_LIMIT : reorder ? 2000 : ROW_LIMIT}`, args),
-      db.rows(
-        `SELECT warehouse, COUNT(*) AS skus, COALESCE(SUM(qty),0) AS units
-           FROM ims_inventory i WHERE qty > 0${whI} GROUP BY warehouse ORDER BY warehouse`, whA),
       // Two questions, not one. "How old is this data?" is answered by the last
       // run that actually succeeded; "is anything wrong?" by the most recent
       // attempt. Reporting only the latest row makes good data look broken the
       // moment a retry fails after a successful run.
-      db.one(
-        `SELECT started_at, ended_at, rows_seen, ok, error
-           FROM ims_sync_log WHERE kind='inventory' ORDER BY id DESC LIMIT 1`),
-      db.one(
-        `SELECT started_at, ended_at, rows_seen
-           FROM ims_sync_log WHERE kind='inventory' AND ok=1 ORDER BY id DESC LIMIT 1`),
+      db.rows(
+        `(SELECT 'last' AS k, started_at, ended_at, rows_seen, ok, error
+            FROM ims_sync_log WHERE kind='inventory' ORDER BY id DESC LIMIT 1)
+         UNION ALL
+         (SELECT 'ok' AS k, started_at, ended_at, rows_seen, ok, error
+            FROM ims_sync_log WHERE kind='inventory' AND ok=1 ORDER BY id DESC LIMIT 1)`),
       // "Out of stock" counts SKUs that were SELLING and have run out, not every
       // row sitting at zero. The raw zero count was 368 against 4 that actually
       // matter: most zeros are SKUs a facility has started tracking and never
@@ -114,8 +150,31 @@ router.get('/stock', requireAuth, async (req, res) => {
       // Which SKUs hold stock, so the cards can also say how many products that
       // is. A product is not in the database - only in the SKU's spelling - so
       // it is worked out with the same rule the Club sizes view uses.
-      db.rows(`SELECT warehouse, sku FROM ims_inventory i WHERE qty > 0${whI}`, whA),
+      db.rows(`SELECT warehouse, sku, qty FROM ims_inventory WHERE qty > 0`),
     ]);
+
+    const pickSync = (k) => {
+      const r = syncPair.find(x => x.k === k);
+      if (!r) return null;
+      const { k: _k, ...rest } = r;
+      return k === 'ok' ? { started_at: rest.started_at, ended_at: rest.ended_at, rows_seen: rest.rows_seen } : rest;
+    };
+    const lastSync = pickSync('last');
+    const lastOk = pickSync('ok');
+
+    // Per warehouse: SKUs with stock and their units. All of them for the tabs;
+    // only the chosen one for the cards.
+    const byWh = new Map();
+    for (const r of inStockAll) {
+      let w = byWh.get(r.warehouse);
+      if (!w) byWh.set(r.warehouse, (w = { warehouse: r.warehouse, skus: 0, units: 0 }));
+      w.skus++;
+      w.units += Number(r.qty) || 0;
+    }
+    const allWh = [...byWh.values()].sort((a, b) => String(a.warehouse).localeCompare(String(b.warehouse)));
+    const known = !!wh && byWh.has(wh);
+    const totals = allWh.filter(w => !wh || w.warehouse === wh).map(w => ({ ...w, units: String(w.units) }));
+    const inStock = wh ? inStockAll.filter(r => r.warehouse === wh) : inStockAll;
 
     // One product = one design in one colour, every size of it counted once:
     // the same grouping as "Club sizes", so a card and that view agree.
@@ -184,44 +243,13 @@ router.get('/stock', requireAuth, async (req, res) => {
         .slice(0, ROW_LIMIT);
     }
 
-    // Period cards — units sold and how many SKUs need reorder in the chosen
-    // window. Guarded: without synced orders these simply don't render.
-    let period = { soldDays, mtd, hasOrders: false };
-    try {
-      // Orders carry no warehouse. The two warehouses share no SKU, so a sale
-      // is counted for the warehouse whose list holds that SKU.
-      const u = await db.one(
-        `SELECT ROUND(SUM(it.order_qty)) units, COUNT(DISTINCT it.sku) skus
-           FROM ims_order_items it
-          WHERE LOWER(it.status) <> 'cancelled'
-            AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
-            ${wh ? 'AND it.sku IN (SELECT sku FROM ims_inventory WHERE warehouse = ?)' : ''}`, whA);
-      const rc = await db.one(
-        `SELECT COUNT(*) n FROM (
-           SELECT i.qty, COALESCE(sold.s, 0) sold
-             FROM ims_inventory i
-             LEFT JOIN (
-               SELECT it.sku, SUM(it.order_qty) s
-                 FROM ims_order_items it
-                WHERE LOWER(it.status) <> 'cancelled'
-                  AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
-                GROUP BY it.sku
-             ) sold ON sold.sku = i.sku
-            WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0${whI}
-         ) t`, whA);
-      period = {
-        soldDays, mtd, hasOrders: true,
-        soldUnits: Number(u?.units) || 0,
-        skusSold: Number(u?.skus) || 0,
-        reorderCount: Number(rc?.n) || 0,
-      };
-    } catch (_) { /* orders not synced yet */ }
+    const period = await periodP;
 
     res.json({
       rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
       totals, lastSync, lastOk, counts, soldDays, mtd, period,
       warehouses: allWh.map(w => ({ warehouse: w.warehouse, units: Number(w.units) || 0, skus: Number(w.skus) || 0 })),
-      warehouse: wh,
+      warehouse: known ? wh : '',
       groupBy: grouping || 'sku',
       truncated: scanCutShort || (reorder
         ? outRows.length === ROW_LIMIT
