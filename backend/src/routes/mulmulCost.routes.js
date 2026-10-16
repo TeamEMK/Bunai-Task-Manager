@@ -57,6 +57,13 @@ function fromBody(b) {
     lines.push({ component, material, qty, uom, rate, amount, vendor, notes });
   });
   if (!lines.length) throw httpError(400, 'Fill in at least one cost line.');
+  // Every component has one line of its own; only "Other" may repeat.
+  const seen = new Set();
+  for (const l of lines) {
+    if (l.component === 'Other') continue;
+    if (seen.has(l.component)) throw httpError(400, l.component + ' is on two lines. Put both on one line, or use Other for the second.');
+    seen.add(l.component);
+  }
   return { sku, category: clip(b.category, 120), lines };
 }
 

@@ -11003,10 +11003,13 @@ let MC = { components: [], uoms: [], rows: [] };
 let _mcTimer = null;
 function mcSearchDebounced() { clearTimeout(_mcTimer); _mcTimer = setTimeout(loadMulmulCosts, 300); }
 const mcInr = (v) => (v == null || v === '' ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }));
-// The order the client's sheet lays a product out in; a new product starts
-// with one empty line for each, and the empty ones are dropped on save.
-const MC_START = ['Main Fabric', 'Dye', 'Second Fabric', 'Lining', 'Dupatta Fabric', 'Dupatta Dye',
-  'Dupatta Making', 'Laces', 'Pikow', 'Handwork', 'Machine Embroidery', 'Stitching', 'Finishing', 'Other'];
+// Every component has a fixed line of its own, in the order of the client's
+// sheet - a dropdown on each line let the same one be picked twice. Only
+// "Other" repeats: "+ Add component" adds another Other line, named in the
+// Material column. Empty lines are not saved.
+const MC_FIXED = ['Main Fabric', 'Dye', 'Second Fabric', 'Lining', 'Dupatta Fabric', 'Dupatta Dye',
+  'Dupatta Making', 'Laces', 'Pikow', 'Handwork', 'Machine Embroidery', 'Stitching', 'Accessories',
+  'Packaging', 'Finishing'];
 
 async function loadMulmulCosts() {
   const body = document.getElementById('mcBody');
@@ -11041,16 +11044,21 @@ async function loadMulmulCosts() {
 function mcLineHtml(l) {
   const opt = (list, cur) => list.map(v => '<option value="' + dtEscape(v) + '"' + (v === cur ? ' selected' : '') + '>' + dtEscape(v) + '</option>').join('');
   const val = (v) => (v == null ? '' : dtEscape(String(v)));
+  const comp = l.component || 'Other';
+  const other = comp === 'Other';
   return '<tr class="mc-line">'
-    + '<td><select class="mc-comp">' + opt(MC.components.length ? MC.components : MC_START, l.component || 'Other') + '</select></td>'
-    + '<td><input type="text" class="mc-mat" value="' + val(l.material) + '" placeholder="' + (l.component === 'Main Fabric' ? 'e.g. Cotton satin' : '') + '"/></td>'
+    + '<td><input type="hidden" class="mc-comp" value="' + dtEscape(comp) + '"/>'
+    + '<span style="font-weight:600;font-size:13px' + (other ? ';color:var(--muted-foreground)' : '') + '">' + dtEscape(comp) + '</span></td>'
+    + '<td><input type="text" class="mc-mat" value="' + val(l.material) + '" placeholder="'
+    + (comp === 'Main Fabric' ? 'e.g. Cotton satin' : other ? 'What it is, e.g. Packing material' : '') + '"/></td>'
     + '<td><input type="text" inputmode="decimal" class="mc-qty" value="' + val(l.qty) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
     + '<td><select class="mc-uom"><option value="">—</option>' + opt(MC.uoms.length ? MC.uoms : ['piece', 'meters', 'kg', 'grams', 'roll', 'job', 'other'], l.uom || '') + '</select></td>'
     + '<td><input type="text" inputmode="decimal" class="mc-rate" value="' + val(l.rate) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
     + '<td class="mc-amt" style="text-align:right;font-weight:600;white-space:nowrap">—</td>'
     + '<td><input type="text" class="mc-ven" value="' + val(l.vendor) + '"/></td>'
     + '<td><input type="text" class="mc-note" value="' + val(l.notes) + '"/></td>'
-    + '<td><a href="#" onclick="this.closest(\'tr\').remove();mcRecalc();return false" title="Remove this line" style="color:#b91c1c;text-decoration:none">✕</a></td>'
+    // A fixed line is left empty rather than removed; only an Other line goes.
+    + '<td>' + (other ? '<a href="#" onclick="this.closest(\'tr\').remove();mcRecalc();return false" title="Remove this line" style="color:#b91c1c;text-decoration:none">✕</a>' : '') + '</td>'
     + '</tr>';
 }
 
@@ -11086,8 +11094,15 @@ async function mcOpen(id, copy) {
   document.getElementById('mcEditId').value = p && !copy ? p.id : '';
   document.getElementById('mcSku').value = p && !copy ? p.sku : '';
   document.getElementById('mcCategory').value = p ? (p.category || '') : '';
-  const lines = p ? p.lines : MC_START.map(c => ({ component: c }));
-  lines.forEach(l => mcAddLine(l));
+  // The fixed lines always show, filled from the saved product where it has
+  // them; then its Other lines, or one empty Other line to start with.
+  const saved = p ? p.lines.slice() : [];
+  MC_FIXED.forEach(c => {
+    const i = saved.findIndex(l => l.component === c);
+    mcAddLine(i >= 0 ? saved.splice(i, 1)[0] : { component: c });
+  });
+  const rest = saved.map(l => ({ ...l, component: MC_FIXED.includes(l.component) ? 'Other' : l.component }));
+  (rest.length ? rest : [{ component: 'Other' }]).forEach(l => mcAddLine(l));
   if (p && !copy && p.updated) document.getElementById('mcMeta').textContent = 'Last updated ' + p.updated + (p.updated_by_name ? ' by ' + p.updated_by_name : '');
   document.getElementById('mcModal').classList.add('open');
   document.getElementById(p && !copy ? 'mcCategory' : 'mcSku').focus();
