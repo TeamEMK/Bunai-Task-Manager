@@ -610,11 +610,13 @@ async function loadStock() {
     const totalUnits = d.totals.reduce((s, t) => s + Number(t.units || 0), 0);
     document.getElementById('stockTiles').innerHTML =
       stockTile('Total units', totalUnits.toLocaleString('en-IN'),
-        d.totals.length === 1 ? `${d.totals[0].skus} SKUs in ${d.totals[0].warehouse}` : `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`) +
+        d.totals.length === 1 ? `${d.totals[0].skus} SKUs · ${d.totals[0].styles || 0} styles in ${d.totals[0].warehouse}` : `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`) +
       // Per-warehouse cards only when there is more than one — with a single
       // warehouse the card would just repeat Total units.
       (d.totals.length > 1
-        ? d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'), `${t.skus} SKUs in stock`)).join('') : '') +
+        ? d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'),
+            // A SKU is one size, so six sizes of a kurta are six SKUs and one style.
+            `${Number(t.skus).toLocaleString('en-IN')} SKUs · ${Number(t.styles || 0).toLocaleString('en-IN')} styles in stock`)).join('') : '') +
       (d.counts && d.counts.out_of_stock > 0
         ? stockTile('Out of stock', d.counts.out_of_stock,
             `sold recently, none left${d.counts.zero_rows ? ` · ${Number(d.counts.zero_rows).toLocaleString('en-IN')} rows at zero` : ''}`,

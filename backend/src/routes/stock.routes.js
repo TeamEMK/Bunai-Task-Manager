@@ -57,7 +57,7 @@ router.get('/stock', requireAuth, async (req, res) => {
     if (!reorder && !grouping && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
 
     // Five independent reads, issued together.
-    let [rows, totals, lastSync, lastOk, counts] = await Promise.all([
+    let [rows, totals, lastSync, lastOk, counts, inStock] = await Promise.all([
       db.rows(
         `SELECT i.sku, i.warehouse, i.qty, i.synced_at, COALESCE(s.description, '') AS description
            FROM ims_inventory i
@@ -98,7 +98,20 @@ router.get('/stock', requireAuth, async (req, res) => {
               WHERE LOWER(oi.status) <> 'cancelled'
                 AND oi.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
            ) sold ON sold.sku = i.sku`),
+      // Which SKUs hold stock, so the cards can also say how many products that
+      // is. A product is not in the database - only in the SKU's spelling - so
+      // it is worked out with the same rule the Club sizes view uses.
+      db.rows(`SELECT warehouse, sku FROM ims_inventory WHERE qty > 0`),
     ]);
+
+    // One product = one design in one colour, every size of it counted once:
+    // the same grouping as "Club sizes", so a card and that view agree.
+    const styleSets = new Map();
+    for (const r of inStock) {
+      if (!styleSets.has(r.warehouse)) styleSets.set(r.warehouse, new Set());
+      styleSets.get(r.warehouse).add(skuGroup.styleKey(r.sku));
+    }
+    totals.forEach(t => { t.styles = (styleSets.get(t.warehouse) || new Set()).size; });
 
     // Enrich each row with units sold in the window (from live orders), turning
     // the stock list into a reorder view. Separate, guarded query — if orders
