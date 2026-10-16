@@ -49,8 +49,8 @@ query Orders($q: String!, $cursor: String) {
       discountCodes
       customer { displayName phone email }
       email phone
-      shippingAddress { city province zip }
-      billingAddress { city province zip }
+      shippingAddress { city province zip countryCodeV2 }
+      billingAddress { city province zip countryCodeV2 }
       lineItems(first: 100) {
         nodes {
           sku title quantity
@@ -81,6 +81,8 @@ function orderRow(o) {
     txt(addr.city, 120), txt(addr.province, 120), txt(addr.zip, 20),
     shopify.toIst(o.cancelledAt),
     (o.lineItems && o.lineItems.nodes ? o.lineItems.nodes.length : 0),
+    // Last on purpose: the change check below reads this row by position.
+    txt(addr.countryCodeV2, 8),
   ];
 }
 
@@ -165,7 +167,7 @@ async function syncOrders({ days = DAYS } = {}) {
              (order_no, order_ref, order_date, status, fulfillment, order_amount,
               subtotal, shipping, taxes, discount_amount, discount_code,
               payment_method, customer_name, customer_email, customer_phone,
-              ship_city, ship_state, ship_pincode, cancelled_at, total_lines)
+              ship_city, ship_state, ship_pincode, cancelled_at, total_lines, ship_country)
            VALUES ?
            ON DUPLICATE KEY UPDATE
              order_ref=VALUES(order_ref), order_date=VALUES(order_date),
@@ -177,7 +179,7 @@ async function syncOrders({ days = DAYS } = {}) {
              customer_email=VALUES(customer_email), customer_phone=VALUES(customer_phone),
              ship_city=VALUES(ship_city), ship_state=VALUES(ship_state),
              ship_pincode=VALUES(ship_pincode), cancelled_at=VALUES(cancelled_at),
-             total_lines=VALUES(total_lines)`,
+             total_lines=VALUES(total_lines), ship_country=VALUES(ship_country)`,
           [orderRows]);
       }
 
@@ -235,6 +237,7 @@ async function rebuildCustomers() {
       email       VARCHAR(255) DEFAULT '',
       city        VARCHAR(120) DEFAULT '',
       state       VARCHAR(120) DEFAULT '',
+      country     VARCHAR(8) DEFAULT '',
       orders      INT NOT NULL DEFAULT 0,
       units       INT NOT NULL DEFAULT 0,
       value       DECIMAL(14,2) NOT NULL DEFAULT 0,
@@ -253,7 +256,7 @@ async function rebuildCustomers() {
 
   await db.query(`
     INSERT INTO sfy_customers_new
-      (phone, name, email, city, state, orders, units, value,
+      (phone, name, email, city, state, country, orders, units, value,
        first_order, last_order, gap_days)
     SELECT ${CUST_KEY},
            SUBSTRING(MAX(CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'),
@@ -264,6 +267,12 @@ async function rebuildCustomers() {
                                 COALESCE(NULLIF(o.ship_city, ''), ''))), 15),
            SUBSTRING(MAX(CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'),
                                 COALESCE(NULLIF(o.ship_state, ''), ''))), 15),
+           -- The latest order that NAMES a country, not simply the latest order:
+           -- a customer whose newest address is blank keeps the country of the
+           -- last one that was not. MAX over a CASE ignores the NULLs.
+           COALESCE(SUBSTRING(MAX(CASE WHEN o.ship_country IS NOT NULL AND o.ship_country <> ''
+                                       THEN CONCAT(DATE_FORMAT(o.order_date, '%Y%m%d%H%i%s'), o.ship_country)
+                                  END), 15), ''),
            COUNT(*),
            COALESCE(SUM(it.n), 0),
            ROUND(SUM(o.order_amount)),

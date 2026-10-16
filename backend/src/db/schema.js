@@ -1059,6 +1059,12 @@ const COLUMNS = [
   ['influencers', 'remark', `VARCHAR(2000) DEFAULT '' AFTER post_date`],
   // Which of the brands the collaboration is for.
   ['influencers', 'project', `VARCHAR(40) DEFAULT '' AFTER message_sent_on`],
+  // Where a Shopify order shipped to, as the two-letter code (IN, US, AE). The
+  // store ships abroad and the calling list could not tell a customer in
+  // Bengaluru from one in Brisbane. Stored as the code Shopify uses; the page
+  // turns it into a name. NULL for an order whose address names no country.
+  ['sfy_orders', 'ship_country', `VARCHAR(8) NULL AFTER ship_pincode`],
+  ['sfy_customers', 'country', `VARCHAR(8) DEFAULT '' AFTER state`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
   // the column and every insert would fail on an unknown field.

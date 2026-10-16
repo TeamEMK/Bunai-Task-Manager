@@ -11445,12 +11445,19 @@ async function loadScot() {
   try {
     d = await api('/api/scot?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Could not load — '
+    body.innerHTML = '<tr><td colspan="9" class="empty">Could not load — '
       + dtEscape(e.message || 'error') + '</td></tr>';
     return;
   }
 
   const n = v => Number(v || 0).toLocaleString('en-IN');
+  // Stored as the two-letter code; shown as the country's name.
+  let regionName = null;
+  try { regionName = new Intl.DisplayNames(['en'], { type: 'region' }); } catch (_) { /* shows the code */ }
+  const country = c => {
+    if (!c) return '\u2014';
+    try { return (regionName && regionName.of(c)) || c; } catch (_) { return c; }
+  };
   const inr = v => '₹' + n(v);
   const when = s => (s ? new Date(s + 'T00:00:00Z').toLocaleDateString('en-IN',
     { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -11480,7 +11487,7 @@ async function loadScot() {
   }
 
   if (!d.rows.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Nobody matches that.</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="empty">Nobody matches that.</td></tr>';
     return;
   }
 
@@ -11493,6 +11500,7 @@ async function loadScot() {
       + '<td><div style="font-weight:600">' + dtEscape(r.name) + '</div>'
       + '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phone) + '</div></td>'
       + '<td>' + dtEscape(r.city || '—') + '</td>'
+      + '<td>' + dtEscape(country(r.country)) + '</td>'
       + '<td><span class="' + look.cls + '"'
       + (look.style ? ' style="' + look.style + '"' : '') + '>' + look.label + '</span>'
       + (late > 0 ? '<div style="font-size:11px;color:var(--muted-foreground);margin-top:3px">'

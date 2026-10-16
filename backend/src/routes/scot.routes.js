@@ -41,7 +41,7 @@ const STATUSES = ['gone', 'overdue', 'due', 'on-track', 'one-time'];
 // Only the verdict is worked out here, because it depends on today and would
 // be wrong by morning if it were stored.
 const BASE = `
-  SELECT phone, name, email, city, orders, units, value,
+  SELECT phone, name, email, city, country, orders, units, value,
          DATE_FORMAT(first_order, '%Y-%m-%d') first_order,
          DATE_FORMAT(last_order, '%Y-%m-%d') last_order,
          DATEDIFF(${TODAY}, DATE(last_order)) days_since,
@@ -62,6 +62,27 @@ const ORDER = `
 
 const LIMIT = 1500;
 
+// Every two-letter region code, with its English name, built once.
+const REGION_NAMES = (() => {
+  const out = [];
+  try {
+    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
+    for (let a = 65; a <= 90; a++) for (let b = 65; b <= 90; b++) {
+      const code = String.fromCharCode(a, b);
+      const name = dn.of(code);
+      if (name && name !== code) out.push([code, name.toLowerCase()]);
+    }
+  } catch (_) { /* no Intl region data: search falls back to the code */ }
+  return out;
+})();
+
+function countryCodesMatching(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (t.length < 2) return [];
+  const byName = REGION_NAMES.filter(([, name]) => name.includes(t)).map(([code]) => code);
+  return t.length === 2 && !byName.includes(t.toUpperCase()) ? [...byName, t.toUpperCase()] : byName;
+}
+
 router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 120);
   const status = STATUSES.includes(String(req.query.status || '')) ? String(req.query.status) : '';
@@ -70,9 +91,14 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   const args = [];
   if (status) { where.push('status = ?'); args.push(status); }
   if (q) {
-    where.push('(name LIKE ? OR phone LIKE ? OR city LIKE ? OR email LIKE ?)');
+    // Country is stored as its two-letter code, but people type "India" or
+    // "australia". Whatever country names contain the text become the codes to
+    // match, so both work.
+    const hit = countryCodesMatching(q);
+    where.push('(name LIKE ? OR phone LIKE ? OR city LIKE ? OR email LIKE ?'
+      + (hit.length ? ' OR country IN (' + hit.map(() => '?').join(',') + ')' : '') + ')');
     const like = '%' + q + '%';
-    args.push(like, like, like, like);
+    args.push(like, like, like, like, ...hit);
   }
   const filter = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
@@ -109,6 +135,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
       name: (r.name || '').trim() || '(no name)',
       email: (r.email || '').trim(),
       city: (r.city || '').trim(),
+      country: (r.country || '').trim(),
       orders: Number(r.orders),
       units: Number(r.units) || 0,
       value: Number(r.value) || 0,

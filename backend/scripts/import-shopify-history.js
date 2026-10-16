@@ -102,7 +102,7 @@ async function flushOrders(rows) {
        (order_no, order_ref, order_date, status, fulfillment, order_amount,
         subtotal, shipping, taxes, discount_amount, discount_code,
         payment_method, customer_name, customer_email, customer_phone,
-        ship_city, ship_state, ship_pincode, cancelled_at, total_lines)
+        ship_city, ship_state, ship_pincode, cancelled_at, total_lines, ship_country)
      VALUES ?
      ON DUPLICATE KEY UPDATE
        order_ref=VALUES(order_ref), order_date=VALUES(order_date),
@@ -114,7 +114,7 @@ async function flushOrders(rows) {
        customer_email=VALUES(customer_email), customer_phone=VALUES(customer_phone),
        ship_city=VALUES(ship_city), ship_state=VALUES(ship_state),
        ship_pincode=VALUES(ship_pincode), cancelled_at=VALUES(cancelled_at),
-       total_lines=VALUES(total_lines)`,
+       total_lines=VALUES(total_lines), ship_country=VALUES(ship_country)`,
     [rows]);
 }
 
@@ -174,6 +174,8 @@ async function flushItems(rows) {
           txt(row['Shipping Zip'] || row['Billing Zip'], 20),
           stamp(row['Cancelled at']),
           0,
+          // The two-letter code Shopify exports (IN, US, AE).
+          txt((row['Shipping Country'] || row['Billing Country'] || '').toUpperCase(), 8),
         ]);
         orders++;
       }
