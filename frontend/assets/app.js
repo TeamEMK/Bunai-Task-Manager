@@ -577,6 +577,28 @@ function _vinSyncWatch(kind, before, startedAt) {
   }, 20000);
 }
 
+// The warehouse tabs on the Stock page. Codes come from Unicommerce; the names
+// are the ones the team uses.
+const STOCK_WH_NAME = { bunai: 'Bunai', MYNTRA_GUJRAT: 'Gujarat' };
+const stockWhName = (w) => STOCK_WH_NAME[w] || w;
+
+function stockDrawWhTabs(list, current) {
+  const host = document.getElementById('stockWhTabs');
+  if (!host) return;
+  if (list.length < 2) { host.innerHTML = ''; return; }
+  const all = list.reduce((s, w) => s + Number(w.units || 0), 0);
+  const tab = (key, label, units) =>
+    '<div class="lv-tab' + (current === key ? ' active' : '') + '" onclick="stockPickWh(\'' + dtEscape(key) + '\')">'
+    + dtEscape(label) + '<span class="lv-tab-badge">' + Number(units).toLocaleString('en-IN') + '</span></div>';
+  host.innerHTML = tab('', 'All warehouses', all) + list.map(w => tab(w.warehouse, stockWhName(w.warehouse), w.units)).join('');
+}
+
+function stockPickWh(key) {
+  document.getElementById('stockWarehouse').value = key;
+  loadStock();
+  loadStockMovement();
+}
+
 async function loadStock() {
   const body = document.getElementById('stockBody');
   const tiles = document.getElementById('stockSynced');
@@ -597,8 +619,11 @@ async function loadStock() {
     const groupSel = document.getElementById('stockGroupBy');
     const groupBy = groupSel ? groupSel.value : 'sku';
     if (groupBy && groupBy !== 'sku') params.set('groupBy', groupBy);
+    const wh = (document.getElementById('stockWarehouse') || {}).value || '';
+    if (wh) params.set('warehouse', wh);
 
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
+    stockDrawWhTabs(d.warehouses || [], d.warehouse || '');
 
     if (d.notConfigured) {
       document.getElementById('stockTiles').innerHTML = '';
@@ -10674,7 +10699,8 @@ async function loadStockMovement() {
   host.innerHTML = '';
 
   let d;
-  try { d = await api('/api/stock/movement?days=30&limit=12'); } catch (_) { return; }
+  const wh = (document.getElementById('stockWarehouse') || {}).value || '';
+  try { d = await api('/api/stock/movement?days=30&limit=12' + (wh ? '&warehouse=' + encodeURIComponent(wh) : '')); } catch (_) { return; }
   if (!d || d.notConfigured || d.error) return;
 
   // One snapshot cannot show a change. Say so plainly rather than drawing an

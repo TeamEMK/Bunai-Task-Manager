@@ -47,8 +47,20 @@ router.get('/stock', requireAuth, async (req, res) => {
     const asked = String(req.query.groupBy || 'sku');
     const grouping = (skuGroup.isMode(asked) && asked !== 'sku') ? asked : null;
 
+    // One warehouse, or all of them. Only a warehouse that exists is taken, so
+    // the value can go into the queries as a parameter without a second check.
+    const allWh = await db.rows(
+      `SELECT warehouse, COALESCE(SUM(CASE WHEN qty > 0 THEN qty END), 0) AS units,
+              SUM(qty > 0) AS skus
+         FROM ims_inventory GROUP BY warehouse ORDER BY warehouse`);
+    const wh = allWh.some(w => w.warehouse === req.query.warehouse) ? String(req.query.warehouse) : '';
+    // The same filter, for each query below that reads ims_inventory as "i".
+    const whI = wh ? ' AND i.warehouse = ?' : '';
+    const whA = wh ? [wh] : [];
+
     const where = [];
     const args = [];
+    if (wh) { where.push('i.warehouse = ?'); args.push(wh); }
     if (q) { where.push('(i.sku LIKE ? OR s.description LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
     // The low threshold is skipped in reorder mode — reorder is its own filter,
     // applied after the sold figures are known.
@@ -67,7 +79,7 @@ router.get('/stock', requireAuth, async (req, res) => {
           LIMIT ${grouping ? GROUP_SCAN_LIMIT : reorder ? 2000 : ROW_LIMIT}`, args),
       db.rows(
         `SELECT warehouse, COUNT(*) AS skus, COALESCE(SUM(qty),0) AS units
-           FROM ims_inventory WHERE qty > 0 GROUP BY warehouse ORDER BY warehouse`),
+           FROM ims_inventory i WHERE qty > 0${whI} GROUP BY warehouse ORDER BY warehouse`, whA),
       // Two questions, not one. "How old is this data?" is answered by the last
       // run that actually succeeded; "is anything wrong?" by the most recent
       // attempt. Reporting only the latest row makes good data look broken the
@@ -97,11 +109,12 @@ router.get('/stock', requireAuth, async (req, res) => {
                FROM ims_order_items oi
               WHERE LOWER(oi.status) <> 'cancelled'
                 AND oi.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
-           ) sold ON sold.sku = i.sku`),
+           ) sold ON sold.sku = i.sku
+          WHERE 1=1${whI}`, whA),
       // Which SKUs hold stock, so the cards can also say how many products that
       // is. A product is not in the database - only in the SKU's spelling - so
       // it is worked out with the same rule the Club sizes view uses.
-      db.rows(`SELECT warehouse, sku FROM ims_inventory WHERE qty > 0`),
+      db.rows(`SELECT warehouse, sku FROM ims_inventory i WHERE qty > 0${whI}`, whA),
     ]);
 
     // One product = one design in one colour, every size of it counted once:
@@ -175,11 +188,14 @@ router.get('/stock', requireAuth, async (req, res) => {
     // window. Guarded: without synced orders these simply don't render.
     let period = { soldDays, mtd, hasOrders: false };
     try {
+      // Orders carry no warehouse. The two warehouses share no SKU, so a sale
+      // is counted for the warehouse whose list holds that SKU.
       const u = await db.one(
         `SELECT ROUND(SUM(it.order_qty)) units, COUNT(DISTINCT it.sku) skus
            FROM ims_order_items it
           WHERE LOWER(it.status) <> 'cancelled'
-            AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)`);
+            AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
+            ${wh ? 'AND it.sku IN (SELECT sku FROM ims_inventory WHERE warehouse = ?)' : ''}`, whA);
       const rc = await db.one(
         `SELECT COUNT(*) n FROM (
            SELECT i.qty, COALESCE(sold.s, 0) sold
@@ -191,8 +207,8 @@ router.get('/stock', requireAuth, async (req, res) => {
                   AND it.order_date >= DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)
                 GROUP BY it.sku
              ) sold ON sold.sku = i.sku
-            WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0
-         ) t`);
+            WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0${whI}
+         ) t`, whA);
       period = {
         soldDays, mtd, hasOrders: true,
         soldUnits: Number(u?.units) || 0,
@@ -204,6 +220,8 @@ router.get('/stock', requireAuth, async (req, res) => {
     res.json({
       rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
       totals, lastSync, lastOk, counts, soldDays, mtd, period,
+      warehouses: allWh.map(w => ({ warehouse: w.warehouse, units: Number(w.units) || 0, skus: Number(w.skus) || 0 })),
+      warehouse: wh,
       groupBy: grouping || 'sku',
       truncated: scanCutShort || (reorder
         ? outRows.length === ROW_LIMIT

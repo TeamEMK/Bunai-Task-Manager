@@ -33,6 +33,10 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
   try {
     const days = Math.min(120, Math.max(2, Number(req.query.days) || 30));
     const limit = Math.min(100, Math.max(5, Number(req.query.limit) || 25));
+    // One warehouse or all. Passed as a parameter; an unknown name simply matches nothing.
+    const wh = String(req.query.warehouse || '').trim().slice(0, 80);
+    const onlyA = wh ? ' AND a.warehouse = ?' : '';
+    const W = wh ? [wh] : [];
 
     // Every day we hold, newest last. With one day there is nothing to compare
     // and the page says so rather than drawing a flat line.
@@ -40,8 +44,8 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
       `SELECT day, warehouse, SUM(qty) units, COUNT(*) rows_n,
               SUM(qty > 0) stocked
          FROM ims_inventory_daily
-        WHERE day >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-        GROUP BY day, warehouse ORDER BY day, warehouse`, [days]);
+        WHERE day >= DATE_SUB(CURDATE(), INTERVAL ? DAY)${wh ? ' AND warehouse = ?' : ''}
+        GROUP BY day, warehouse ORDER BY day, warehouse`, [days, ...W]);
 
     const dayList = [...new Set(daily.map(r => ymd(r.day)))];
     if (dayList.length < 2) {
@@ -60,10 +64,10 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
          JOIN ims_inventory_daily b
               ON b.sku = a.sku AND b.warehouse = a.warehouse AND b.day = ?
          LEFT JOIN uni_items i ON i.sku = a.sku
-        WHERE a.day = ?
+        WHERE a.day = ?${onlyA}
         GROUP BY a.sku, i.name
        HAVING diff <> 0
-        ORDER BY ABS(diff) DESC LIMIT ?`, [from, to, limit]);
+        ORDER BY ABS(diff) DESC LIMIT ?`, [from, to, ...W, limit]);
 
     // SKUs that appear on the newer day with no row on the older one. These are
     // not "gains" in the usual sense — they are SKUs the facility started
@@ -73,7 +77,7 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
          FROM ims_inventory_daily a
          LEFT JOIN ims_inventory_daily b
                 ON b.sku = a.sku AND b.warehouse = a.warehouse AND b.day = ?
-        WHERE a.day = ? AND b.sku IS NULL`, [from, to]);
+        WHERE a.day = ? AND b.sku IS NULL${onlyA}`, [from, to, ...W]);
 
     const totals = await db.one(
       `SELECT COALESCE(SUM(CASE WHEN d > 0 THEN d END), 0) up,
@@ -83,8 +87,8 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
                  FROM ims_inventory_daily a
                  JOIN ims_inventory_daily b
                       ON b.sku = a.sku AND b.warehouse = a.warehouse AND b.day = ?
-                WHERE a.day = ?
-                GROUP BY a.sku HAVING d <> 0) t`, [from, to]);
+                WHERE a.day = ?${onlyA}
+                GROUP BY a.sku HAVING d <> 0) t`, [from, to, ...W]);
 
     res.json({ days, dayList, daily: daily.map(r => ({ ...r, day: ymd(r.day) })), movers, appeared, totals, pair: { from, to } });
   } catch (e) {
