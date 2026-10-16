@@ -280,7 +280,7 @@ const TABLES = [
     interviewer_email VARCHAR(255) DEFAULT '',
     interview_date DATE DEFAULT NULL,
     interview_time VARCHAR(20) DEFAULT '',
-    status ENUM('Scheduled','Rescheduled','Selected','Onboarding','Rejected','Offer Sent') DEFAULT 'Scheduled',
+    status ENUM('Scheduled','Rescheduled','Selected','Onboarding','Rejected','Offer Sent','Applied') DEFAULT 'Scheduled',
     reschedule_date DATE DEFAULT NULL,
     reschedule_time VARCHAR(20) DEFAULT '',
     reschedule_reason TEXT,
@@ -1097,6 +1097,12 @@ const COLUMNS = [
   // only for their own form.
   ['hrm_candidates', 'joining_form_token', `VARCHAR(64) DEFAULT NULL`],
   ['hrm_candidates', 'joining_form_sent_at', `DATETIME DEFAULT NULL`],
+  // The four the client's own candidate sheet keeps, asked for with the bulk
+  // upload. The resume here is a link; an uploaded CV is a file, kept apart.
+  ['hrm_candidates', 'location', `VARCHAR(255) DEFAULT ''`],
+  ['hrm_candidates', 'expected_salary', `VARCHAR(100) DEFAULT ''`],
+  ['hrm_candidates', 'notice_period', `VARCHAR(100) DEFAULT ''`],
+  ['hrm_candidates', 'resume_link', `VARCHAR(1000) DEFAULT ''`],
   // hrm_offers existed before this column did, and CREATE TABLE IF NOT EXISTS
   // does nothing to a table that is already there.
   ['hrm_offers', 'cc_emails', `VARCHAR(1000) DEFAULT '' AFTER signatory_phone`],
@@ -1367,6 +1373,11 @@ const WIDENINGS = [
   ['hrm_candidates', 'status',
    `ENUM('Scheduled','Rescheduled','Selected','Onboarding','Rejected','Offer Sent') DEFAULT 'Scheduled'`,
    'Onboarding'],
+  // 'Applied': somebody on file who has not been given an interview yet - what
+  // most rows of a bulk upload are. At the end, so no existing row moves.
+  ['hrm_candidates', 'status',
+   `ENUM('Scheduled','Rescheduled','Selected','Onboarding','Rejected','Offer Sent','Applied') DEFAULT 'Scheduled'`,
+   'Applied'],
 ];
 
 const BACKFILLS = [

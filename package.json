@@ -10,13 +10,14 @@
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
     "test": "node backend/tests/run.js",
-  "sync": "node backend/scripts/daily-sync.js",
+    "sync": "node backend/scripts/daily-sync.js",
     "postinstall": "echo 'Dependencies installed for Bunai Task Manager'"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "googleapis": "^171.4.0",

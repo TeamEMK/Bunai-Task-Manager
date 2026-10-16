@@ -8165,6 +8165,7 @@ async function cmBulkUpload() {
 // a stray keystroke should not tell somebody they were rejected.
 // ══════════════════════════════════════════════════════
 const HRM_STATUS_COLOUR = {
+  'Applied':     ['#f1f5f9', '#475569'],
   'Scheduled':   ['#dbeafe', '#1e40af'],
   'Rescheduled': ['#fef3c7', '#92400e'],
   'Selected':    ['#d1fae5', '#065f46'],
@@ -8260,11 +8261,16 @@ async function loadHrm(){
       return `<tr>
         <td>
           <b>${dtEscape(c.name)}</b>${moved}
-          <div style="font-size:11.5px;color:var(--faint)">${dtEscape(c.email)}${c.phone ? ' · ' + dtEscape(c.phone) : ''}</div>
+          <div style="font-size:11.5px;color:var(--faint)">${[c.email, c.phone].filter(Boolean).map(dtEscape).join(' · ')}</div>
           ${c.cv_name ? `<a href="/api/hrm/joining-file/${c.id}/cv" target="_blank"
               style="font-size:11.5px;color:var(--brand-deep);text-decoration:none">⬇ CV</a>` : ''}
+          ${c.resume_link ? `<a href="${dtEscape(c.resume_link)}" target="_blank" rel="noopener"
+              style="font-size:11.5px;color:var(--brand-deep);text-decoration:none;margin-left:${c.cv_name ? '8px' : '0'}">↗ Resume</a>` : ''}
         </td>
-        <td style="font-size:13px">${dtEscape(c.profile_position || '—')}</td>
+        <td style="font-size:13px">${dtEscape(c.profile_position || '—')}
+          ${[c.location, c.expected_salary ? 'Exp. ' + c.expected_salary : '', c.notice_period ? 'Notice ' + c.notice_period : '']
+            .filter(Boolean).length ? `<div style="font-size:11.5px;color:var(--faint)">${dtEscape([c.location,
+              c.expected_salary ? 'Exp. ' + c.expected_salary : '', c.notice_period ? 'Notice ' + c.notice_period : ''].filter(Boolean).join(' · '))}</div>` : ''}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(d)}${t ? `<div style="font-size:11.5px;color:var(--faint)">${hrmTime(t)}</div>` : ''}</td>
         <td>${hrmPill(c.status)}</td>
         <td style="font-size:13px;white-space:nowrap">${hrmDate(c.joining_date)}</td>
@@ -8302,6 +8308,8 @@ function openHrmCandidate(idx){
   set('hrmTime', c?.interview_time);
   set('hrmSalary', c?.salary); set('hrmJoining', c?.joining_date); set('hrmNotes', c?.notes);
   set('hrmIntvEmail', c?.interviewer_email);
+  set('hrmLocation', c?.location); set('hrmNotice', c?.notice_period);
+  set('hrmExpSalary', c?.expected_salary); set('hrmResumeLink', c?.resume_link);
   document.getElementById('hrmSendEmail').checked = !c;
   // Editing never emails — only adding, and only then because an invitation is
   // the point of adding somebody.
@@ -8350,6 +8358,8 @@ async function hrmWriteCandidate(){
     interview_time: val('hrmTime'),
     interviewer_email: val('hrmIntvEmail'),
     salary: val('hrmSalary'), joining_date: val('hrmJoining'), notes: val('hrmNotes'),
+    location: val('hrmLocation'), notice_period: val('hrmNotice'),
+    expected_salary: val('hrmExpSalary'), resume_link: val('hrmResumeLink'),
     sendEmail: document.getElementById('hrmSendEmail').checked,
   };
   if (!body.name) { err.textContent = 'Name is required'; err.style.display = 'block'; return; }
@@ -8398,6 +8408,75 @@ async function hrmWriteCandidate(){
       allOk ? 'success' : 'error', allOk ? 3500 : 10000);
   }
   loadHrm();
+}
+
+
+// ── Bulk upload ───────────────────────────────────────
+// The template comes from the server, so its dropdown always offers the
+// statuses the app knows. An upload is checked first and saved only on Import.
+async function hrmBulkTemplate() {
+  const token = localStorage.getItem('authToken');
+  const r = await fetch('/api/hrm/candidates/template', {
+    credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {} });
+  if (!r.ok) return showToast('\u26a0\ufe0f Could not download the template', 'error');
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Recruitment bulk upload.xlsx';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function openHrmBulk() {
+  document.getElementById('hrmBulkFile').value = '';
+  document.getElementById('hrmBulkErr').style.display = 'none';
+  document.getElementById('hrmBulkResult').innerHTML = '';
+  document.getElementById('hrmBulkImport').style.display = 'none';
+  document.getElementById('hrmBulkModal').classList.add('open');
+}
+
+async function hrmBulkSend(btn, check) {
+  const err = document.getElementById('hrmBulkErr');
+  const out = document.getElementById('hrmBulkResult');
+  const imp = document.getElementById('hrmBulkImport');
+  err.style.display = 'none';
+  const file = document.getElementById('hrmBulkFile').files[0];
+  if (!file) { err.textContent = 'Choose the filled-in template first.'; err.style.display = 'block'; return; }
+  const done = hrmBusy(btn, check ? 'Checking\u2026' : 'Importing\u2026');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const token = localStorage.getItem('authToken');
+    const r = await fetch('/api/hrm/candidates/bulk' + (check ? '?check=1' : ''), {
+      method: 'POST', credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {}, body: fd });
+    let d = {};
+    try { d = await r.json(); } catch (_) { d = { error: 'HTTP ' + r.status }; }
+    if (d.error) { err.textContent = d.error; err.style.display = 'block'; imp.style.display = 'none'; return; }
+
+    const bad = d.rows.filter(x => x.problems.length);
+    const noted = d.rows.filter(x => !x.problems.length && x.notes.length);
+    const line = (x, what, colour) => '<div style="font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--border)">'
+      + '<b>Row ' + x.row + '</b> \u00b7 ' + dtEscape(x.name) + ' \u2014 <span style="color:' + colour + '">'
+      + dtEscape(what.join('; ')) + '</span></div>';
+    const head = check
+      ? '<div style="font-size:14px;font-weight:700;margin-bottom:8px">' + d.ready + ' of ' + d.total
+        + ' rows ready to import' + (bad.length ? ', ' + bad.length + ' will be skipped' : '') + '</div>'
+      : '<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#15803d">\u2705 ' + d.added
+        + ' candidate' + (d.added === 1 ? '' : 's') + ' added' + (d.skipped ? ', ' + d.skipped + ' skipped' : '') + '</div>';
+    out.innerHTML = head
+      + (bad.length ? '<div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#b91c1c;margin:10px 0 4px">Skipped</div>'
+        + bad.map(x => line(x, x.problems, '#b91c1c')).join('') : '')
+      + (noted.length ? '<div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#92400e;margin:10px 0 4px">Imported, with a change</div>'
+        + noted.map(x => line(x, x.notes, '#92400e')).join('') : '');
+    if (check) {
+      imp.textContent = 'Import ' + d.ready + ' candidate' + (d.ready === 1 ? '' : 's');
+      imp.style.display = d.ready ? '' : 'none';
+    } else {
+      imp.style.display = 'none';
+      document.getElementById('hrmBulkFile').value = '';
+      loadHrm();
+    }
+  } finally { done(); }
 }
 
 async function deleteHrmCandidate(id){

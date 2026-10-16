@@ -19,6 +19,7 @@ const { asyncRoute, httpError } = require('../middleware/errors');
 const multer = require('multer');
 const hrmEmail = require('../services/hrmEmail');
 const joining = require('./joining.routes');
+const hrmBulk = require('../services/hrmBulk');
 
 // The Schedule Interview form may carry one file: the candidate's CV. Held in
 // memory and written to the database, the same as the joining documents - the
@@ -31,7 +32,7 @@ const cvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4
 
 const router = express.Router();
 
-const STATUSES = ['Scheduled', 'Rescheduled', 'Selected', 'Onboarding', 'Rejected', 'Offer Sent'];
+const STATUSES = ['Applied', 'Scheduled', 'Rescheduled', 'Selected', 'Onboarding', 'Rejected', 'Offer Sent'];
 
 // Which letter belongs to which status. A status with no entry simply sends
 // nothing — "Offer Sent" is here as a pipeline stage, and the offer letter
@@ -42,6 +43,8 @@ const clean = (v, max = 255) => String(v ?? '').trim().slice(0, max);
 const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim()) ? String(v).trim() : null);
 // Deliberately forgiving: this only stops obvious typos, and a real address
 // that trips a stricter pattern would block a hire for no good reason.
+// A resume link is only kept if it is one; it is shown as a link on the page.
+const linkOrBlank = (v) => { const t = String(v ?? '').trim().slice(0, 1000); return /^https?:\/\//i.test(t) ? t : ''; };
 const looksLikeEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
 
 // The stored CV, as an attachment. Read at the moment of sending rather than
@@ -102,8 +105,8 @@ router.get('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req, 
   const where = [];
   const args = [];
   if (q) {
-    where.push('(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.profile_position LIKE ?)');
-    args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    where.push('(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.profile_position LIKE ? OR c.location LIKE ?)');
+    args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
   }
   if (status) { where.push('c.status = ?'); args.push(status); }
 
@@ -128,6 +131,52 @@ router.get('/hrm/candidates', requireAuth, requireAdmin, asyncRoute(async (req, 
   res.json(rows);
 }));
 
+// ── Bulk upload ───────────────────────────────────────
+// The template, and an upload of it filled in. Nothing here emails anybody.
+const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
+
+router.get('/hrm/candidates/template', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const buf = await hrmBulk.template();
+  res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.set('Content-Disposition', 'attachment; filename="Recruitment bulk upload.xlsx"');
+  res.send(Buffer.from(buf));
+}));
+
+// ?check=1 reads the file and says what would happen to every row, saving
+// nothing. Without it, the rows that passed are saved.
+router.post('/hrm/candidates/bulk', requireAuth, requireAdmin, (req, res, next) => {
+  sheetUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400)
+      .json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That file is over 4 MB.' : err.message });
+  });
+}, asyncRoute(async (req, res) => {
+  if (!req.file) throw httpError(400, 'Choose the filled-in template to upload.');
+  const existing = await db.rows('SELECT email, phone FROM hrm_candidates');
+  const parsed = await hrmBulk.read(req.file.buffer, existing);
+  if (parsed.error) throw httpError(400, parsed.error);
+
+  const good = parsed.rows.filter(r => !r.problems.length);
+  const report = parsed.rows.map(r => ({ row: r.row, name: r.name, problems: r.problems, notes: r.notes }));
+  if (req.query.check === '1') {
+    return res.json({ check: true, sheet: parsed.sheet, total: parsed.rows.length, ready: good.length, rows: report });
+  }
+
+  let added = 0;
+  for (const r of good) {
+    const c = r.data;
+    await db.query(
+      `INSERT INTO hrm_candidates
+         (name, email, phone, profile_position, status, location, expected_salary,
+          notice_period, resume_link, notes, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,'',?)`,
+      [c.name, c.email, c.phone, c.position, c.status, c.location, c.expected_salary,
+       c.notice_period, c.resume, req.session.userId]);
+    added++;
+  }
+  res.json({ added, skipped: parsed.rows.length - added, rows: report });
+}));
+
 // ── Create ────────────────────────────────────────────
 router.post('/hrm/candidates', requireAuth, requireAdmin, cvUpload.single('cv'), asyncRoute(async (req, res) => {
   const b = req.body || {};
@@ -146,6 +195,10 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, cvUpload.single('cv'),
     interview_time: clean(b.interview_time, 20),
     salary: clean(b.salary, 100),
     notes: clean(b.notes, 5000),
+    location: clean(b.location),
+    expected_salary: clean(b.expected_salary, 100),
+    notice_period: clean(b.notice_period, 100),
+    resume_link: linkOrBlank(b.resume_link),
   };
 
   // A second Save while the first is still sending arrives here as its own
@@ -165,12 +218,14 @@ router.post('/hrm/candidates', requireAuth, requireAdmin, cvUpload.single('cv'),
   const [r] = await db.query(
     `INSERT INTO hrm_candidates
        (name,email,phone,profile_position,interviewer_email,
-        interview_date,interview_time,salary,notes,status,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?, 'Scheduled', ?)`,
+        interview_date,interview_time,salary,notes,status,created_by,
+        location,expected_salary,notice_period,resume_link)
+     VALUES (?,?,?,?,?,?,?,?,?, 'Scheduled', ?, ?,?,?,?)`,
     [candidate.name, candidate.email, candidate.phone, candidate.profile_position,
      candidate.interviewer_email,
      candidate.interview_date, candidate.interview_time,
-     candidate.salary, candidate.notes, req.session.userId]);
+     candidate.salary, candidate.notes, req.session.userId,
+     candidate.location, candidate.expected_salary, candidate.notice_period, candidate.resume_link]);
   candidate.id = r.insertId;
 
   // The letters go out BEFORE the reply, not after it.
@@ -228,17 +283,22 @@ router.put('/hrm/candidates/:id', requireAuth, requireAdmin, cvUpload.single('cv
   const b = req.body || {};
   const name = clean(b.name) || existing.name;
   const email = clean(b.email) || existing.email;
-  if (!looksLikeEmail(email)) return res.status(400).json({ error: 'A valid email address is required' });
+  // Somebody from a bulk upload may have no email yet, and can still be edited;
+  // an address that is there has to look like one.
+  if (email && !looksLikeEmail(email)) return res.status(400).json({ error: 'That email address does not look right' });
+  if (!email && !clean(b.phone, 50)) return res.status(400).json({ error: 'A phone number or an email is required' });
 
   await db.query(
     `UPDATE hrm_candidates SET name=?, email=?, phone=?, profile_position=?,
             interviewer_email=?,
-            interview_date=?, interview_time=?, salary=?, notes=?, joining_date=?
+            interview_date=?, interview_time=?, salary=?, notes=?, joining_date=?,
+            location=?, expected_salary=?, notice_period=?, resume_link=?
       WHERE id=?`,
     [name, email, clean(b.phone, 50), clean(b.profile_position),
      clean(b.interviewer_email),
      dateOrNull(b.interview_date), clean(b.interview_time, 20),
-     clean(b.salary, 100), clean(b.notes, 5000), dateOrNull(b.joining_date), id]);
+     clean(b.salary, 100), clean(b.notes, 5000), dateOrNull(b.joining_date),
+     clean(b.location), clean(b.expected_salary, 100), clean(b.notice_period, 100), linkOrBlank(b.resume_link), id]);
 
   // A CV that turns up after the interview was booked still belongs on the
   // candidate; it is simply too late for the letter that has already gone.
