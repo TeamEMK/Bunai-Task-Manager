@@ -43,6 +43,7 @@ api.use(require('./offer.routes'));
 api.use(require('./influencers.routes'));
 api.use(require('./b2b.routes'));
 api.use(require('./samples.routes'));
+api.use(require('./mulmulCost.routes'));
 api.use(require('./warehouse.routes'));
 api.use(require('./scot.routes'));
 api.use(ims.apiRouter);

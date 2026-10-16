@@ -159,6 +159,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9l-6-6H7a2 2 0 00-2 2v14a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v6h6"/></svg>
       <span class="nav-label-text">Sampling</span>
     </div>
+    <div class="nav-item" id="nav-mulmulcost" style="display:none" onclick="navigate('mulmulcost',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-1m6-9a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5a2 2 0 012-2h2a2 2 0 012 2v0a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      <span class="nav-label-text">Mulmul Product Cost</span>
+    </div>
     <div class="nav-item" id="nav-shipments" style="display:none" onclick="navigate('shipments',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 5h11v12H3zM14 9h3l3 3v5h-6z"/></svg>
       <span class="nav-label-text">Shipments</span>
@@ -741,6 +745,26 @@
           </tr>
         </thead>
         <tbody id="whBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="page-mulmulcost" class="page">
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="mcSearch" type="text" placeholder="Search SKU, category, material, vendor…" oninput="mcSearchDebounced()" style="min-width:260px;max-width:380px"/>
+      <span id="mcNote" style="font-size:12px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary" onclick="mcOpen()">+ Add product</button>
+    </div>
+    <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table class="table">
+        <thead><tr>
+          <th>SKU</th><th>Category</th>
+          <th style="text-align:right">Cost lines</th>
+          <th style="text-align:right">Total cost (&#8377;)</th>
+          <th>Last updated</th><th></th>
+        </tr></thead>
+        <tbody id="mcBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1849,6 +1873,48 @@
 
     <div class="modal-footer" style="justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeModal('scContactModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mulmul product cost: one product, one line per cost component. -->
+<style>#mcLines input, #mcLines select{width:100%;padding:6px 8px;font-size:12.5px} #mcLines td{padding:6px 6px;vertical-align:middle}</style>
+<div class="modal-overlay" id="mcModal">
+  <div class="modal" style="width:1180px;max-width:96vw;max-height:94vh;overflow:auto">
+    <h3 id="mcTitle">Add product cost</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      One line per cost component. Amount is Quantity × Rate; lines left empty are not saved.
+    </div>
+    <div class="alert error" id="mcErr" style="display:none"></div>
+    <input type="hidden" id="mcEditId"/>
+    <div class="form-row">
+      <div class="form-group"><label>SKU <span style="color:var(--brand-mid)">*</span></label>
+        <input type="text" id="mcSku" placeholder="e.g. MUL-1001"/></div>
+      <div class="form-group"><label>Category</label>
+        <input type="text" id="mcCategory" list="mcCategoryList" placeholder="e.g. Kurta Set"/>
+        <datalist id="mcCategoryList"></datalist></div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table" style="min-width:1080px">
+        <thead><tr>
+          <th style="width:170px">Cost component</th><th>Material / particular</th>
+          <th style="width:90px;text-align:right">Quantity</th><th style="width:105px">UOM</th>
+          <th style="width:100px;text-align:right">Rate (&#8377;)</th><th style="width:110px;text-align:right">Amount (&#8377;)</th>
+          <th style="width:160px">Vendor / source</th><th style="width:170px">Notes</th><th style="width:36px"></th>
+        </tr></thead>
+        <tbody id="mcLines"></tbody>
+        <tfoot><tr>
+          <td colspan="5" style="text-align:right;font-weight:700">Total cost</td>
+          <td id="mcTotal" style="text-align:right;font-weight:800;font-size:15px">—</td>
+          <td colspan="3"></td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="mcAddLine()">+ Add component</button>
+    <div id="mcMeta" style="font-size:11.5px;color:var(--faint);margin-top:10px"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('mcModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="mcSave(this)">Save</button>
     </div>
   </div>
 </div>

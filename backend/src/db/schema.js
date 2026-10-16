@@ -949,6 +949,33 @@ const TABLES = [
     KEY idx_scot_contacts (phone, channel, contact_date, id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Mulmul product costing, from the client's cost sheet: a product (SKU), and
+  // one line per cost component. amount = qty x rate, worked out by the API.
+  ['mulmul_costs', `CREATE TABLE mulmul_costs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sku VARCHAR(120) NOT NULL,
+    category VARCHAR(120) NOT NULL DEFAULT '',
+    created_by INT NULL,
+    updated_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uq_mulmul_sku (sku)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['mulmul_cost_lines', `CREATE TABLE mulmul_cost_lines (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cost_id INT NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    component VARCHAR(60) NOT NULL,
+    material VARCHAR(255) NOT NULL DEFAULT '',
+    qty DECIMAL(12,3) NULL,
+    uom VARCHAR(20) NOT NULL DEFAULT '',
+    rate DECIMAL(12,2) NULL,
+    amount DECIMAL(14,2) NULL,
+    vendor VARCHAR(255) NOT NULL DEFAULT '',
+    notes VARCHAR(1000) NOT NULL DEFAULT '',
+    KEY idx_mulmul_lines (cost_id, position)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['sfy_customers', `CREATE TABLE sfy_customers (
       phone       VARCHAR(20) NOT NULL PRIMARY KEY,
       name        VARCHAR(200) DEFAULT '',

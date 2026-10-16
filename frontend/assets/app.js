@@ -169,6 +169,7 @@ async function init() {
       document.getElementById('nav-shipments').style.display = 'flex';
       document.getElementById('nav-catalog').style.display = 'flex';
       document.getElementById('nav-samples').style.display = 'flex';
+      document.getElementById('nav-mulmulcost').style.display = 'flex';
       document.getElementById('nav-warehouse').style.display = 'flex';
       document.getElementById('nav-scot').style.display = 'flex';
       document.getElementById('nav-clients').style.display = 'flex';
@@ -298,7 +299,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Inventory — Equipment'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -350,7 +351,8 @@ const PAGE_GRANTS = [
   { key: 'sales', label: 'Sales' }, { key: 'returns', label: 'Returns' },
   { key: 'shipments', label: 'Shipments' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
-  { key: 'samples', label: 'Sampling' }, { key: 'ims', label: 'IMS' },
+  { key: 'samples', label: 'Sampling' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' },
+  { key: 'ims', label: 'IMS' },
   { key: 'mis', label: 'MIS Report' }, { key: 'fms', label: 'FMS Admin' },
   { key: 'clients', label: 'Project Master' }, { key: 'dailyreports', label: 'Daily Reports' },
   { key: 'compliance', label: 'Compliance Tracker' },
@@ -436,6 +438,7 @@ function navigate(page, el, fromHash) {
   if (page==='shipments') loadShipments();
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
+  if (page==='mulmulcost') loadMulmulCosts();
   if (page==='warehouse') loadWarehouse();
   if (page==='scot') loadScot();
   if (page==='inventory') loadInventory();
@@ -10989,6 +10992,140 @@ function sampleSearchDebounced(){ clearTimeout(_sampleSearchTimer); _sampleSearc
 // for weeks, and a 0 would read as "free" where the truth is "not decided yet".
 const sampleMoney = v => (v === null || v === undefined || v === ''
   ? '—' : '₹' + Number(v).toLocaleString('en-IN'));
+
+// ══════════════════════════════════════════════════════
+// MULMUL PRODUCT COST
+// One product, one line per cost component, as in the client's cost sheet.
+// The amount and total shown while typing are a preview; the server works the
+// amount out again when it saves, so the list can never disagree with it.
+// ══════════════════════════════════════════════════════
+let MC = { components: [], uoms: [], rows: [] };
+let _mcTimer = null;
+function mcSearchDebounced() { clearTimeout(_mcTimer); _mcTimer = setTimeout(loadMulmulCosts, 300); }
+const mcInr = (v) => (v == null || v === '' ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+// The order the client's sheet lays a product out in; a new product starts
+// with one empty line for each, and the empty ones are dropped on save.
+const MC_START = ['Main Fabric', 'Dye', 'Second Fabric', 'Lining', 'Dupatta Fabric', 'Dupatta Dye',
+  'Dupatta Making', 'Laces', 'Pikow', 'Handwork', 'Machine Embroidery', 'Stitching', 'Finishing', 'Other'];
+
+async function loadMulmulCosts() {
+  const body = document.getElementById('mcBody');
+  if (!body) return;
+  const q = (document.getElementById('mcSearch').value || '').trim();
+  let d;
+  try { d = await api('/api/mulmul-costs?q=' + encodeURIComponent(q)); }
+  catch (e) { d = { error: e.message || 'error' }; }
+  if (d.error) { body.innerHTML = '<tr><td colspan="6" class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
+  MC.components = d.components || []; MC.uoms = d.uoms || []; MC.rows = d.rows || [];
+  document.getElementById('mcNote').textContent = MC.rows.length ? MC.rows.length + ' product' + (MC.rows.length === 1 ? '' : 's') : '';
+  const cats = [...new Set(MC.rows.map(r => r.category).filter(Boolean).concat(['Kurta Set']))];
+  document.getElementById('mcCategoryList').innerHTML = cats.map(c => '<option value="' + dtEscape(c) + '">').join('');
+  if (!MC.rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">' + (q ? 'No product matches that.' : 'No products yet — use <b>+ Add product</b>.') + '</td></tr>';
+    return;
+  }
+  body.innerHTML = MC.rows.map(r => '<tr>'
+    + '<td style="font-weight:600"><a href="#" onclick="mcOpen(' + r.id + ');return false" style="color:var(--foreground);text-decoration:none">' + dtEscape(r.sku) + '</a></td>'
+    + '<td>' + dtEscape(r.category || '—') + '</td>'
+    + '<td style="text-align:right">' + r.lines
+    + (r.unpriced ? '<div style="font-size:11px;color:#b45309">' + r.unpriced + ' not priced</div>' : '') + '</td>'
+    + '<td style="text-align:right;font-weight:700">' + mcInr(r.total) + '</td>'
+    + '<td style="font-size:12.5px;color:var(--muted-foreground)">' + dtEscape(r.updated || '') + (r.updated_by_name ? '<div style="font-size:11px">by ' + dtEscape(r.updated_by_name) + '</div>' : '') + '</td>'
+    + '<td style="white-space:nowrap">'
+    + '<button class="btn btn-sm" onclick="mcOpen(' + r.id + ')">Edit</button> '
+    + '<button class="btn btn-sm btn-outline" onclick="mcOpen(' + r.id + ', true)" title="Start a new product from this one">Copy</button> '
+    + '<button class="btn btn-sm btn-outline" onclick="mcDelete(' + r.id + ')">Delete</button>'
+    + '</td></tr>').join('');
+}
+
+function mcLineHtml(l) {
+  const opt = (list, cur) => list.map(v => '<option value="' + dtEscape(v) + '"' + (v === cur ? ' selected' : '') + '>' + dtEscape(v) + '</option>').join('');
+  const val = (v) => (v == null ? '' : dtEscape(String(v)));
+  return '<tr class="mc-line">'
+    + '<td><select class="mc-comp">' + opt(MC.components.length ? MC.components : MC_START, l.component || 'Other') + '</select></td>'
+    + '<td><input type="text" class="mc-mat" value="' + val(l.material) + '" placeholder="' + (l.component === 'Main Fabric' ? 'e.g. Cotton satin' : '') + '"/></td>'
+    + '<td><input type="text" inputmode="decimal" class="mc-qty" value="' + val(l.qty) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
+    + '<td><select class="mc-uom"><option value="">—</option>' + opt(MC.uoms.length ? MC.uoms : ['piece', 'meters', 'kg', 'grams', 'roll', 'job', 'other'], l.uom || '') + '</select></td>'
+    + '<td><input type="text" inputmode="decimal" class="mc-rate" value="' + val(l.rate) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
+    + '<td class="mc-amt" style="text-align:right;font-weight:600;white-space:nowrap">—</td>'
+    + '<td><input type="text" class="mc-ven" value="' + val(l.vendor) + '"/></td>'
+    + '<td><input type="text" class="mc-note" value="' + val(l.notes) + '"/></td>'
+    + '<td><a href="#" onclick="this.closest(\'tr\').remove();mcRecalc();return false" title="Remove this line" style="color:#b91c1c;text-decoration:none">✕</a></td>'
+    + '</tr>';
+}
+
+const mcNum = (v) => { const s = String(v || '').replace(/[^0-9.]/g, ''); return s === '' ? null : Number(s); };
+
+function mcRecalc() {
+  let total = 0, any = false;
+  document.querySelectorAll('#mcLines .mc-line').forEach(tr => {
+    const q = mcNum(tr.querySelector('.mc-qty').value), r = mcNum(tr.querySelector('.mc-rate').value);
+    const a = q != null && r != null ? Math.round(q * r * 100) / 100 : null;
+    tr.querySelector('.mc-amt').textContent = mcInr(a);
+    if (a != null) { total += a; any = true; }
+  });
+  document.getElementById('mcTotal').textContent = any ? mcInr(Math.round(total * 100) / 100) : '—';
+}
+
+function mcAddLine(l) {
+  document.getElementById('mcLines').insertAdjacentHTML('beforeend', mcLineHtml(l || { component: 'Other' }));
+  mcRecalc();
+}
+
+// id: edit that product. copy: start a new one from it, SKU left empty.
+async function mcOpen(id, copy) {
+  document.getElementById('mcErr').style.display = 'none';
+  document.getElementById('mcLines').innerHTML = '';
+  document.getElementById('mcMeta').textContent = '';
+  let p = null;
+  if (id) {
+    p = await api('/api/mulmul-costs/' + id);
+    if (p.error) return showToast('⚠️ ' + p.error, 'error');
+  }
+  document.getElementById('mcTitle').textContent = !p ? 'Add product cost' : copy ? 'New product, copied from ' + p.sku : 'Edit ' + p.sku;
+  document.getElementById('mcEditId').value = p && !copy ? p.id : '';
+  document.getElementById('mcSku').value = p && !copy ? p.sku : '';
+  document.getElementById('mcCategory').value = p ? (p.category || '') : '';
+  const lines = p ? p.lines : MC_START.map(c => ({ component: c }));
+  lines.forEach(l => mcAddLine(l));
+  if (p && !copy && p.updated) document.getElementById('mcMeta').textContent = 'Last updated ' + p.updated + (p.updated_by_name ? ' by ' + p.updated_by_name : '');
+  document.getElementById('mcModal').classList.add('open');
+  document.getElementById(p && !copy ? 'mcCategory' : 'mcSku').focus();
+}
+
+async function mcSave(btn) {
+  const err = document.getElementById('mcErr');
+  err.style.display = 'none';
+  const id = document.getElementById('mcEditId').value;
+  const lines = [...document.querySelectorAll('#mcLines .mc-line')].map(tr => ({
+    component: tr.querySelector('.mc-comp').value,
+    material: tr.querySelector('.mc-mat').value.trim(),
+    qty: tr.querySelector('.mc-qty').value.trim(),
+    uom: tr.querySelector('.mc-uom').value,
+    rate: tr.querySelector('.mc-rate').value.trim(),
+    vendor: tr.querySelector('.mc-ven').value.trim(),
+    notes: tr.querySelector('.mc-note').value.trim(),
+  }));
+  const body = { sku: document.getElementById('mcSku').value.trim(), category: document.getElementById('mcCategory').value.trim(), lines };
+  if (!body.sku) { err.textContent = 'SKU is required.'; err.style.display = 'block'; return; }
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = id ? await api('/api/mulmul-costs/' + id, 'PUT', body) : await api('/api/mulmul-costs', 'POST', body);
+    if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+    closeModal('mcModal');
+    showToast('✅ Saved');
+    loadMulmulCosts();
+  } finally { done(); }
+}
+
+async function mcDelete(id) {
+  const r0 = MC.rows.find(r => r.id === id);
+  if (!confirm('Delete the cost of ' + (r0 ? r0.sku : 'this product') + '? This cannot be undone.')) return;
+  const r = await api('/api/mulmul-costs/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  showToast('✅ Deleted');
+  loadMulmulCosts();
+}
 
 async function loadSamples() {
   const body = document.getElementById('sampleBody');
