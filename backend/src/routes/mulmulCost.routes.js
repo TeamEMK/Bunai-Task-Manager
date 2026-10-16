@@ -51,18 +51,24 @@ function fromBody(b) {
     if (!material && !vendor && !notes && qty === null && rate === null) return;
     if (Number.isNaN(qty)) throw httpError(400, 'Line ' + (i + 1) + ': the quantity is not a number.');
     if (Number.isNaN(rate)) throw httpError(400, 'Line ' + (i + 1) + ': the rate is not a number.');
-    const component = COMPONENTS.includes(l.component) ? l.component : 'Other';
+    // A fixed component by its name; anything else is an Other line, saved under
+    // the name typed for it ("Buttons"), or as plain "Other" when none was.
+    const typed = clip(l.component, 60);
+    const fixed = COMPONENTS.find(c => c.toLowerCase() === typed.toLowerCase());
+    const component = fixed || typed || 'Other';
     const uom = UOMS.includes(l.uom) ? l.uom : '';
     const amount = qty !== null && rate !== null ? Math.round(qty * rate * 100) / 100 : null;
     lines.push({ component, material, qty, uom, rate, amount, vendor, notes });
   });
   if (!lines.length) throw httpError(400, 'Fill in at least one cost line.');
-  // Every component has one line of its own; only "Other" may repeat.
+  // Each component on one line only - a fixed one, or a name typed on an Other
+  // line. Plain unnamed "Other" may repeat.
   const seen = new Set();
   for (const l of lines) {
     if (l.component === 'Other') continue;
-    if (seen.has(l.component)) throw httpError(400, l.component + ' is on two lines. Put both on one line, or use Other for the second.');
-    seen.add(l.component);
+    const key = l.component.toLowerCase();
+    if (seen.has(key)) throw httpError(400, l.component + ' is on two lines. Put both on one line, or give the second a different name.');
+    seen.add(key);
   }
   return { sku, category: clip(b.category, 120), lines };
 }

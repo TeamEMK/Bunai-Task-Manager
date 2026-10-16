@@ -11045,12 +11045,17 @@ function mcLineHtml(l) {
   const opt = (list, cur) => list.map(v => '<option value="' + dtEscape(v) + '"' + (v === cur ? ' selected' : '') + '>' + dtEscape(v) + '</option>').join('');
   const val = (v) => (v == null ? '' : dtEscape(String(v)));
   const comp = l.component || 'Other';
-  const other = comp === 'Other';
+  // Anything that is not one of the fixed components is an Other line: its name
+  // is typed in the first column instead of being a label.
+  const other = !MC_FIXED.includes(comp);
   return '<tr class="mc-line">'
-    + '<td><input type="hidden" class="mc-comp" value="' + dtEscape(comp) + '"/>'
-    + '<span style="font-weight:600;font-size:13px' + (other ? ';color:var(--muted-foreground)' : '') + '">' + dtEscape(comp) + '</span></td>'
+    + (other
+      ? '<td><input type="text" class="mc-comp-name" maxlength="60" value="' + (comp === 'Other' ? '' : dtEscape(comp))
+        + '" placeholder="Other \u2014 type a name"/></td>'
+      : '<td><input type="hidden" class="mc-comp" value="' + dtEscape(comp) + '"/>'
+        + '<span style="font-weight:600;font-size:13px">' + dtEscape(comp) + '</span></td>')
     + '<td><input type="text" class="mc-mat" value="' + val(l.material) + '" placeholder="'
-    + (comp === 'Main Fabric' ? 'e.g. Cotton satin' : other ? 'What it is, e.g. Packing material' : '') + '"/></td>'
+    + (comp === 'Main Fabric' ? 'e.g. Cotton satin' : '') + '"/></td>'
     + '<td><input type="text" inputmode="decimal" class="mc-qty" value="' + val(l.qty) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
     + '<td><select class="mc-uom"><option value="">—</option>' + opt(MC.uoms.length ? MC.uoms : ['piece', 'meters', 'kg', 'grams', 'roll', 'job', 'other'], l.uom || '') + '</select></td>'
     + '<td><input type="text" inputmode="decimal" class="mc-rate" value="' + val(l.rate) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
@@ -11101,7 +11106,8 @@ async function mcOpen(id, copy) {
     const i = saved.findIndex(l => l.component === c);
     mcAddLine(i >= 0 ? saved.splice(i, 1)[0] : { component: c });
   });
-  const rest = saved.map(l => ({ ...l, component: MC_FIXED.includes(l.component) ? 'Other' : l.component }));
+  // Whatever is left is Other lines, kept under the names they were saved with.
+  const rest = saved;
   (rest.length ? rest : [{ component: 'Other' }]).forEach(l => mcAddLine(l));
   if (p && !copy && p.updated) document.getElementById('mcMeta').textContent = 'Last updated ' + p.updated + (p.updated_by_name ? ' by ' + p.updated_by_name : '');
   document.getElementById('mcModal').classList.add('open');
@@ -11113,7 +11119,8 @@ async function mcSave(btn) {
   err.style.display = 'none';
   const id = document.getElementById('mcEditId').value;
   const lines = [...document.querySelectorAll('#mcLines .mc-line')].map(tr => ({
-    component: tr.querySelector('.mc-comp').value,
+    component: tr.querySelector('.mc-comp-name') ? (tr.querySelector('.mc-comp-name').value.trim() || 'Other')
+                                                 : tr.querySelector('.mc-comp').value,
     material: tr.querySelector('.mc-mat').value.trim(),
     qty: tr.querySelector('.mc-qty').value.trim(),
     uom: tr.querySelector('.mc-uom').value,
