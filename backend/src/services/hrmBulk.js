@@ -2,8 +2,13 @@
 // RECRUITMENT BULK UPLOAD
 //
 // The template the client fills, and the reading of it back. Their columns, in
-// their order: Sr. No, Name, Contact number, Email, Position, Resume, Status,
-// Location, Expected salary, Notice period.
+// their order: Sr. No, Name, Contact number, Email, Position, Status, Location,
+// Expected salary, Notice period.
+//
+// No Resume column. A file cannot go inside a spreadsheet, and a column asking
+// for one only confused people; the CV is uploaded on the candidate's Edit form
+// after the import. A sheet that still has a Resume column of links is read all
+// the same.
 //
 // An upload never writes to anybody. Adding a candidate by hand can send an
 // interview invitation; adding three hundred from last year's spreadsheet must
@@ -17,7 +22,7 @@ const ExcelJS = require('exceljs');
 
 const STATUSES = ['Applied', 'Scheduled', 'Rescheduled', 'Selected', 'Onboarding', 'Rejected', 'Offer Sent'];
 
-const HEADERS = ['Sr. No', 'Name', 'Contact number', 'Email', 'Position', 'Resume', 'Status',
+const HEADERS = ['Sr. No', 'Name', 'Contact number', 'Email', 'Position', 'Status',
   'Location', 'Expected salary', 'Notice period'];
 
 // The words people actually write in these headers.
@@ -41,7 +46,7 @@ async function template() {
   const ws = wb.addWorksheet('Candidates', { views: [{ state: 'frozen', ySplit: 1 }] });
   ws.columns = HEADERS.map((h) => ({
     header: h, key: h,
-    width: { 'Sr. No': 8, Name: 26, 'Contact number': 16, Email: 30, Position: 22, Resume: 40, Status: 14,
+    width: { 'Sr. No': 8, Name: 26, 'Contact number': 16, Email: 30, Position: 22, Status: 14,
       Location: 18, 'Expected salary': 16, 'Notice period': 15 }[h],
   }));
   const head = ws.getRow(1);
@@ -53,7 +58,7 @@ async function template() {
   // running number that fills itself in as soon as a name is typed.
   for (let r = 2; r <= 501; r++) {
     ws.getCell(`A${r}`).value = { formula: `IF(B${r}="","",ROW()-1)` };
-    ws.getCell(`G${r}`).dataValidation = {
+    ws.getCell(`F${r}`).dataValidation = {
       type: 'list', allowBlank: true, showErrorMessage: true,
       formulae: ['"' + STATUSES.join(',') + '"'],
       errorTitle: 'Status', error: 'Pick one from the list.',
@@ -75,7 +80,6 @@ async function template() {
     ['Contact number', 'Phone number. Name plus a phone or an email is the minimum.'],
     ['Email', 'Optional, but needed later to email the candidate. Must look like name@domain.com.'],
     ['Position', 'The role they applied for, e.g. MIS Executive.'],
-    ['Resume', 'A link to the CV (Google Drive, Dropbox ...). A file cannot go inside a spreadsheet.'],
     ['Status', 'Pick from the list: ' + STATUSES.join(', ') + '. Blank means Applied.'],
     ['Location', 'Where they live or would work from.'],
     ['Expected salary', 'As they said it, e.g. 25,000 per month or 3.5 LPA.'],
@@ -83,19 +87,19 @@ async function template() {
     [],
     ['Nobody is emailed by an upload.'],
     ['A person already in Recruitment (same email or phone) is skipped, so uploading the same file twice adds nobody twice.'],
-    [],
+    ['CVs: after the upload, open the candidate in Recruitment, click Edit and upload the CV there.'],
     ['Example row (do not copy it into Candidates):'],
     HEADERS,
     [1, 'Riya Sharma', '9876543210', 'riya.sharma@example.com', 'MIS Executive',
-      'https://drive.google.com/file/d/xxxx/view', 'Applied', 'Jaipur', '25,000 per month', '1 month'],
+      'Applied', 'Jaipur', '25,000 per month', '1 month'],
   ];
   lines.forEach((l) => help.addRow(l));
   help.eachRow((row) => { row.font = { name: 'Arial' }; row.alignment = { wrapText: true, vertical: 'top' }; });
   help.getRow(1).font = { name: 'Arial', bold: true };
   help.getRow(3).font = { name: 'Arial', bold: true };
+  help.getRow(17).font = { name: 'Arial', bold: true };
   help.getRow(18).font = { name: 'Arial', bold: true };
-  help.getRow(19).font = { name: 'Arial', bold: true };
-  help.getRow(20).font = { name: 'Arial', italic: true, color: { argb: 'FF78716C' } };
+  help.getRow(19).font = { name: 'Arial', italic: true, color: { argb: 'FF78716C' } };
 
   return wb.xlsx.writeBuffer();
 }
