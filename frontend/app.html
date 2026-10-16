@@ -778,8 +778,8 @@
     <div style="display:flex;align-items:center;gap:10px;margin:0 2px 12px;flex-wrap:wrap">
       <span id="ccNote" style="font-size:12.5px;color:var(--muted-foreground)"></span>
       <span style="flex:1"></span>
-      <a id="ccSheetLink" href="#" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="text-decoration:none">↗ Open the sheet</a>
-      <button class="btn btn-outline btn-sm" onclick="loadContentCal(true)">↻ Refresh from sheet</button>
+      <button class="btn btn-outline btn-sm" id="ccDeleteMonth" onclick="ccDeleteMonth()" style="display:none">Delete this month</button>
+      <button class="btn btn-primary" onclick="ccNewMonth()">+ New month</button>
     </div>
     <div id="ccToday" style="margin-bottom:14px"></div>
     <div style="overflow:auto;max-height:70vh;border:1px solid var(--border);border-radius:12px;background:var(--card)">
@@ -1950,7 +1950,47 @@
   .cc-cell input { width: 15px; height: 15px; margin-top: 1px; accent-color: var(--brand-deep); cursor: pointer; flex: none; }
   .cc-text { white-space: pre-line; line-height: 1.35; }
   .cc-text a { color: var(--brand-deep); word-break: break-all; }
+  #ccGrid td.cc-edit { cursor: pointer; }
+  #ccGrid td.cc-edit:hover { outline: 2px solid var(--brand); outline-offset: -2px; }
+  #ccGrid td.cc-edit .cc-add { color: var(--faint); font-size: 12px; visibility: hidden; }
+  #ccGrid td.cc-edit:hover .cc-add { visibility: visible; }
 </style>
+<!-- Content calendar: one cell, and a new month. -->
+<div class="modal-overlay" id="ccCellModal">
+  <div class="modal" style="width:520px;max-width:94vw">
+    <h3 id="ccCellTitle">Plan</h3>
+    <div id="ccCellSub" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
+    <div class="alert error" id="ccCellErr" style="display:none"></div>
+    <div class="form-group"><label>What goes out</label>
+      <textarea id="ccCellText" rows="5" placeholder="e.g. Festive Carousel&#10;One item per line. Links can go in too."></textarea></div>
+    <div style="font-size:11.5px;color:var(--faint)">Leave it empty and save to clear this day's plan for this channel.</div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('ccCellModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="ccCellSave(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ccMonthModal">
+  <div class="modal" style="width:560px;max-width:94vw">
+    <h3>New month</h3>
+    <div class="alert error" id="ccMonthErr" style="display:none"></div>
+    <div class="form-group"><label>Month</label><input type="month" id="ccMonthPick"/></div>
+    <div class="form-group"><label>Start from</label>
+      <select id="ccMonthFrom" onchange="ccMonthFromChanged()"></select></div>
+    <div id="ccMonthChannels" style="display:none">
+      <div style="font-size:12px;color:var(--muted-foreground);margin-bottom:6px;line-height:1.5">
+        Each day takes what the same weekday had in that month (1st Monday from 1st Monday). Tick the channels to copy -
+        the ones that change every month, like influencer names or festival creatives, are left unticked.</div>
+      <div id="ccMonthChannelList" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('ccMonthModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="ccMonthCreate(this)">Create month</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="infModal">
   <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="infModalTitle">Add Influencer</h3>

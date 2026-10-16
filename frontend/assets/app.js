@@ -11154,38 +11154,45 @@ async function mcDelete(id) {
 
 // ══════════════════════════════════════════════════════
 // CONTENT CALENDAR
-// The team's plan, read from their Google Sheet, with a tick per item for
-// whether it went out. Today's plan sits on top; the month below it, with
-// today's row shaded, ticked items green and past unticked ones red.
+// The brand's content plan, kept in the app: a month at a time, a row a day,
+// a column a channel. Click a cell to write or change its plan; tick an item
+// when it has gone out. Today's plan sits on top; in the month below, today's
+// row is shaded, ticked items are green and past unticked ones red.
 // ══════════════════════════════════════════════════════
-let CC = null, _ccTab = '', _ccScrolled = '';
+let CC = null, _ccMonth = '', _ccScrolled = '', _ccCell = null;
+const CC_NO_COPY = ['influencer', 'special-insta-creative'];   // change every month
 
-// Text from the sheet, with any link in it made clickable.
+const ccMonthName = (ym) => new Date(ym + '-01T00:00:00Z').toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+// Text from the plan, with any link in it made clickable.
 function ccText(t) {
-  return dtEscape(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">link ↗</a>');
+  return dtEscape(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">link ↗</a>');
 }
 
-async function loadContentCal(fresh) {
+async function loadContentCal() {
   const grid = document.getElementById('ccGrid');
   if (!grid) return;
   const note = document.getElementById('ccNote');
   note.textContent = 'Loading…';
-  const q = new URLSearchParams();
-  if (_ccTab) q.set('tab', _ccTab);
-  if (fresh) q.set('fresh', '1');
-  const d = await api('/api/content-calendar?' + q.toString());
-  if (d.error) { note.textContent = ''; grid.innerHTML = '<tr><td class="empty">' + dtEscape(d.error) + '</td></tr>'; document.getElementById('ccToday').innerHTML = ''; return; }
-  CC = d; _ccTab = d.tab;
-  document.getElementById('ccSheetLink').href = d.sheetUrl;
-  document.getElementById('ccTabs').innerHTML = d.tabs.map(t =>
-    '<div class="lv-tab' + (t === d.tab ? ' active' : '') + '" onclick="ccPick(\'' + dtEscape(t).replace(/'/g, "\\'") + '\')">' + dtEscape(t) + '</div>').join('');
+  const d = await api('/api/content-calendar' + (_ccMonth ? '?month=' + encodeURIComponent(_ccMonth) : ''));
+  if (d.error) { note.textContent = ''; grid.innerHTML = '<tr><td class="empty">' + dtEscape(d.error) + '</td></tr>'; return; }
+  CC = d; _ccMonth = d.month || '';
+  document.getElementById('ccTabs').innerHTML = d.months.map(m =>
+    '<div class="lv-tab' + (m === d.month ? ' active' : '') + '" onclick="ccPick(\'' + m + '\')">' + dtEscape(ccMonthName(m)) + '</div>').join('');
+  document.getElementById('ccDeleteMonth').style.display = d.month ? '' : 'none';
+  if (!d.month) {
+    note.textContent = '';
+    document.getElementById('ccToday').innerHTML = '';
+    grid.innerHTML = '<tr><td class="empty">No months yet — use <b>+ New month</b>.</td></tr>';
+    return;
+  }
   ccDraw();
 }
 
-function ccPick(tab) { _ccTab = tab; loadContentCal(); }
+function ccPick(m) { _ccMonth = m; loadContentCal(); }
 
 function ccDraw() {
-  const d = CC; if (!d) return;
+  const d = CC; if (!d || !d.month) return;
   const label = Object.fromEntries(d.channels.map(c => [c.key, c.label]));
   const all = d.days.flatMap(x => x.items.map(i => ({ ...i, date: x.date })));
   // Counted only from the day ticking began; before it nothing was ever ticked.
@@ -11193,10 +11200,9 @@ function ccDraw() {
   const due = all.filter(i => i.date >= from && i.date <= d.today);
   const doneN = due.filter(i => i.done).length;
   const missed = due.filter(i => !i.done && i.date < d.today).length;
-  document.getElementById('ccNote').textContent = all.length
-    ? (due.length ? doneN + ' of ' + due.length + ' items done so far' + (missed ? ' · ' + missed + ' missed' : '') + ' · ' : '')
-      + all.length + ' planned this month'
-    : 'Nothing planned in this tab.';
+  document.getElementById('ccNote').textContent =
+    (due.length ? doneN + ' of ' + due.length + ' items done so far' + (missed ? ' · ' + missed + ' missed' : '') + ' · ' : '')
+    + all.length + ' planned in ' + ccMonthName(d.month);
 
   // Today's plan, as a checklist.
   const t = d.days.find(x => x.date === d.today);
@@ -11215,7 +11221,7 @@ function ccDraw() {
       + '</div>';
   } else todayBox.innerHTML = '';
 
-  // The month.
+  // The month. Every cell can be clicked to write its plan.
   const head = '<thead><tr><th class="cc-date">Date</th>' + d.channels.map(c => '<th>' + dtEscape(c.label) + '</th>').join('') + '</tr></thead>';
   const body = d.days.map(x => {
     const by = Object.fromEntries(x.items.map(i => [i.channel, i]));
@@ -11224,20 +11230,20 @@ function ccDraw() {
       + '<div style="font-size:11px;font-weight:400;color:var(--muted-foreground)">' + dtEscape(x.day) + '</div></td>'
       + d.channels.map(c => {
         const i = by[c.key];
-        if (!i) return '<td></td>';
+        const open = ' onclick="ccEdit(\'' + x.date + '\',\'' + c.key + '\')"';
+        if (!i) return '<td class="cc-edit"' + open + '><span class="cc-add">+ add</span></td>';
         const cls = i.done ? 'cc-done' : (x.date < d.today && x.date >= from ? 'cc-missed' : '');
-        return '<td class="' + cls + '"><div class="cc-cell"><input type="checkbox" ' + (i.done ? 'checked ' : '')
+        return '<td class="cc-edit ' + cls + '"' + open + '><div class="cc-cell"><input type="checkbox" ' + (i.done ? 'checked ' : '')
           + 'title="' + (i.done ? dtEscape('Done by ' + i.done.by + ', ' + i.done.at) : 'Mark as done') + '" '
-          + 'onchange="ccTick(\'' + x.date + '\',\'' + c.key + '\',this.checked)"/><span class="cc-text">' + ccText(i.text) + '</span></div></td>';
+          + 'onclick="event.stopPropagation()" onchange="ccTick(\'' + x.date + '\',\'' + c.key + '\',this.checked)"/>'
+          + '<span class="cc-text">' + ccText(i.text) + '</span></div></td>';
       }).join('') + '</tr>';
   }).join('');
   document.getElementById('ccGrid').innerHTML = head + '<tbody>' + body + '</tbody>';
-  // Bring today into view once per month opened, not on every tick.
-  const row = document.querySelector('#ccGrid tr.cc-today');
-  // Scrolls the grid's own box, not the page, so the tabs stay in view.
   // Another month opens at its top, not where the last one was left.
-  if (_ccScrolled !== d.tab) {
-    _ccScrolled = d.tab;
+  const row = document.querySelector('#ccGrid tr.cc-today');
+  if (_ccScrolled !== d.month) {
+    _ccScrolled = d.month;
     const box = document.getElementById('ccGrid').parentElement;
     box.scrollTop = row ? Math.max(0, row.offsetTop - 60) : 0;
   }
@@ -11247,7 +11253,99 @@ async function ccTick(date, channel, done) {
   const day = CC && CC.days.find(x => x.date === date);
   const item = day && day.items.find(i => i.channel === channel);
   const r = await api('/api/content-calendar/done', 'POST', { date, channel, done, text: item ? item.text : '' });
-  if (r.error) { showToast('⚠️ ' + r.error, 'error'); return loadContentCal(); }
+  if (r.error) showToast('⚠️ ' + r.error, 'error');
+  loadContentCal();
+}
+
+// ── one cell ──────────────────────────────────────────
+function ccEdit(date, channel) {
+  const day = CC.days.find(x => x.date === date);
+  const item = day && day.items.find(i => i.channel === channel);
+  const ch = CC.channels.find(c => c.key === channel);
+  _ccCell = { date, channel };
+  document.getElementById('ccCellTitle').textContent = ch ? ch.label : channel;
+  document.getElementById('ccCellSub').textContent = day.day + ', '
+    + new Date(date + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+    + (item && item.done ? ' · ticked by ' + item.done.by : '');
+  document.getElementById('ccCellText').value = item ? item.text : '';
+  document.getElementById('ccCellErr').style.display = 'none';
+  document.getElementById('ccCellModal').classList.add('open');
+  document.getElementById('ccCellText').focus();
+}
+
+async function ccCellSave(btn) {
+  const err = document.getElementById('ccCellErr');
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = await api('/api/content-calendar/item', 'PUT',
+      { ..._ccCell, text: document.getElementById('ccCellText').value });
+    if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+    closeModal('ccCellModal');
+    // Shown at once; the reload that follows takes a second or two.
+    const text = document.getElementById('ccCellText').value.replace(/\r\n/g, '\n').trim();
+    const day = CC.days.find(x => x.date === _ccCell.date);
+    if (day) {
+      day.items = day.items.filter(i => i.channel !== _ccCell.channel);
+      if (text) day.items.push({ channel: _ccCell.channel, text, done: null });
+      ccDraw();
+    }
+    loadContentCal();
+  } finally { done(); }
+}
+
+// ── a new month ───────────────────────────────────────
+function ccNewMonth() {
+  const months = (CC && CC.months) || [];
+  // The month after the latest one there is, or this month.
+  const last = months[months.length - 1];
+  let next = (CC && CC.today ? CC.today : new Date().toISOString()).slice(0, 7);
+  if (last) {
+    const [y, m] = last.split('-').map(Number);
+    next = m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
+  }
+  document.getElementById('ccMonthPick').value = next;
+  document.getElementById('ccMonthFrom').innerHTML = '<option value="">Blank — nothing planned yet</option>'
+    + months.slice().reverse().map(m => '<option value="' + m + '">Copy the pattern of ' + dtEscape(ccMonthName(m)) + '</option>').join('');
+  if (last) document.getElementById('ccMonthFrom').value = last;
+  document.getElementById('ccMonthChannelList').innerHTML = ((CC && CC.channels) || []).map(c =>
+    '<label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;margin:0;cursor:pointer">'
+    + '<input type="checkbox" class="cc-copy-ch" value="' + c.key + '" ' + (CC_NO_COPY.includes(c.key) ? '' : 'checked ')
+    + 'style="width:15px;height:15px;accent-color:var(--brand-deep)"/>' + dtEscape(c.label) + '</label>').join('');
+  ccMonthFromChanged();
+  document.getElementById('ccMonthErr').style.display = 'none';
+  document.getElementById('ccMonthModal').classList.add('open');
+}
+
+function ccMonthFromChanged() {
+  document.getElementById('ccMonthChannels').style.display = document.getElementById('ccMonthFrom').value ? '' : 'none';
+}
+
+async function ccMonthCreate(btn) {
+  const err = document.getElementById('ccMonthErr');
+  err.style.display = 'none';
+  const month = document.getElementById('ccMonthPick').value;
+  const copyFrom = document.getElementById('ccMonthFrom').value;
+  const channels = [...document.querySelectorAll('.cc-copy-ch:checked')].map(x => x.value);
+  if (!month) { err.textContent = 'Choose a month.'; err.style.display = 'block'; return; }
+  const done = hrmBusy(btn, 'Creating…');
+  try {
+    const r = await api('/api/content-calendar/months', 'POST', { month, copyFrom: copyFrom || null, channels });
+    if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+    closeModal('ccMonthModal');
+    showToast('✅ ' + ccMonthName(month) + ' created' + (copyFrom ? ' — ' + r.copied + ' items copied' : ''));
+    _ccMonth = month;
+    loadContentCal();
+  } finally { done(); }
+}
+
+async function ccDeleteMonth() {
+  if (!CC || !CC.month) return;
+  const name = ccMonthName(CC.month);
+  if (!confirm('Delete ' + name + '? Everything planned and ticked in it goes. This cannot be undone.')) return;
+  const r = await api('/api/content-calendar/months/' + CC.month, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  showToast('✅ ' + name + ' deleted');
+  _ccMonth = '';
   loadContentCal();
 }
 

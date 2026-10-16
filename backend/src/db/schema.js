@@ -976,6 +976,27 @@ const TABLES = [
     KEY idx_mulmul_lines (cost_id, position)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // The content calendar, kept in the app: its columns (channels), the months
+  // made, and one row per day and channel that has something planned.
+  ['content_calendar_channels', `CREATE TABLE content_calendar_channels (
+    ch_key VARCHAR(60) NOT NULL PRIMARY KEY,
+    label VARCHAR(80) NOT NULL,
+    position INT NOT NULL DEFAULT 0
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['content_calendar_months', `CREATE TABLE content_calendar_months (
+    ym CHAR(7) NOT NULL PRIMARY KEY,
+    created_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['content_calendar_items', `CREATE TABLE content_calendar_items (
+    day_date DATE NOT NULL,
+    channel VARCHAR(60) NOT NULL,
+    text VARCHAR(2000) NOT NULL,
+    updated_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    updated_at DATETIME NOT NULL,
+    PRIMARY KEY (day_date, channel)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // Which content-calendar items went out: one row per day and channel ticked.
   // The plan itself stays in the team's Google Sheet; the text ticked against
   // is kept so a plan reworded afterwards can be spotted.

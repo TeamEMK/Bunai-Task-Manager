@@ -1,142 +1,179 @@
 // ══════════════════════════════════════════════════════
 // CONTENT CALENDAR (/api/content-calendar)
 //
-// The brand's content plan lives in the marketing team's Google Sheet: a tab a
-// month, a row a day, a column a channel (Instagram post, stories, influencer,
-// Facebook, YouTube, blog, newsletter ...), each cell saying what goes out.
-// The sheet stays where the plan is written. This reads it as it is, and adds
-// the one thing a sheet of plans does not have: whether each item went out.
+// The brand's content plan: a month at a time, a row a day, a column a channel
+// (Instagram post and stories, influencer, Facebook, YouTube, blog, newsletter
+// ...), each cell saying what goes out that day - and a tick for whether it
+// did.
 //
-// A tick belongs to a day and a channel, not to a cell's text, so editing the
-// wording in the sheet does not lose it. The text it was ticked against is kept
-// beside it, so a plan that changed after the tick can be told apart.
+// It started life as the marketing team's Google Sheet and was brought in from
+// there once (scripts/import-content-calendar.js); the plan is written here
+// now. A new month is made blank, or from the pattern of another month: each
+// day takes what the same weekday held in that month (1st Monday from 1st
+// Monday), for the channels chosen - the daily posts repeat, a festival
+// creative or an influencer's name does not.
 //
-// Columns are found by their header (row 2), never by letter: September's tab
-// is laid out differently from October's, and the team adds columns.
+// A tick belongs to a day and a channel, not to a cell's words, so rewording a
+// plan keeps it; the words it was ticked against are kept beside it.
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const config = require('../config');
-const google = require('../services/google');
 const { db } = require('../db/pool');
 const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
 const page = requirePage('contentcal');
-const sheetId = () => config.sheets.contentCalendar.id;
 
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
-  'september', 'october', 'november', 'december'];
-const MON3 = MONTHS.map(m => m.slice(0, 3));
+const isYm = (v) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(v || ''));
+const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+const isKey = (v) => /^[a-z0-9-]{1,60}$/.test(String(v || ''));
+const todayIst = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
 
-// What a cell holds when nothing is planned for that channel that day.
-const isEmpty = (t) => /^(-+|\?+|false|true|na|n\/a)?$/i.test(String(t || '').trim());
-
-// "INSTAGRAM POST" -> "Instagram Post"; a header used twice gets "(2)".
-function channels(headerRow) {
-  const out = [], seen = {};
-  (headerRow || []).forEach((h, i) => {
-    const raw = String(h || '').replace(/\s+/g, ' ').trim();
-    if (i < 2 || !raw) return;                     // A = date, B = day
-    const name = raw.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
-      .replace(/^Youtube/, 'YouTube').replace(/^Whatsapp/, 'WhatsApp');
-    seen[name] = (seen[name] || 0) + 1;
-    const label = seen[name] > 1 ? name + ' (' + seen[name] + ')' : name;
-    out.push({ col: i, key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), label });
-  });
-  return out;
+// Every date of a month, "2026-11" -> ["2026-11-01", ... "2026-11-30"].
+function datesOf(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return Array.from({ length: n }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`);
 }
+const weekday = (d) => new Date(d + 'T00:00:00Z').getUTCDay();
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-// "Oct 01, 2026" -> "2026-10-01". The sheet shows dates formatted, and reading
-// the formatted text is what keeps a date from coming back as a serial number.
-function ymd(text) {
-  const m = /([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(String(text || ''));
-  if (!m) return null;
-  const mi = MON3.indexOf(m[1].toLowerCase());
-  if (mi < 0) return null;
-  return `${m[3]}-${String(mi + 1).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
-}
-
-// A cell often holds two or three items run together with a wide gap between
-// them ("9 AM Quote             Blog Story"); shown one per line.
-const tidy = (t) => String(t || '').split(/\n|\s{3,}/).map(s => s.trim()).filter(Boolean).join('\n');
-
-async function monthTabs() {
-  const tabs = await google.listTabs(sheetId());
-  return tabs.map(t => ({ title: t.title, month: MONTHS.indexOf(t.title.trim().toLowerCase().split(/\s+/)[0]) }))
-    .filter(t => t.month >= 0);
+async function whoAmI(req) {
+  const me = await db.one('SELECT name FROM users WHERE id = ?', [req.session.userId]);
+  return (me && me.name) || req.session.name || '';
 }
 
 router.get('/content-calendar', requireAuth, page, asyncRoute(async (req, res) => {
-  if (!sheetId()) throw httpError(400, 'No content calendar sheet is set (CONTENT_CALENDAR_SHEET_ID).');
-  let tabs;
-  // Refresh also forgets the tab list, so a new month's tab shows up at once.
-  if (req.query.fresh === '1') google.forgetTabs(sheetId());
-  try { tabs = await monthTabs(); }
-  catch (e) {
-    throw httpError(502, 'Could not open the content calendar sheet: ' + String(e.message || e).slice(0, 160)
-      + '. It must be shared with ' + (google.serviceAccountEmail() || 'the service account') + '.');
-  }
-  if (!tabs.length) throw httpError(404, 'The sheet has no month tabs (September, October ...).');
+  const months = (await db.rows('SELECT ym FROM content_calendar_months ORDER BY ym')).map(r => r.ym);
+  const channels = await db.rows('SELECT ch_key AS `key`, label FROM content_calendar_channels ORDER BY position, ch_key');
+  const today = todayIst();
+  const trackFrom = config.sheets.contentCalendar.trackFrom;
+  if (!months.length) return res.json({ today, trackFrom, months, month: null, channels, days: [] });
 
-  // The month asked for, else this month if it has a tab, else the last one.
-  const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
-  const want = String(req.query.tab || '');
-  const thisMonth = Number(today.slice(5, 7)) - 1;
-  const tab = tabs.find(t => t.title === want) || tabs.find(t => t.month === thisMonth) || tabs[tabs.length - 1];
+  // The month asked for, else this month if it exists, else the latest.
+  const want = String(req.query.month || '');
+  const month = months.includes(want) ? want : months.includes(today.slice(0, 7)) ? today.slice(0, 7) : months[months.length - 1];
+  const dates = datesOf(month);
+  const range = [dates[0], dates[dates.length - 1]];
 
-  const rows = await google.readValues(sheetId(), `'${tab.title.replace(/'/g, "''")}'!A1:AZ80`, { fresh: req.query.fresh === '1' });
-  const chans = channels(rows[1]);
-  const days = [];
-  for (let r = 2; r < rows.length; r++) {
-    const row = rows[r] || [];
-    const date = ymd(row[0]);
-    if (!date) continue;
-    const items = [];
-    for (const c of chans) {
-      const text = tidy(row[c.col]);
-      if (!isEmpty(text)) items.push({ channel: c.key, text });
-    }
-    days.push({ date, day: String(row[1] || '').trim(), items });
-  }
-
-  const done = days.length ? await db.rows(
-    `SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, item_text, done_by_name,
-            DATE_FORMAT(done_at + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
-       FROM content_calendar_done WHERE day_date BETWEEN ? AND ?`,
-    [days[0].date, days[days.length - 1].date]) : [];
-  const ticks = {};
-  done.forEach(d => { ticks[d.d + '|' + d.channel] = { by: d.done_by_name, at: d.at, text: d.item_text }; });
-  days.forEach(d => d.items.forEach(i => {
-    const t = ticks[d.date + '|' + i.channel];
-    if (t) i.done = { by: t.by, at: t.at, changed: t.text !== i.text };
-  }));
-
-  res.json({
-    today, trackFrom: config.sheets.contentCalendar.trackFrom, tabs: tabs.map(t => t.title), tab: tab.title,
-    sheetUrl: `https://docs.google.com/spreadsheets/d/${sheetId()}/edit`,
-    channels: chans.map(({ key, label }) => ({ key, label })), days,
+  const [items, ticks] = await Promise.all([
+    db.rows(`SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, text
+               FROM content_calendar_items WHERE day_date BETWEEN ? AND ?`, range),
+    db.rows(`SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, item_text, done_by_name,
+                    DATE_FORMAT(done_at + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
+               FROM content_calendar_done WHERE day_date BETWEEN ? AND ?`, range),
+  ]);
+  const tick = {};
+  ticks.forEach(t => { tick[t.d + '|' + t.channel] = t; });
+  const byDay = {};
+  items.forEach(i => {
+    const t = tick[i.d + '|' + i.channel];
+    (byDay[i.d] = byDay[i.d] || []).push({
+      channel: i.channel, text: i.text,
+      done: t ? { by: t.done_by_name, at: t.at, changed: t.item_text !== i.text } : null,
+    });
   });
+  res.json({
+    today, trackFrom, months, month, channels,
+    days: dates.map(d => ({ date: d, day: WEEKDAYS[weekday(d)], items: byDay[d] || [] })),
+  });
+}));
+
+// Write one cell. Blank text clears it.
+router.put('/content-calendar/item', requireAuth, page, asyncRoute(async (req, res) => {
+  const b = req.body || {};
+  if (!isYmd(b.date)) throw httpError(400, 'Bad date.');
+  if (!isKey(b.channel)) throw httpError(400, 'Bad channel.');
+  if (!(await db.one('SELECT 1 n FROM content_calendar_channels WHERE ch_key = ?', [b.channel]))) {
+    throw httpError(400, 'Unknown channel.');
+  }
+  if (!(await db.one('SELECT 1 n FROM content_calendar_months WHERE ym = ?', [b.date.slice(0, 7)]))) {
+    throw httpError(400, 'That month has not been made yet. Use + New month first.');
+  }
+  const text = String(b.text || '').replace(/\r\n/g, '\n').trim().slice(0, 2000);
+  if (!text) {
+    await db.query('DELETE FROM content_calendar_items WHERE day_date = ? AND channel = ?', [b.date, b.channel]);
+  } else {
+    await db.query(
+      `INSERT INTO content_calendar_items (day_date, channel, text, updated_by_name, updated_at)
+       VALUES (?,?,?,?, UTC_TIMESTAMP())
+       ON DUPLICATE KEY UPDATE text = VALUES(text), updated_by_name = VALUES(updated_by_name),
+                               updated_at = UTC_TIMESTAMP()`,
+      [b.date, b.channel, text, await whoAmI(req)]);
+  }
+  res.json({ success: true });
+}));
+
+// Make a month: blank, or from another month's weekday pattern for the
+// channels named.
+router.post('/content-calendar/months', requireAuth, page, asyncRoute(async (req, res) => {
+  const b = req.body || {};
+  if (!isYm(b.month)) throw httpError(400, 'Choose a month.');
+  if (b.copyFrom && !isYm(b.copyFrom)) throw httpError(400, 'Bad month to copy from.');
+  if (await db.one('SELECT 1 n FROM content_calendar_months WHERE ym = ?', [b.month])) {
+    throw httpError(409, 'That month already exists.');
+  }
+  const name = await whoAmI(req);
+
+  // Worked out before the month is created, so a failure leaves nothing behind.
+  const out = [];
+  if (b.copyFrom) {
+    const want = (Array.isArray(b.channels) ? b.channels : []).filter(isKey);
+    const src = datesOf(b.copyFrom);
+    const rows = want.length ? await db.rows(
+      `SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, text FROM content_calendar_items
+        WHERE day_date BETWEEN ? AND ? AND channel IN (?)`, [src[0], src[src.length - 1], want]) : [];
+    const plan = {};
+    rows.forEach(r => { (plan[r.d] = plan[r.d] || []).push(r); });
+    // The n-th of each weekday in the source month. A 5th Monday with no 5th
+    // Monday to copy from takes the 4th.
+    const nth = {};
+    src.forEach(d => { const w = weekday(d); (nth[w] = nth[w] || []).push(d); });
+    for (const d of datesOf(b.month)) {
+      const list = nth[weekday(d)] || [];
+      const from = list[Math.min(Math.ceil(Number(d.slice(8)) / 7) - 1, list.length - 1)];
+      (plan[from] || []).forEach(r => out.push([d, r.channel, r.text, name]));
+    }
+  }
+
+  await db.query('INSERT INTO content_calendar_months (ym, created_by_name, created_at) VALUES (?,?, UTC_TIMESTAMP())',
+    [b.month, name]);
+  for (let i = 0; i < out.length; i += 300) {
+    const part = out.slice(i, i + 300);
+    await db.query(
+      `INSERT INTO content_calendar_items (day_date, channel, text, updated_by_name, updated_at)
+       VALUES ${part.map(() => '(?,?,?,?, UTC_TIMESTAMP())').join(',')}`, part.flat());
+  }
+  res.json({ month: b.month, copied: out.length });
+}));
+
+// Remove a month, with everything planned and ticked in it.
+router.delete('/content-calendar/months/:ym', requireAuth, page, asyncRoute(async (req, res) => {
+  const ym = String(req.params.ym);
+  if (!isYm(ym)) throw httpError(400, 'Bad month.');
+  const d = datesOf(ym);
+  await db.query('DELETE FROM content_calendar_items WHERE day_date BETWEEN ? AND ?', [d[0], d[d.length - 1]]);
+  await db.query('DELETE FROM content_calendar_done WHERE day_date BETWEEN ? AND ?', [d[0], d[d.length - 1]]);
+  await db.query('DELETE FROM content_calendar_months WHERE ym = ?', [ym]);
+  res.json({ success: true });
 }));
 
 // Tick or untick one item. The text is sent so the tick remembers what it was
 // ticked against.
 router.post('/content-calendar/done', requireAuth, page, asyncRoute(async (req, res) => {
   const b = req.body || {};
-  const date = String(b.date || '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw httpError(400, 'Bad date.');
-  const channel = String(b.channel || '').slice(0, 60);
-  if (!/^[a-z0-9-]+$/.test(channel)) throw httpError(400, 'Bad channel.');
+  if (!isYmd(b.date)) throw httpError(400, 'Bad date.');
+  if (!isKey(b.channel)) throw httpError(400, 'Bad channel.');
   if (b.done) {
-    const me = await db.one('SELECT name FROM users WHERE id = ?', [req.session.userId]);
     await db.query(
       `INSERT INTO content_calendar_done (day_date, channel, item_text, done_by, done_by_name, done_at)
        VALUES (?,?,?,?,?, UTC_TIMESTAMP())
        ON DUPLICATE KEY UPDATE item_text=VALUES(item_text), done_by=VALUES(done_by),
                                done_by_name=VALUES(done_by_name), done_at=UTC_TIMESTAMP()`,
-      [date, channel, String(b.text || '').slice(0, 2000), req.session.userId, (me && me.name) || req.session.name || '']);
+      [b.date, b.channel, String(b.text || '').slice(0, 2000), req.session.userId, await whoAmI(req)]);
   } else {
-    await db.query('DELETE FROM content_calendar_done WHERE day_date = ? AND channel = ?', [date, channel]);
+    await db.query('DELETE FROM content_calendar_done WHERE day_date = ? AND channel = ?', [b.date, b.channel]);
   }
   res.json({ success: true });
 }));
