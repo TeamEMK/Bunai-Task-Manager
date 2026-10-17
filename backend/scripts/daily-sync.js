@@ -48,6 +48,7 @@ const uniOrders = require(path.join(__dirname, '..', 'uni-orders-sync'));
 const vinReturns = require(path.join(__dirname, '..', 'returns-sync'));
 const uniReturns = require(path.join(__dirname, '..', 'uni-returns-sync'));
 const sfyOrders = require(path.join(__dirname, '..', 'shopify-sync'));
+const sfyProspects = require(path.join(__dirname, '..', 'shopify-prospects'));
 const scotSheet = require(path.join(__dirname, '..', 'scot-sheet'));
 
 const uniMissing = () => uni.missingConfig().length
@@ -126,6 +127,15 @@ step('Orders', async () => {
 step('Orders (Shopify)', async () => {
   const r = await sfyOrders.syncOrders({ days: Number(process.env.SHOPIFY_DAYS || 7) });
   return `${r.orders} orders, ${r.fresh} new or changed`;
+}, sfyMissing);
+
+// The people who signed up and never ordered - SCOT's "Never ordered" tab.
+// After the orders on purpose: anyone whose first order just arrived is
+// taken off the list by the roll-up that step rebuilt.
+step('Never ordered (Shopify)', async () => {
+  const r = await sfyProspects.syncProspects();
+  if (r.skipped) return 'skip: ' + r.skipped;
+  return `${r.seen} changed, ${r.removed} ordered, ${r.total} left`;
 }, sfyMissing);
 
 // The calling list, pushed out to the sheet the team rings from. It knows its

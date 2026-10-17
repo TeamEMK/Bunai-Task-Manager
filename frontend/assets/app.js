@@ -12056,10 +12056,20 @@ async function loadScot() {
     tabs.innerHTML = tab('', 'Everyone') + tab('overdue', 'Overdue')
       + tab('due', 'Due soon') + tab('gone', 'Gone quiet')
       + tab('on-track', 'On track') + tab('one-time', 'One-time')
-      + tab('abroad', 'Outside India');
+      + tab('abroad', 'Outside India') + tab('never', 'Never ordered');
   }
 
   window._scotRows = d.rows;
+  // The two lists have different columns; the head is swapped with the body.
+  const head = document.getElementById('scotHead');
+  if (head) {
+    if (!head.dataset.customers) head.dataset.customers = head.innerHTML;
+    head.innerHTML = d.mode === 'never'
+      ? '<tr><th>Customer</th><th>Email</th><th>City</th><th>Country</th><th>Signed up</th>'
+        + '<th>Marketing</th><th>WhatsApp</th><th>Email</th><th>Calling</th></tr>'
+      : head.dataset.customers;
+  }
+  if (d.mode === 'never') return scotDrawNever(d, body, { n, country, when });
   const note = document.getElementById('scotNote');
   if (note) {
     note.textContent = (d.rows.length < d.total
@@ -12146,7 +12156,10 @@ function scotOpenContact(i, ch) {
   SC = { phone: r.phone, name: r.name, row: r, channel: ch, files: [], uploading: 0, data: null };
   const meta = SC_CH[ch];
   document.getElementById('scTitle').textContent = meta.icon + ' ' + meta.label;
-  document.getElementById('scSub').textContent = r.name + ' · ' + r.phone;
+  // A never-ordered prospect is filed under their phone, or their Shopify id
+  // when they have none - which is no use to show; the email is.
+  const reach = r.phoneShow !== undefined ? (r.phoneShow || r.email || 'no phone or email') : r.phone;
+  document.getElementById('scSub').textContent = r.name + ' · ' + reach;
   document.getElementById('scMsgLabel').textContent = meta.msg;
   document.getElementById('scCount').textContent = 'Loading…';
   document.getElementById('scHistory').innerHTML = '';
@@ -12309,4 +12322,36 @@ async function scDelete(id) {
 function scotPick(key) {
   document.getElementById('scotFilter').value = key;
   loadScot();
+}
+
+// "Never ordered": Shopify accounts with no order. No spend or rhythm to show,
+// so the columns are who they are, when they signed up, and whether they said
+// yes to marketing - the thing that decides whether to message them at all.
+function scotDrawNever(d, body, f) {
+  const note = document.getElementById('scotNote');
+  if (note) {
+    note.textContent = (d.rows.length < d.total
+      ? 'first ' + f.n(d.rows.length) + ' of ' + f.n(d.total)
+      : f.n(d.total) + ' people')
+      + ' · signed up on Shopify, never ordered · newest first'
+      + (d.asOf ? ' · updated ' + d.asOf + ' IST' : '');
+  }
+  if (!d.rows.length) {
+    body.innerHTML = '<tr><td colspan="9" class="empty">Nobody matches that.</td></tr>';
+    return;
+  }
+  const chip = (label, yes) => yes == null ? ''
+    : '<span class="status-badge' + (yes ? ' completed' : '') + '" style="margin-right:4px'
+      + (yes ? '' : ';background:var(--muted);color:var(--faint)') + '">' + label + (yes ? ' ✓' : ' ✕') + '</span>';
+  body.innerHTML = d.rows.map((r, i) => '<tr>'
+    + '<td><div style="font-weight:600">' + dtEscape(r.name) + '</div>'
+    + '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phoneShow || 'no phone') + '</div></td>'
+    + '<td style="max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + dtEscape(r.email) + '">'
+    + dtEscape(r.email || '—') + '</td>'
+    + '<td>' + dtEscape(r.city || '—') + '</td>'
+    + '<td>' + dtEscape(f.country(r.country)) + '</td>'
+    + '<td style="white-space:nowrap">' + f.when(r.signedUp) + '</td>'
+    + '<td style="white-space:nowrap">' + (chip('Email', r.acceptsEmail) + chip('SMS', r.acceptsSms) || '—') + '</td>'
+    + scContactCell(r, i, 'whatsapp') + scContactCell(r, i, 'email') + scContactCell(r, i, 'call')
+    + '</tr>').join('');
 }

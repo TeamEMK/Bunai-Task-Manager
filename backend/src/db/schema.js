@@ -1029,6 +1029,33 @@ const TABLES = [
       KEY idx_sfy_c_last (last_order),
       KEY idx_sfy_c_name (name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Shopify customers who signed up but have never ordered: the people the
+  // calling list cannot see, because sfy_customers is built from orders. Keyed
+  // on Shopify's customer id - a third of them have no phone at all.
+  //
+  // phone is the same last-10-digits key sfy_customers uses, so a contact
+  // logged against a prospect carries over to the calling list once they
+  // order. The Shopify sync adds new sign-ups and deletes anyone whose phone
+  // or email has since appeared on an order. The consents are 1/0, and NULL
+  // where there is no email or phone to consent with. There is no WhatsApp
+  // consent: the API has none, and the store's export said no for everyone.
+  ['sfy_prospects', `CREATE TABLE sfy_prospects (
+      customer_id      BIGINT NOT NULL PRIMARY KEY,
+      name             VARCHAR(200) NOT NULL DEFAULT '',
+      email            VARCHAR(255) NOT NULL DEFAULT '',
+      phone            VARCHAR(20) NOT NULL DEFAULT '',
+      phone_full       VARCHAR(40) NOT NULL DEFAULT '',
+      city             VARCHAR(120) NOT NULL DEFAULT '',
+      state            VARCHAR(120) NOT NULL DEFAULT '',
+      country          VARCHAR(8) NOT NULL DEFAULT '',
+      accepts_email    TINYINT(1) NULL,
+      accepts_sms      TINYINT(1) NULL,
+      signed_up        DATETIME NULL,
+      updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_sfy_p_phone (phone),
+      KEY idx_sfy_p_email (email),
+      KEY idx_sfy_p_signed (signed_up)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // ── Bunai B2B parties ────────────────────────────────────────────────
   // Everyone the wholesale side is talking to, whether or not they have
   // bought yet. b2b_orders only knows a party once an order exists, so a shop

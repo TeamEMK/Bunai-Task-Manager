@@ -70,6 +70,62 @@ const ORDER = `
 
 const LIMIT = 1500;
 
+// "Never ordered" - people with a Shopify account and no order, from
+// sfy_prospects. They have no rhythm, spend or status, so it is its own list
+// rather than a status. Newest sign-up first: the people most likely to still
+// remember the store. The export behind the first load had no sign-up date for
+// some, and a customer id grows with time, so it orders those too.
+//
+// key is what their contact log is filed under: the phone, as for a customer,
+// so the history follows them onto the calling list when they order; and for
+// the third with no phone, their Shopify id.
+const PROSPECT_KEY = `IF(phone <> '', phone, CONCAT('c', customer_id))`;
+
+async function prospects(q) {
+  const where = [];
+  const args = [];
+  if (q) {
+    const hit = countryCodesMatching(q);
+    where.push('(name LIKE ? OR phone LIKE ? OR email LIKE ? OR city LIKE ?'
+      + (hit.length ? ' OR country IN (' + hit.map(() => '?').join(',') + ')' : '') + ')');
+    const like = '%' + q + '%';
+    args.push(like, like, like, like, ...hit);
+  }
+  const filter = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const [rows, total] = await Promise.all([
+    db.rows(`SELECT ${PROSPECT_KEY} AS ckey, name, email, phone_full, city, country,
+                    accepts_email, accepts_sms, DATE_FORMAT(signed_up, '%Y-%m-%d') signed_up
+               FROM sfy_prospects ${filter}
+              ORDER BY signed_up IS NULL, signed_up DESC, customer_id DESC LIMIT ${LIMIT}`, args),
+    q ? db.one(`SELECT COUNT(*) n FROM sfy_prospects ${filter}`, args) : null,
+  ]);
+  const flag = (v) => (v == null ? null : !!Number(v));
+  return {
+    total: total ? Number(total.n) : null,
+    rows: rows.map(r => ({
+      phone: r.ckey,
+      phoneShow: (r.phone_full || '').trim(),
+      name: (r.name || '').trim() || '(no name)',
+      email: (r.email || '').trim(),
+      city: (r.city || '').trim(),
+      country: (r.country || '').trim(),
+      signedUp: r.signed_up,
+      acceptsEmail: flag(r.accepts_email),
+      acceptsSms: flag(r.accepts_sms),
+    })),
+  };
+}
+
+// When the never-ordered list was last brought up to date, in India's time.
+async function prospectsAsOf() {
+  try {
+    const r = await db.one(
+      `SELECT DATE_FORMAT(MAX(ended_at) + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
+         FROM sfy_prospect_sync_log WHERE ok = 1`);
+    return r && r.at;
+  } catch (_) { return null; }   // never synced on this database
+}
+
 // Every two-letter region code, with its English name, built once.
 const REGION_NAMES = (() => {
   const out = [];
@@ -94,6 +150,7 @@ function countryCodesMatching(text) {
 router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 120);
   const status = STATUSES.includes(String(req.query.status || '')) ? String(req.query.status) : '';
+  const never = req.query.status === 'never';
 
   const where = [];
   const args = [];
@@ -111,12 +168,14 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   }
   const filter = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
-  const [rows, counts, total] = await Promise.all([
-    db.rows(`SELECT * FROM (${BASE}) y ${filter} ${ORDER} LIMIT ${LIMIT}`, args),
+  const [rows, counts, total, pros, neverCount] = await Promise.all([
+    never ? [] : db.rows(`SELECT * FROM (${BASE}) y ${filter} ${ORDER} LIMIT ${LIMIT}`, args),
     // Counted over everyone, not the filtered set: the tiles are what the
     // filter is chosen from, so narrowing them would strand the other numbers.
     db.rows(`SELECT status, COUNT(*) n FROM (${BASE}) y GROUP BY status`),
-    db.one(`SELECT COUNT(*) n FROM (${BASE}) y ${filter}`, args),
+    never ? null : db.one(`SELECT COUNT(*) n FROM (${BASE}) y ${filter}`, args),
+    never ? prospects(q) : null,
+    db.one('SELECT COUNT(*) n FROM sfy_prospects').catch(() => null),
   ]);
 
   const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
@@ -124,7 +183,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   // For the customers on this page: the latest entry in EACH channel and how
   // many there are, so a new WhatsApp never hides the email beside it.
   const last = {};
-  const phones = rows.map(r => r.phone);
+  const phones = (never ? pros.rows : rows).map(r => r.phone);
   if (phones.length) {
     const L = await db.rows(
       `SELECT phone, channel, id, message, next_call_date, cnt, contact_date, updated_at_ist
@@ -144,6 +203,21 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
     });
   }
   const abroad = await db.one(`SELECT COUNT(*) n FROM sfy_customers WHERE ${ABROAD}`);
+  const allCounts = {
+    all: counts.reduce((a, c) => a + Number(c.n), 0),
+    abroad: Number(abroad?.n) || 0,
+    never: Number(neverCount?.n) || 0,
+    ...STATUSES.reduce((a, s) => (a[s] = by[s] || 0, a), {}),
+  };
+  if (never) {
+    return res.json({
+      mode: 'never',
+      counts: allCounts,
+      asOf: await prospectsAsOf(),
+      total: pros.total == null ? allCounts.never : pros.total,
+      rows: pros.rows.map(r => ({ ...r, contacts: last[r.phone] || {} })),
+    });
+  }
 
   // When each tab of the Google Sheet was last written, in India's time. The
   // log is in UTC; the table may not exist yet on a database the sheet has
@@ -158,11 +232,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
 
   res.json({
     sheet,
-    counts: {
-      all: counts.reduce((a, c) => a + Number(c.n), 0),
-      abroad: Number(abroad?.n) || 0,
-      ...STATUSES.reduce((a, s) => (a[s] = by[s] || 0, a), {}),
-    },
+    counts: allCounts,
     total: Number(total?.n) || 0,
     rows: rows.map(r => ({
       phone: r.phone,
@@ -246,10 +316,18 @@ function entryFromBody(b) {
   };
 }
 
+// A key is a customer's phone, a never-ordered prospect's phone, or "c" and the
+// Shopify id of a prospect with no phone.
 async function customerOrFail(phone) {
-  const c = await db.one('SELECT phone FROM sfy_customers WHERE phone = ?', [clip(phone, 20)]);
-  if (!c) throw httpError(404, 'That customer is not on the list.');
-  return c.phone;
+  const key = clip(phone, 20);
+  const c = await db.one('SELECT phone FROM sfy_customers WHERE phone = ?', [key]);
+  if (c) return c.phone;
+  const id = /^c\d{1,19}$/.test(key) ? key.slice(1) : null;
+  const p = key && await db.one(
+    id ? `SELECT 1 ok FROM sfy_prospects WHERE customer_id = ? AND phone = ''`
+       : 'SELECT 1 ok FROM sfy_prospects WHERE phone = ? LIMIT 1', [id || key]).catch(() => null);
+  if (!p) throw httpError(404, 'That customer is not on the list.');
+  return key;
 }
 
 // One customer's whole history, newest first within each channel, with a count
