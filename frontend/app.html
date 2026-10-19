@@ -1778,27 +1778,57 @@
     <div class="form-row">
       <div class="form-group"><label>Party name <span style="color:var(--brand-mid)">*</span></label>
         <input type="text" id="b2bParty" placeholder="The buying company or store"/></div>
-      <div class="form-group"><label>Contact person</label>
-        <input type="text" id="b2bContact" placeholder="Who you speak to"/></div>
+      <div class="form-group"><label>Owner name</label>
+        <input type="text" id="b2bOwner" placeholder="Who owns the business"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Email ID</label>
+      <div class="form-group"><label>Contact person</label>
+        <input type="text" id="b2bContact" placeholder="Who you speak to"/></div>
+      <div class="form-group"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email ID 1</label>
         <input type="text" id="b2bEmail" placeholder="name@example.com"/></div>
+      <div class="form-group"><label>Email ID 2</label>
+        <input type="text" id="b2bEmail2" placeholder="another@example.com"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>WhatsApp number</label>
+        <input type="text" id="b2bWhatsapp" placeholder="9876543210"/></div>
       <div class="form-group"><label>Phone number</label>
         <input type="text" id="b2bPhone" placeholder="9876543210"/></div>
     </div>
-    <div class="form-group"><label>City</label>
-      <input type="text" id="b2bCity" placeholder="Jaipur"/></div>
+    <div class="form-group"><label>Address</label>
+      <textarea id="b2bAddress" rows="2" placeholder="Shop no., street, area, landmark"></textarea></div>
+    <div class="form-row three">
+      <div class="form-group"><label>City</label>
+        <input type="text" id="b2bCity" placeholder="Jaipur"/></div>
+      <div class="form-group"><label>State</label>
+        <input type="text" id="b2bState" placeholder="Rajasthan"/></div>
+      <div class="form-group"><label>Pincode</label>
+        <input type="text" id="b2bPincode" placeholder="302001" maxlength="12"/></div>
+    </div>
 
     <div style="margin:16px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
       text-transform:uppercase;color:var(--muted-foreground)">What was sold</div>
-    <div class="form-group"><label>What was sold</label>
-      <textarea id="b2bSold" rows="2" placeholder="The items in this order"></textarea></div>
-    <div class="form-row">
-      <div class="form-group"><label>No. of pieces</label>
-        <input type="number" id="b2bPieces" min="0" step="1" oninput="b2bRecalc()" placeholder="0"/></div>
-      <div class="form-group"><label>Rate / piece (₹)</label>
-        <input type="number" id="b2bRate" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
+    <div id="b2bLinesWrap">
+      <div id="b2bLines"></div>
+      <datalist id="b2bSkuList"></datalist>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 12px">
+        <button type="button" class="btn btn-outline" style="padding:6px 14px;font-size:13px" onclick="b2bAddLine()">+ Add SKU</button>
+        <span id="b2bLinesSum" style="font-size:12.5px;font-weight:700;color:var(--muted-foreground)"></span>
+      </div>
+    </div>
+    <div id="b2bLegacy" style="display:none">
+      <div style="font-size:11.5px;color:var(--faint);margin-bottom:8px">This order was saved before SKU lines existed, so it keeps its items as text.</div>
+      <div class="form-group"><label>What was sold</label>
+        <textarea id="b2bSold" rows="2" placeholder="The items in this order"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>No. of pieces</label>
+          <input type="number" id="b2bPieces" min="0" step="1" oninput="b2bRecalc()" placeholder="0"/></div>
+        <div class="form-group"><label>Rate / piece (₹)</label>
+          <input type="number" id="b2bRate" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
+      </div>
     </div>
     <div class="form-group"><label>Total order value (₹)</label>
       <input type="number" id="b2bTotal" min="0" step="0.01" oninput="b2bRecalc(true)" placeholder="0.00"/>
@@ -1852,6 +1882,19 @@
       <button class="btn btn-outline" onclick="closeModal('b2bModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveB2B(this)">Save</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="b2bItemsModal">
+  <div class="modal" style="width:760px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="b2bItemsTitle">Items</h3>
+    <div id="b2bItemsSub" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
+    <div class="table-container" style="overflow-x:auto"><table>
+      <thead><tr><th>#</th><th>SKU</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th>
+        <th style="text-align:right">Discount</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody id="b2bItemsBody"></tbody>
+    </table></div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('b2bItemsModal')">Close</button></div>
   </div>
 </div>
 

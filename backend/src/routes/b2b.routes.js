@@ -81,13 +81,55 @@ const SELECT = `
     FROM b2b_orders b
     LEFT JOIN users u ON u.id = b.created_by`;
 
-function fromBody(b) {
-  const pieces = intOrNull(b.pieces);
-  const rate = numOrNull(b.rate_per_piece);
+// The SKU lines of an order, cleaned, with each line's amount worked out here
+// rather than taken from the form: qty x price, less the discount - a
+// percentage of the line, or a rupee amount off it - and never below zero.
+const DISC_TYPES = ['pct', 'amt'];
+function linesFromBody(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 500).map((l) => {
+    const sku = clean(l && l.sku, 160);
+    if (!sku) return null;
+    const qty = Math.max(1, intOrNull(l.qty) || 1);
+    const price = numOrNull(l.price);
+    const discType = DISC_TYPES.includes(l.disc_type) ? l.disc_type : 'pct';
+    let disc = numOrNull(l.disc_value);
+    if (disc !== null) disc = Math.max(0, discType === 'pct' ? Math.min(100, disc) : disc);
+    let amount = null;
+    if (price !== null) {
+      const gross = qty * price;
+      const off = disc === null ? 0 : (discType === 'pct' ? gross * disc / 100 : disc);
+      amount = round2(Math.max(0, gross - off));
+    }
+    return { sku, qty, price, disc_type: discType, disc_value: disc, amount };
+  }).filter(Boolean);
+}
+
+async function saveLines(orderId, lines) {
+  await db.query('DELETE FROM b2b_order_lines WHERE order_id = ?', [orderId]);
+  if (!lines.length) return;
+  await db.query(
+    `INSERT INTO b2b_order_lines (order_id, position, sku, qty, price, disc_type, disc_value, amount) VALUES ?`,
+    [lines.map((l, i) => [orderId, i, l.sku, l.qty, l.price, l.disc_type, l.disc_value, l.amount])]);
+}
+
+function fromBody(b, lines = []) {
+  let pieces = intOrNull(b.pieces);
+  let rate = numOrNull(b.rate_per_piece);
   // Pieces × rate is the default, not the rule — a typed total wins, so a
   // discount or a rounded-off invoice survives being saved.
   let total = numOrNull(b.total_order_value);
   if (total === null && pieces !== null && rate !== null) total = round2(pieces * rate);
+  // An order with SKU lines is the sum of them, and its "what was sold" for
+  // the sheet is the list - the sheet has no lines of its own to put them in.
+  let sold = clean(b.what_was_sold, 1000);
+  if (lines.length) {
+    pieces = lines.reduce((a, l) => a + l.qty, 0);
+    rate = null;
+    total = lines.some((l) => l.amount !== null)
+      ? round2(lines.reduce((a, l) => a + (l.amount || 0), 0)) : null;
+    sold = lines.map((l) => l.sku + (l.qty > 1 ? ' x' + l.qty : '')).join(', ').slice(0, 1000);
+  }
   const received = numOrNull(b.amount_received);
   // Never taken from the form. Two numbers and a subtraction cannot disagree
   // with each other; a third stored number can, and eventually does.
@@ -96,10 +138,16 @@ function fromBody(b) {
   return {
     party_name: clean(b.party_name),
     contact_person: clean(b.contact_person),
+    owner_name: clean(b.owner_name),
     email: clean(b.email),
+    email2: clean(b.email2),
     phone: clean(b.phone, 50),
+    whatsapp: clean(b.whatsapp, 50),
+    address: clean(b.address, 500),
     city: clean(b.city, 160),
-    what_was_sold: clean(b.what_was_sold, 1000),
+    state: clean(b.state, 120),
+    pincode: clean(b.pincode, 12),
+    what_was_sold: sold,
     pieces,
     rate_per_piece: rate,
     total_order_value: total,
@@ -174,15 +222,43 @@ router.get('/b2b', requireAuth, asyncRoute(async (req, res) => {
   const where = [];
   const args = [];
   if (q) {
-    where.push(`(b.party_name LIKE ? OR b.contact_person LIKE ? OR b.email LIKE ?
-                 OR b.phone LIKE ? OR b.city LIKE ? OR b.what_was_sold LIKE ?)`);
-    for (let i = 0; i < 6; i++) args.push(`%${q}%`);
+    where.push(`(b.party_name LIKE ? OR b.contact_person LIKE ? OR b.owner_name LIKE ?
+                 OR b.email LIKE ? OR b.email2 LIKE ? OR b.phone LIKE ? OR b.whatsapp LIKE ?
+                 OR b.city LIKE ? OR b.state LIKE ? OR b.what_was_sold LIKE ?
+                 OR b.id IN (SELECT order_id FROM b2b_order_lines WHERE sku LIKE ?))`);
+    for (let i = 0; i < 11; i++) args.push(`%${q}%`);
   }
   if (orderStatus) { where.push('b.order_status = ?'); args.push(orderStatus); }
   if (paymentStatus) { where.push('b.payment_status = ?'); args.push(paymentStatus); }
   const rows = await db.rows(
     `${SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY b.order_date IS NULL, b.order_date DESC, b.id DESC LIMIT 2000`, args);
+  // Each order's SKU lines, with the product name from the catalogue.
+  const byOrder = {};
+  if (rows.length) {
+    const lines = await db.rows(
+      `SELECT l.order_id, l.sku, l.qty, l.price, l.disc_type, l.disc_value, l.amount,
+              COALESCE(i.name, '') name
+         FROM b2b_order_lines l LEFT JOIN uni_items i ON i.sku = l.sku
+        WHERE l.order_id IN (?) ORDER BY l.order_id, l.position`, [rows.map((r) => r.id)]);
+    lines.forEach((l) => (byOrder[l.order_id] = byOrder[l.order_id] || []).push({
+      sku: l.sku, name: l.name, qty: Number(l.qty),
+      price: l.price === null ? null : Number(l.price),
+      disc_type: l.disc_type, disc_value: l.disc_value === null ? null : Number(l.disc_value),
+      amount: l.amount === null ? null : Number(l.amount),
+    }));
+  }
+  res.json(rows.map((r) => ({ ...r, lines: byOrder[r.id] || [] })));
+}));
+
+// SKU suggestions for the order lines, from the Unicommerce catalogue.
+router.get('/b2b/skus', requireAuth, asyncRoute(async (req, res) => {
+  const q = clean(req.query.q, 80);
+  if (q.length < 2) return res.json([]);
+  const rows = await db.rows(
+    `SELECT sku, name FROM uni_items
+      WHERE enabled = 1 AND (sku LIKE ? OR name LIKE ?)
+      ORDER BY sku LIKE ? DESC, sku LIMIT 25`, [`%${q}%`, `%${q}%`, `${q}%`]);
   res.json(rows);
 }));
 
@@ -221,7 +297,8 @@ router.get('/b2b/meta', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.post('/b2b', requireAuth, asyncRoute(async (req, res) => {
-  const d = fromBody(req.body || {});
+  const lines = linesFromBody((req.body || {}).lines);
+  const d = fromBody(req.body || {}, lines);
   if (!d.party_name) return res.status(400).json({ error: 'The party name is required' });
 
   const cols = Object.keys(d);
@@ -230,6 +307,7 @@ router.post('/b2b', requireAuth, asyncRoute(async (req, res) => {
      VALUES (${cols.map(() => '?').join(',')}, ?)`,
     [...Object.values(d), req.session.userId]);
   const id = ins.insertId;
+  await saveLines(id, lines);
 
   const sheet = await writeRow(null, d);
   if (sheet.ok) await db.query('UPDATE b2b_orders SET sheet_row=? WHERE id=?', [sheet.row, id]);
@@ -242,12 +320,14 @@ router.put('/b2b/:id', requireAuth, asyncRoute(async (req, res) => {
   const existing = await db.one('SELECT * FROM b2b_orders WHERE id=?', [id]);
   if (!existing) throw httpError(404, 'Not found');
 
-  const d = fromBody(req.body || {});
+  const lines = linesFromBody((req.body || {}).lines);
+  const d = fromBody(req.body || {}, lines);
   if (!d.party_name) return res.status(400).json({ error: 'The party name is required' });
 
   await db.query(
     `UPDATE b2b_orders SET ${Object.keys(d).map(k => `${k}=?`).join(', ')} WHERE id=?`,
     [...Object.values(d), id]);
+  await saveLines(id, lines);
 
   // Its own line if it has one; a new line at the bottom if the sheet was not
   // configured when the order was first saved.
@@ -262,7 +342,9 @@ router.put('/b2b/:id', requireAuth, asyncRoute(async (req, res) => {
 // Only the row here. The line in the sheet is left where it is: deleting it
 // would shift every row under it, and every other order's sheet_row with it.
 router.delete('/b2b/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
-  await db.query('DELETE FROM b2b_orders WHERE id=?', [parseInt(req.params.id, 10)]);
+  const id = parseInt(req.params.id, 10);
+  await db.query('DELETE FROM b2b_order_lines WHERE order_id=?', [id]);
+  await db.query('DELETE FROM b2b_orders WHERE id=?', [id]);
   res.json({ success: true });
 }));
 

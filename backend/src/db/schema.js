@@ -407,6 +407,26 @@ const TABLES = [
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // One line per SKU of a B2B order. The order's pieces and value are the sum
+  // of these when it has any; an order typed before lines existed keeps its
+  // free-text "what was sold" and has none.
+  //
+  // The discount is either a percentage of the line or a fixed rupee amount
+  // off the line, as typed; amount is what is left, worked out by the API.
+  ['b2b_order_lines', `CREATE TABLE b2b_order_lines (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    sku VARCHAR(160) NOT NULL,
+    qty INT NOT NULL DEFAULT 1,
+    price DECIMAL(12,2) NULL,
+    disc_type VARCHAR(4) NOT NULL DEFAULT 'pct',
+    disc_value DECIMAL(12,2) NULL,
+    amount DECIMAL(14,2) NULL,
+    KEY idx_b2b_lines_order (order_id, position),
+    KEY idx_b2b_lines_sku (sku)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['influencers', `CREATE TABLE influencers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -1148,6 +1168,14 @@ const TABLES = [
 // A database created from TABLES above already has all of them — the lookup in
 // migrations.js skips every one of these on a modern schema.
 const COLUMNS = [
+  // B2B party details the client asked for beyond the sheet's own columns.
+  // Kept in the app only; the sheet's layout is the client's and stays as it is.
+  ['b2b_orders', 'owner_name', `VARCHAR(255) DEFAULT '' AFTER contact_person`],
+  ['b2b_orders', 'email2', `VARCHAR(255) DEFAULT '' AFTER email`],
+  ['b2b_orders', 'whatsapp', `VARCHAR(50) DEFAULT '' AFTER phone`],
+  ['b2b_orders', 'address', `VARCHAR(500) DEFAULT '' AFTER whatsapp`],
+  ['b2b_orders', 'state', `VARCHAR(120) DEFAULT '' AFTER city`],
+  ['b2b_orders', 'pincode', `VARCHAR(12) DEFAULT '' AFTER state`],
   // uni_returns pehli deploy par in teeno ke bina bani thi. Yeh fields
   // documentation mein nahi hain — pehle asli return ke payload mein mile.
   // CREATE TABLE IF NOT EXISTS maujooda table par kuch nahi karta, isliye

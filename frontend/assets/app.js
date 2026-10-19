@@ -9206,9 +9206,21 @@ function b2bRecalc(totalWasTyped){
   const totalEl = document.getElementById('b2bTotal');
   const hint = document.getElementById('b2bTotalHint');
 
-  if (totalWasTyped) totalEl.dataset.typed = '1';
-  const computed = (pieces !== null && rate !== null) ? Math.round(pieces * rate * 100) / 100 : null;
-  if (!totalEl.dataset.typed && computed !== null) totalEl.value = computed;
+  // With SKU lines the order is their sum, worked out and not typed.
+  const lined = B2B_LINES.filter(l => l.sku.trim());
+  const byLines = lined.length > 0;
+  totalEl.readOnly = byLines;
+  totalEl.style.background = byLines ? '#f1f5f9' : '';
+  if (byLines) {
+    const amounts = lined.map(b2bLineAmount);
+    totalEl.value = amounts.some(a => a !== null)
+      ? Math.round(amounts.reduce((a, x) => a + (x || 0), 0) * 100) / 100 : '';
+    delete totalEl.dataset.typed;
+  }
+
+  if (totalWasTyped && !byLines) totalEl.dataset.typed = '1';
+  const computed = byLines ? null : (pieces !== null && rate !== null) ? Math.round(pieces * rate * 100) / 100 : null;
+  if (!byLines && !totalEl.dataset.typed && computed !== null) totalEl.value = computed;
 
   const total = b2bNum(totalEl.value);
   const received = b2bNum(document.getElementById('b2bReceived').value);
@@ -9216,9 +9228,15 @@ function b2bRecalc(totalWasTyped){
     total === null ? '' : b2bMoney(Math.round((total - (received || 0)) * 100) / 100, '');
 
   if (hint) {
-    hint.textContent = (computed !== null && total !== null && total !== computed)
+    hint.textContent = byLines ? 'The sum of the SKU lines above, after their discounts.'
+      : (computed !== null && total !== null && total !== computed)
       ? `Pieces × rate comes to ${b2bMoney(computed)} — this order is saved at ${b2bMoney(total)}.`
       : 'Filled in from pieces × rate. Type over it if the agreed price is different.';
+  }
+  const sum = document.getElementById('b2bLinesSum');
+  if (sum) {
+    const pcs = lined.reduce((a, l) => a + (Math.max(1, Math.round(b2bNum(l.qty) || 1))), 0);
+    sum.textContent = byLines ? `${lined.length} SKU${lined.length === 1 ? '' : 's'} · ${pcs} pcs · ${b2bMoney(total, '₹0')}` : '';
   }
 
   // Whether an order is paid is not an opinion - it is what the two amounts say.
@@ -9255,6 +9273,123 @@ function b2bRecalc(totalWasTyped){
 function b2bPayChosen(){
   document.getElementById('b2bPayStatus').dataset.typed = '1';
   b2bRecalc();
+}
+
+// ── SKU lines of an order ─────────────────────────────
+// One line per SKU: qty, price, and a discount that is either a percentage of
+// the line or a rupee amount off it. The amount is worked out as you type; the
+// server works it out again when the order is saved.
+let B2B_LINES = [];
+const b2bBlankLine = () => ({ sku: '', name: '', qty: '1', price: '', disc_type: 'pct', disc_value: '' });
+
+function b2bLineAmount(l) {
+  const price = b2bNum(l.price);
+  if (price === null) return null;
+  const qty = Math.max(1, Math.round(b2bNum(l.qty) || 1));
+  const gross = qty * price;
+  let d = b2bNum(l.disc_value);
+  if (d === null) d = 0;
+  const off = l.disc_type === 'amt' ? Math.max(0, d) : gross * Math.min(100, Math.max(0, d)) / 100;
+  return Math.round(Math.max(0, gross - off) * 100) / 100;
+}
+
+function b2bDrawLines() {
+  const box = document.getElementById('b2bLines');
+  if (!box) return;
+  const head = '<div style="display:grid;grid-template-columns:24px 2.2fr .7fr 1fr 1.25fr 1fr 24px;gap:6px;'
+    + 'font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:4px">'
+    + '<span>#</span><span>SKU</span><span>Qty</span><span>Price ₹</span><span>Discount</span><span style="text-align:right">Amount</span><span></span></div>';
+  box.innerHTML = head + B2B_LINES.map((l, i) => {
+    const a = b2bLineAmount(l);
+    return '<div style="display:grid;grid-template-columns:24px 2.2fr .7fr 1fr 1.25fr 1fr 24px;gap:6px;align-items:start;margin-bottom:6px">'
+      + '<span style="font-size:12px;color:var(--faint);padding-top:9px">' + (i + 1) + '</span>'
+      + '<div><input type="text" list="b2bSkuList" value="' + dtEscape(l.sku) + '" placeholder="Type to search SKU"'
+      + ' oninput="b2bLineSet(' + i + ',\'sku\',this.value);b2bSkuSuggest(this.value)" onchange="b2bSkuPicked(' + i + ',this.value)" style="width:100%"/>'
+      + '<div id="b2bLineName' + i + '" style="font-size:11px;color:var(--faint);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + dtEscape(l.name || '') + '</div></div>'
+      + '<input type="number" min="1" step="1" value="' + dtEscape(l.qty) + '" oninput="b2bLineSet(' + i + ',\'qty\',this.value)" style="width:100%"/>'
+      + '<input type="number" min="0" step="0.01" value="' + dtEscape(l.price) + '" placeholder="0.00" oninput="b2bLineSet(' + i + ',\'price\',this.value)" style="width:100%"/>'
+      + '<div style="display:flex;gap:4px"><input type="number" min="0" step="0.01" value="' + dtEscape(l.disc_value) + '" placeholder="0"'
+      + ' oninput="b2bLineSet(' + i + ',\'disc_value\',this.value)" style="width:100%;min-width:0"/>'
+      + '<select onchange="b2bLineSet(' + i + ',\'disc_type\',this.value)" style="width:52px;padding-left:6px;padding-right:2px">'
+      + '<option value="pct"' + (l.disc_type !== 'amt' ? ' selected' : '') + '>%</option>'
+      + '<option value="amt"' + (l.disc_type === 'amt' ? ' selected' : '') + '>₹</option></select></div>'
+      + '<div id="b2bLineAmt' + i + '" style="text-align:right;font-weight:700;font-size:13px;padding-top:9px">' + b2bMoney(a) + '</div>'
+      + '<a href="#" onclick="b2bDropLine(' + i + ');return false" title="Remove" style="color:#b91c1c;text-decoration:none;padding-top:8px;text-align:center">✕</a>'
+      + '</div>';
+  }).join('');
+  b2bRecalc();
+}
+
+// Typing changes the line and its amount without redrawing, so focus stays.
+function b2bLineSet(i, field, value) {
+  const l = B2B_LINES[i];
+  if (!l) return;
+  l[field] = value;
+  if (field === 'sku') { l.name = ''; const n = document.getElementById('b2bLineName' + i); if (n) n.textContent = ''; }
+  const amt = document.getElementById('b2bLineAmt' + i);
+  if (amt) amt.textContent = b2bMoney(b2bLineAmount(l));
+  b2bRecalc();
+}
+function b2bAddLine() { B2B_LINES.push(b2bBlankLine()); b2bDrawLines(); }
+function b2bDropLine(i) {
+  B2B_LINES.splice(i, 1);
+  if (!B2B_LINES.length) B2B_LINES.push(b2bBlankLine());
+  b2bDrawLines();
+}
+
+// Suggestions from the Unicommerce catalogue, as the SKU is typed.
+let _b2bSkuTimer = null, B2B_SKU_NAMES = {};
+function b2bSkuSuggest(q) {
+  clearTimeout(_b2bSkuTimer);
+  _b2bSkuTimer = setTimeout(async () => {
+    q = String(q || '').trim();
+    if (q.length < 2) return;
+    let rows = [];
+    try { rows = await api('/api/b2b/skus?q=' + encodeURIComponent(q)); } catch (_) { return; }
+    if (!Array.isArray(rows)) return;
+    rows.forEach(r => { B2B_SKU_NAMES[r.sku] = r.name || ''; });
+    document.getElementById('b2bSkuList').innerHTML =
+      rows.map(r => '<option value="' + dtEscape(r.sku) + '">' + dtEscape(r.name || '') + '</option>').join('');
+  }, 200);
+}
+// The name comes from the suggestions already fetched, or from a lookup of
+// that exact SKU - a SKU typed or pasted faster than the suggestions arrive
+// is not "not in the catalogue".
+async function b2bSkuPicked(i, value) {
+  const l = B2B_LINES[i];
+  if (!l) return;
+  const sku = String(value || '').trim();
+  l.sku = sku;
+  const show = (t) => { const n = document.getElementById('b2bLineName' + i); if (n && B2B_LINES[i] === l && l.sku === sku) n.textContent = t; };
+  if (!sku) return show('');
+  if (!(sku in B2B_SKU_NAMES)) {
+    try {
+      const rows = await api('/api/b2b/skus?q=' + encodeURIComponent(sku));
+      (Array.isArray(rows) ? rows : []).forEach(r => { B2B_SKU_NAMES[r.sku] = r.name || ''; });
+    } catch (_) { return; }
+  }
+  if (sku in B2B_SKU_NAMES) { l.name = B2B_SKU_NAMES[sku]; show(l.name || sku); }
+  else show('Not in the Unicommerce catalogue');
+}
+
+// The full list behind "N SKUs" in the table.
+function b2bShowItems(idx) {
+  const r = B2B_ROWS[idx];
+  if (!r) return;
+  document.getElementById('b2bItemsTitle').textContent = r.party_name;
+  document.getElementById('b2bItemsSub').textContent = r.lines.length + ' SKUs · '
+    + Number(r.pieces || 0).toLocaleString('en-IN') + ' pcs · ' + b2bMoney(r.total_order_value)
+    + (r.order_date ? ' · ordered ' + b2bDate(r.order_date) : '');
+  document.getElementById('b2bItemsBody').innerHTML = r.lines.map((l, k) => '<tr>'
+    + '<td>' + (k + 1) + '</td>'
+    + '<td><b>' + dtEscape(l.sku) + '</b>' + (l.name ? '<div style="font-size:11.5px;color:var(--faint)">' + dtEscape(l.name) + '</div>' : '') + '</td>'
+    + '<td style="text-align:right">' + l.qty + '</td>'
+    + '<td style="text-align:right">' + b2bMoney(l.price) + '</td>'
+    + '<td style="text-align:right">' + (l.disc_value ? (l.disc_type === 'amt' ? b2bMoney(l.disc_value) : l.disc_value + '%') : '—') + '</td>'
+    + '<td style="text-align:right;font-weight:700">' + b2bMoney(l.amount) + '</td></tr>').join('')
+    + '<tr><td></td><td><b>Total</b></td><td style="text-align:right"><b>' + Number(r.pieces || 0) + '</b></td><td></td><td></td>'
+    + '<td style="text-align:right"><b>' + b2bMoney(r.total_order_value) + '</b></td></tr>';
+  document.getElementById('b2bItemsModal').classList.add('open');
 }
 
 async function loadB2B(){
@@ -9317,12 +9452,16 @@ async function loadB2B(){
       return `<tr>
       <td>
         <b>${dtEscape(r.party_name)}</b>
-        <div style="font-size:11.5px;color:var(--faint)">${[r.contact_person, r.city].filter(Boolean).map(dtEscape).join(' · ') || '—'}</div>
+        <div style="font-size:11.5px;color:var(--faint)">${[r.owner_name || r.contact_person, r.city, r.state].filter(Boolean).map(dtEscape).join(' · ') || '—'}</div>
         ${r.phone ? `<div style="font-size:11.5px;color:var(--faint)">${dtEscape(r.phone)}</div>` : ''}
       </td>
       <td style="font-size:13px;max-width:220px">
-        ${dtEscape(r.what_was_sold || '—')}
-        ${(r.pieces !== null && r.pieces !== undefined) ? `<div style="font-size:11.5px;color:var(--faint)">${Number(r.pieces).toLocaleString('en-IN')} pcs${r.rate_per_piece !== null && r.rate_per_piece !== undefined ? ` × ${b2bMoney(r.rate_per_piece)}` : ''}</div>` : ''}
+        ${(r.lines || []).length
+          ? `<a href="#" onclick="b2bShowItems(${i});return false" style="font-weight:600;color:var(--brand-deep);text-decoration:none">
+               ${r.lines.length} SKU${r.lines.length === 1 ? '' : 's'} · ${Number(r.pieces || 0).toLocaleString('en-IN')} pcs</a>
+             <div style="font-size:11.5px;color:var(--faint)">click for details</div>`
+          : `${dtEscape(r.what_was_sold || '—')}
+        ${(r.pieces !== null && r.pieces !== undefined) ? `<div style="font-size:11.5px;color:var(--faint)">${Number(r.pieces).toLocaleString('en-IN')} pcs${r.rate_per_piece !== null && r.rate_per_piece !== undefined ? ` × ${b2bMoney(r.rate_per_piece)}` : ''}</div>` : ''}`}
       </td>
       <td style="text-align:right;white-space:nowrap">
         <b style="font-size:13.5px">${b2bMoney(r.total_order_value)}</b>
@@ -9352,9 +9491,24 @@ function openB2B(idx){
   document.getElementById('b2bEditId').value = r ? r.id : '';
   set('b2bParty', r?.party_name);
   set('b2bContact', r?.contact_person);
+  set('b2bOwner', r?.owner_name);
   set('b2bEmail', r?.email);
+  set('b2bEmail2', r?.email2);
   set('b2bPhone', r?.phone);
+  set('b2bWhatsapp', r?.whatsapp);
+  set('b2bAddress', r?.address);
   set('b2bCity', r?.city);
+  set('b2bState', r?.state);
+  set('b2bPincode', r?.pincode);
+  // An order typed before SKU lines keeps its text; everything else is lines.
+  const legacy = !!(r && !(r.lines || []).length && (r.what_was_sold || r.pieces !== null && r.pieces !== undefined));
+  document.getElementById('b2bLegacy').style.display = legacy ? '' : 'none';
+  document.getElementById('b2bLinesWrap').style.display = legacy ? 'none' : '';
+  B2B_LINES = legacy ? [] : (r && r.lines && r.lines.length
+    ? r.lines.map(l => ({ sku: l.sku, name: l.name || '', qty: String(l.qty), price: l.price === null ? '' : String(l.price),
+        disc_type: l.disc_type || 'pct', disc_value: l.disc_value === null ? '' : String(l.disc_value) }))
+    : [b2bBlankLine()]);
+  b2bDrawLines();
   set('b2bSold', r?.what_was_sold);
   set('b2bPieces', r?.pieces);
   set('b2bRate', r?.rate_per_piece);
@@ -9384,14 +9538,20 @@ async function saveB2B(btn){
   const val = (id) => document.getElementById(id).value.trim();
   const id = document.getElementById('b2bEditId').value;
   const body = {
-    party_name: val('b2bParty'), contact_person: val('b2bContact'), email: val('b2bEmail'),
-    phone: val('b2bPhone'), city: val('b2bCity'), what_was_sold: val('b2bSold'),
+    party_name: val('b2bParty'), contact_person: val('b2bContact'), owner_name: val('b2bOwner'),
+    email: val('b2bEmail'), email2: val('b2bEmail2'), phone: val('b2bPhone'), whatsapp: val('b2bWhatsapp'),
+    address: val('b2bAddress'), city: val('b2bCity'), state: val('b2bState'), pincode: val('b2bPincode'),
+    what_was_sold: val('b2bSold'),
+    lines: B2B_LINES.filter(l => l.sku.trim()).map(l => ({ sku: l.sku.trim(), qty: l.qty, price: l.price,
+      disc_type: l.disc_type, disc_value: l.disc_value })),
     pieces: val('b2bPieces'), rate_per_piece: val('b2bRate'), total_order_value: val('b2bTotal'),
     payment_status: val('b2bPayStatus'), amount_received: val('b2bReceived'),
     order_date: val('b2bOrdered'), dispatch_date: val('b2bDispatched'),
     delivery_date: val('b2bDelivered'), order_status: val('b2bStatus'), remarks: val('b2bRemarks'),
   };
   if (!body.party_name) { err.textContent = 'The party name is required'; err.style.display = 'block'; return; }
+  const noPrice = body.lines.findIndex(l => b2bNum(l.price) === null);
+  if (noPrice > -1) { err.textContent = 'Line ' + (noPrice + 1) + ' (' + body.lines[noPrice].sku + ') has no price.'; err.style.display = 'block'; return; }
 
   const done = hrmBusy(btn, 'Saving…');
   try {
