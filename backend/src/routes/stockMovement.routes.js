@@ -12,6 +12,7 @@
 // when it happened.
 // ══════════════════════════════════════════════════════
 const express = require('express');
+const brands = require('../services/brands');
 const { db } = require('../db/pool');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
@@ -35,7 +36,9 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
     const limit = Math.min(100, Math.max(5, Number(req.query.limit) || 25));
     // One warehouse or all. Passed as a parameter; an unknown name simply matches nothing.
     const wh = String(req.query.warehouse || '').trim().slice(0, 80);
-    const onlyA = wh ? ' AND a.warehouse = ?' : '';
+    // And one brand, by the SKU's prefix - the same rule the Stock page uses.
+    const brand = brands.pick(req.query.brand);
+    const onlyA = (wh ? ' AND a.warehouse = ?' : '') + (brand ? ' AND ' + brands.sql(brand, 'a.sku') : '');
     const W = wh ? [wh] : [];
 
     // Every day we hold, newest last. With one day there is nothing to compare
@@ -44,7 +47,7 @@ router.get('/stock/movement', requireAuth, requireAdmin, async (req, res) => {
       `SELECT day, warehouse, SUM(qty) units, COUNT(*) rows_n,
               SUM(qty > 0) stocked
          FROM ims_inventory_daily
-        WHERE day >= DATE_SUB(CURDATE(), INTERVAL ? DAY)${wh ? ' AND warehouse = ?' : ''}
+        WHERE day >= DATE_SUB(CURDATE(), INTERVAL ? DAY)${wh ? ' AND warehouse = ?' : ''}${brand ? ' AND ' + brands.sql(brand, 'sku') : ''}
         GROUP BY day, warehouse ORDER BY day, warehouse`, [days, ...W]);
 
     const dayList = [...new Set(daily.map(r => ymd(r.day)))];

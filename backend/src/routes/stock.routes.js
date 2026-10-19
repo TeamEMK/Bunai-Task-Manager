@@ -11,6 +11,7 @@ const { asyncRoute } = require('../middleware/errors');
 const { runUnicommerceSync } = require('../services/scheduler');
 const uni = require('../../unicommerce');
 const skuGroup = require('../services/skuGroup');
+const brands = require('../services/brands');
 
 const router = express.Router();
 
@@ -25,22 +26,24 @@ const GROUP_SCAN_LIMIT = 50000;
 // query. Orders carry no warehouse; the two warehouses share no SKU, so a sale
 // is counted for the warehouse whose list holds that SKU. Without synced orders
 // the cards simply do not render.
-async function periodFigures(soldDays, mtd, wh) {
+async function periodFigures(soldDays, mtd, wh, brand) {
   const since = `DATE_SUB(DATE(UTC_TIMESTAMP() + INTERVAL 330 MINUTE), INTERVAL ${soldDays} DAY)`;
+  const bIt = brand ? ' AND ' + brands.sql(brand, 'it.sku') : '';
+  const bI = brand ? ' AND ' + brands.sql(brand, 'i.sku') : '';
   try {
     const r = await db.one(
       `SELECT
          (SELECT ROUND(SUM(it.order_qty)) FROM ims_order_items it
-           WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}
+           WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}${bIt}
              ${wh ? 'AND it.sku IN (SELECT sku FROM ims_inventory WHERE warehouse = ?)' : ''}) AS units,
          (SELECT COUNT(DISTINCT it.sku) FROM ims_order_items it
-           WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}
+           WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}${bIt}
              ${wh ? 'AND it.sku IN (SELECT sku FROM ims_inventory WHERE warehouse = ?)' : ''}) AS skus,
          (SELECT COUNT(*) FROM ims_inventory i
             LEFT JOIN (SELECT it.sku, SUM(it.order_qty) s FROM ims_order_items it
                         WHERE LOWER(it.status) <> 'cancelled' AND it.order_date >= ${since}
                         GROUP BY it.sku) sold ON sold.sku = i.sku
-           WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0
+           WHERE COALESCE(sold.s, 0) > i.qty AND COALESCE(sold.s, 0) > 0${bI}
              ${wh ? 'AND i.warehouse = ?' : ''}) AS reorder_n`,
       wh ? [wh, wh, wh] : []);
     return {
@@ -85,12 +88,15 @@ router.get('/stock', requireAuth, async (req, res) => {
     // real warehouse finds no rows, and the reply says no warehouse was chosen.
     const wh = /^[A-Za-z0-9_-]{1,40}$/.test(String(req.query.warehouse || '')) ? String(req.query.warehouse) : '';
     // The same filter, for each query below that reads ims_inventory as "i".
-    const whI = wh ? ' AND i.warehouse = ?' : '';
+    // And one brand (Bunai, Aaheli, Mulmul, other), by the SKU's prefix.
+    const brand = brands.pick(req.query.brand);
+    const whI = (wh ? ' AND i.warehouse = ?' : '') + (brand ? ' AND ' + brands.sql(brand, 'i.sku') : '');
     const whA = wh ? [wh] : [];
 
     const where = [];
     const args = [];
     if (wh) { where.push('i.warehouse = ?'); args.push(wh); }
+    if (brand) where.push(brands.sql(brand, 'i.sku'));
     if (q) { where.push('(i.sku LIKE ? OR s.description LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
     // The low threshold is skipped in reorder mode — reorder is its own filter,
     // applied after the sold figures are known.
@@ -101,7 +107,7 @@ router.get('/stock', requireAuth, async (req, res) => {
     // Five independent reads, issued together.
     // Started now and awaited at the end, so it runs while the rows are read
     // and their sales looked up, instead of after.
-    const periodP = periodFigures(soldDays, mtd, wh);
+    const periodP = periodFigures(soldDays, mtd, wh, brand);
 
     // Every query here is a round trip to a database in another region (about
     // a quarter of a second each), through a pool of two connections. So
@@ -152,6 +158,9 @@ router.get('/stock', requireAuth, async (req, res) => {
       // it is worked out with the same rule the Club sizes view uses.
       db.rows(`SELECT warehouse, sku, qty FROM ims_inventory WHERE qty > 0`),
     ]);
+
+    // The warehouse tabs and cards count only the chosen brand's stock.
+    if (brand) inStockAll = inStockAll.filter(r => brands.of(r.sku) === brand);
 
     const pickSync = (k) => {
       const r = syncPair.find(x => x.k === k);
@@ -250,6 +259,7 @@ router.get('/stock', requireAuth, async (req, res) => {
       totals, lastSync, lastOk, counts, soldDays, mtd, period,
       warehouses: allWh.map(w => ({ warehouse: w.warehouse, units: Number(w.units) || 0, skus: Number(w.skus) || 0 })),
       warehouse: known ? wh : '',
+      brand,
       groupBy: grouping || 'sku',
       truncated: scanCutShort || (reorder
         ? outRows.length === ROW_LIMIT

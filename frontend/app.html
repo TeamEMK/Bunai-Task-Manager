@@ -480,6 +480,13 @@
     <div id="stockMovement" style="margin-bottom:16px"></div>
 
     <div class="cp-filter-row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;align-items:center">
+      <select id="stockBrand" onchange="stockPickBrand()" title="Brand, by the SKU's prefix" style="font-weight:600">
+        <option value="">All brands</option>
+        <option value="bunai">Bunai</option>
+        <option value="aaheli">Aaheli</option>
+        <option value="mulmul">Mulmul</option>
+        <option value="other">Other SKUs</option>
+      </select>
       <input id="stockSearch" type="text" placeholder="Search SKU or product name…" oninput="stockDebounced()" style="min-width:240px;flex:1;max-width:360px"/>
       <select id="stockLow" onchange="loadStock()">
         <option value="">All stock</option>

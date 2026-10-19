@@ -611,6 +611,13 @@ function stockPickWh(key) {
   loadStockMovement();
 }
 
+// A brand narrows everything the warehouse does: cards, tabs, movement, table.
+function stockPickBrand() {
+  stockFade(true);
+  loadStock();
+  loadStockMovement();
+}
+
 function stockFade(on) {
   ['stockTiles', 'stockMovement', 'stockBody'].forEach(id => {
     const el = document.getElementById(id);
@@ -645,6 +652,8 @@ async function loadStock() {
     if (groupBy && groupBy !== 'sku') params.set('groupBy', groupBy);
     const wh = (document.getElementById('stockWarehouse') || {}).value || '';
     if (wh) params.set('warehouse', wh);
+    const brand = (document.getElementById('stockBrand') || {}).value || '';
+    if (brand) params.set('brand', brand);
 
     const ticket = ++_stockSeq;
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
@@ -10967,8 +10976,12 @@ async function loadStockMovement() {
   // section vanishing for the second the request takes.
   let d;
   const wh = (document.getElementById('stockWarehouse') || {}).value || '';
+  const brand = (document.getElementById('stockBrand') || {}).value || '';
   const ticket = ++_stockMoveSeq;
-  try { d = await api('/api/stock/movement?days=30&limit=12' + (wh ? '&warehouse=' + encodeURIComponent(wh) : '')); } catch (_) { return; }
+  try {
+    d = await api('/api/stock/movement?days=30&limit=12' + (wh ? '&warehouse=' + encodeURIComponent(wh) : '')
+      + (brand ? '&brand=' + encodeURIComponent(brand) : ''));
+  } catch (_) { return; }
   if (ticket !== _stockMoveSeq) return;
   host.innerHTML = '';
   host.style.opacity = '';
