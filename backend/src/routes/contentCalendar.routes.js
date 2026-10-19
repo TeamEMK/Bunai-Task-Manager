@@ -28,6 +28,11 @@ const page = requirePage('contentcal');
 const isYm = (v) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(v || ''));
 const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 const isKey = (v) => /^[a-z0-9-]{1,60}$/.test(String(v || ''));
+
+// One calendar per brand. Anything else is Bunai's, which is what every
+// calendar was before there were three.
+const BRANDS = ['bunai', 'aaheli', 'mulmul'];
+const brandOf = (v) => (BRANDS.includes(String(v || '')) ? String(v) : 'bunai');
 const todayIst = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
 
 // Every date of a month, "2026-11" -> ["2026-11-01", ... "2026-11-30"].
@@ -45,11 +50,12 @@ async function whoAmI(req) {
 }
 
 router.get('/content-calendar', requireAuth, page, asyncRoute(async (req, res) => {
-  const months = (await db.rows('SELECT ym FROM content_calendar_months ORDER BY ym')).map(r => r.ym);
+  const brand = brandOf(req.query.brand);
+  const months = (await db.rows('SELECT ym FROM content_calendar_months WHERE brand = ? ORDER BY ym', [brand])).map(r => r.ym);
   const channels = await db.rows('SELECT ch_key AS `key`, label FROM content_calendar_channels ORDER BY position, ch_key');
   const today = todayIst();
   const trackFrom = config.sheets.contentCalendar.trackFrom;
-  if (!months.length) return res.json({ today, trackFrom, months, month: null, channels, days: [] });
+  if (!months.length) return res.json({ brand, today, trackFrom, months, month: null, channels, days: [] });
 
   // The month asked for, else this month if it exists, else the latest.
   const want = String(req.query.month || '');
@@ -59,10 +65,10 @@ router.get('/content-calendar', requireAuth, page, asyncRoute(async (req, res) =
 
   const [items, ticks] = await Promise.all([
     db.rows(`SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, text
-               FROM content_calendar_items WHERE day_date BETWEEN ? AND ?`, range),
+               FROM content_calendar_items WHERE brand = ? AND day_date BETWEEN ? AND ?`, [brand, ...range]),
     db.rows(`SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, item_text, done_by_name,
                     DATE_FORMAT(done_at + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
-               FROM content_calendar_done WHERE day_date BETWEEN ? AND ?`, range),
+               FROM content_calendar_done WHERE brand = ? AND day_date BETWEEN ? AND ?`, [brand, ...range]),
   ]);
   const tick = {};
   ticks.forEach(t => { tick[t.d + '|' + t.channel] = t; });
@@ -75,7 +81,7 @@ router.get('/content-calendar', requireAuth, page, asyncRoute(async (req, res) =
     });
   });
   res.json({
-    today, trackFrom, months, month, channels,
+    brand, today, trackFrom, months, month, channels,
     days: dates.map(d => ({ date: d, day: WEEKDAYS[weekday(d)], items: byDay[d] || [] })),
   });
 }));
@@ -83,24 +89,25 @@ router.get('/content-calendar', requireAuth, page, asyncRoute(async (req, res) =
 // Write one cell. Blank text clears it.
 router.put('/content-calendar/item', requireAuth, page, asyncRoute(async (req, res) => {
   const b = req.body || {};
+  const brand = brandOf(b.brand);
   if (!isYmd(b.date)) throw httpError(400, 'Bad date.');
   if (!isKey(b.channel)) throw httpError(400, 'Bad channel.');
   if (!(await db.one('SELECT 1 n FROM content_calendar_channels WHERE ch_key = ?', [b.channel]))) {
     throw httpError(400, 'Unknown channel.');
   }
-  if (!(await db.one('SELECT 1 n FROM content_calendar_months WHERE ym = ?', [b.date.slice(0, 7)]))) {
+  if (!(await db.one('SELECT 1 n FROM content_calendar_months WHERE brand = ? AND ym = ?', [brand, b.date.slice(0, 7)]))) {
     throw httpError(400, 'That month has not been made yet. Use + New month first.');
   }
   const text = String(b.text || '').replace(/\r\n/g, '\n').trim().slice(0, 2000);
   if (!text) {
-    await db.query('DELETE FROM content_calendar_items WHERE day_date = ? AND channel = ?', [b.date, b.channel]);
+    await db.query('DELETE FROM content_calendar_items WHERE brand = ? AND day_date = ? AND channel = ?', [brand, b.date, b.channel]);
   } else {
     await db.query(
-      `INSERT INTO content_calendar_items (day_date, channel, text, updated_by_name, updated_at)
-       VALUES (?,?,?,?, UTC_TIMESTAMP())
+      `INSERT INTO content_calendar_items (brand, day_date, channel, text, updated_by_name, updated_at)
+       VALUES (?,?,?,?,?, UTC_TIMESTAMP())
        ON DUPLICATE KEY UPDATE text = VALUES(text), updated_by_name = VALUES(updated_by_name),
                                updated_at = UTC_TIMESTAMP()`,
-      [b.date, b.channel, text, await whoAmI(req)]);
+      [brand, b.date, b.channel, text, await whoAmI(req)]);
   }
   res.json({ success: true });
 }));
@@ -110,8 +117,9 @@ router.put('/content-calendar/item', requireAuth, page, asyncRoute(async (req, r
 // that exact line, so applying it twice does not write it twice.
 router.put('/content-calendar/bulk', requireAuth, page, asyncRoute(async (req, res) => {
   const b = req.body || {};
+  const brand = brandOf(b.brand);
   if (!isYm(b.month)) throw httpError(400, 'Bad month.');
-  if (!(await db.one('SELECT 1 n FROM content_calendar_months WHERE ym = ?', [b.month]))) {
+  if (!(await db.one('SELECT 1 n FROM content_calendar_months WHERE brand = ? AND ym = ?', [brand, b.month]))) {
     throw httpError(400, 'That month has not been made yet.');
   }
   const action = String(b.action || '');
@@ -127,13 +135,13 @@ router.put('/content-calendar/bulk', requireAuth, page, asyncRoute(async (req, r
 
   let changed = 0;
   if (action === 'clear') {
-    const [r] = await db.query('DELETE FROM content_calendar_items WHERE day_date IN (?) AND channel IN (?)', [dates, channels]);
+    const [r] = await db.query('DELETE FROM content_calendar_items WHERE brand = ? AND day_date IN (?) AND channel IN (?)', [brand, dates, channels]);
     changed = r.affectedRows;
   } else {
     const name = await whoAmI(req);
     const have = await db.rows(
       `SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, text FROM content_calendar_items
-        WHERE day_date IN (?) AND channel IN (?)`, [dates, channels]);
+        WHERE brand = ? AND day_date IN (?) AND channel IN (?)`, [brand, dates, channels]);
     const cur = Object.fromEntries(have.map(h => [h.d + '|' + h.channel, h.text]));
     const rows = [];
     for (const d of dates) for (const c of channels) {
@@ -144,13 +152,13 @@ router.put('/content-calendar/bulk', requireAuth, page, asyncRoute(async (req, r
         next = (old + '\n' + text).slice(0, 2000);
       }
       if (next === old) continue;
-      rows.push([d, c, next, name]);
+      rows.push([brand, d, c, next, name]);
     }
     for (let i = 0; i < rows.length; i += 300) {
       const part = rows.slice(i, i + 300);
       await db.query(
-        `INSERT INTO content_calendar_items (day_date, channel, text, updated_by_name, updated_at)
-         VALUES ${part.map(() => '(?,?,?,?, UTC_TIMESTAMP())').join(',')}
+        `INSERT INTO content_calendar_items (brand, day_date, channel, text, updated_by_name, updated_at)
+         VALUES ${part.map(() => '(?,?,?,?,?, UTC_TIMESTAMP())').join(',')}
          ON DUPLICATE KEY UPDATE text = VALUES(text), updated_by_name = VALUES(updated_by_name),
                                  updated_at = UTC_TIMESTAMP()`, part.flat());
     }
@@ -163,9 +171,10 @@ router.put('/content-calendar/bulk', requireAuth, page, asyncRoute(async (req, r
 // channels named.
 router.post('/content-calendar/months', requireAuth, page, asyncRoute(async (req, res) => {
   const b = req.body || {};
+  const brand = brandOf(b.brand);
   if (!isYm(b.month)) throw httpError(400, 'Choose a month.');
   if (b.copyFrom && !isYm(b.copyFrom)) throw httpError(400, 'Bad month to copy from.');
-  if (await db.one('SELECT 1 n FROM content_calendar_months WHERE ym = ?', [b.month])) {
+  if (await db.one('SELECT 1 n FROM content_calendar_months WHERE brand = ? AND ym = ?', [brand, b.month])) {
     throw httpError(409, 'That month already exists.');
   }
   const name = await whoAmI(req);
@@ -177,7 +186,7 @@ router.post('/content-calendar/months', requireAuth, page, asyncRoute(async (req
     const src = datesOf(b.copyFrom);
     const rows = want.length ? await db.rows(
       `SELECT DATE_FORMAT(day_date, '%Y-%m-%d') d, channel, text FROM content_calendar_items
-        WHERE day_date BETWEEN ? AND ? AND channel IN (?)`, [src[0], src[src.length - 1], want]) : [];
+        WHERE brand = ? AND day_date BETWEEN ? AND ? AND channel IN (?)`, [brand, src[0], src[src.length - 1], want]) : [];
     const plan = {};
     rows.forEach(r => { (plan[r.d] = plan[r.d] || []).push(r); });
     // The n-th of each weekday in the source month. A 5th Monday with no 5th
@@ -187,17 +196,17 @@ router.post('/content-calendar/months', requireAuth, page, asyncRoute(async (req
     for (const d of datesOf(b.month)) {
       const list = nth[weekday(d)] || [];
       const from = list[Math.min(Math.ceil(Number(d.slice(8)) / 7) - 1, list.length - 1)];
-      (plan[from] || []).forEach(r => out.push([d, r.channel, r.text, name]));
+      (plan[from] || []).forEach(r => out.push([brand, d, r.channel, r.text, name]));
     }
   }
 
-  await db.query('INSERT INTO content_calendar_months (ym, created_by_name, created_at) VALUES (?,?, UTC_TIMESTAMP())',
-    [b.month, name]);
+  await db.query('INSERT INTO content_calendar_months (brand, ym, created_by_name, created_at) VALUES (?,?,?, UTC_TIMESTAMP())',
+    [brand, b.month, name]);
   for (let i = 0; i < out.length; i += 300) {
     const part = out.slice(i, i + 300);
     await db.query(
-      `INSERT INTO content_calendar_items (day_date, channel, text, updated_by_name, updated_at)
-       VALUES ${part.map(() => '(?,?,?,?, UTC_TIMESTAMP())').join(',')}`, part.flat());
+      `INSERT INTO content_calendar_items (brand, day_date, channel, text, updated_by_name, updated_at)
+       VALUES ${part.map(() => '(?,?,?,?,?, UTC_TIMESTAMP())').join(',')}`, part.flat());
   }
   res.json({ month: b.month, copied: out.length });
 }));
@@ -205,11 +214,12 @@ router.post('/content-calendar/months', requireAuth, page, asyncRoute(async (req
 // Remove a month, with everything planned and ticked in it.
 router.delete('/content-calendar/months/:ym', requireAuth, page, asyncRoute(async (req, res) => {
   const ym = String(req.params.ym);
+  const brand = brandOf(req.query.brand);
   if (!isYm(ym)) throw httpError(400, 'Bad month.');
   const d = datesOf(ym);
-  await db.query('DELETE FROM content_calendar_items WHERE day_date BETWEEN ? AND ?', [d[0], d[d.length - 1]]);
-  await db.query('DELETE FROM content_calendar_done WHERE day_date BETWEEN ? AND ?', [d[0], d[d.length - 1]]);
-  await db.query('DELETE FROM content_calendar_months WHERE ym = ?', [ym]);
+  await db.query('DELETE FROM content_calendar_items WHERE brand = ? AND day_date BETWEEN ? AND ?', [brand, d[0], d[d.length - 1]]);
+  await db.query('DELETE FROM content_calendar_done WHERE brand = ? AND day_date BETWEEN ? AND ?', [brand, d[0], d[d.length - 1]]);
+  await db.query('DELETE FROM content_calendar_months WHERE brand = ? AND ym = ?', [brand, ym]);
   res.json({ success: true });
 }));
 
@@ -217,17 +227,18 @@ router.delete('/content-calendar/months/:ym', requireAuth, page, asyncRoute(asyn
 // ticked against.
 router.post('/content-calendar/done', requireAuth, page, asyncRoute(async (req, res) => {
   const b = req.body || {};
+  const brand = brandOf(b.brand);
   if (!isYmd(b.date)) throw httpError(400, 'Bad date.');
   if (!isKey(b.channel)) throw httpError(400, 'Bad channel.');
   if (b.done) {
     await db.query(
-      `INSERT INTO content_calendar_done (day_date, channel, item_text, done_by, done_by_name, done_at)
-       VALUES (?,?,?,?,?, UTC_TIMESTAMP())
+      `INSERT INTO content_calendar_done (brand, day_date, channel, item_text, done_by, done_by_name, done_at)
+       VALUES (?,?,?,?,?,?, UTC_TIMESTAMP())
        ON DUPLICATE KEY UPDATE item_text=VALUES(item_text), done_by=VALUES(done_by),
                                done_by_name=VALUES(done_by_name), done_at=UTC_TIMESTAMP()`,
-      [b.date, b.channel, String(b.text || '').slice(0, 2000), req.session.userId, await whoAmI(req)]);
+      [brand, b.date, b.channel, String(b.text || '').slice(0, 2000), req.session.userId, await whoAmI(req)]);
   } else {
-    await db.query('DELETE FROM content_calendar_done WHERE day_date = ? AND channel = ?', [b.date, b.channel]);
+    await db.query('DELETE FROM content_calendar_done WHERE brand = ? AND day_date = ? AND channel = ?', [brand, b.date, b.channel]);
   }
   res.json({ success: true });
 }));

@@ -11320,6 +11320,10 @@ async function mcDelete(id) {
 // row is shaded, ticked items are green and past unticked ones red.
 // ══════════════════════════════════════════════════════
 let CC = null, _ccMonth = '', _ccScrolled = '', _ccCell = null;
+// One calendar per brand, picked from the tabs; the month from the dropdown.
+const CC_BRANDS = [['bunai', 'Bunai'], ['aaheli', 'Aaheli'], ['mulmul', 'Mulmul']];
+let _ccBrand = 'bunai';
+const ccBrandName = () => (CC_BRANDS.find(b => b[0] === _ccBrand) || CC_BRANDS[0])[1];
 const CC_NO_COPY = ['influencer', 'special-insta-creative'];   // change every month
 
 const ccMonthName = (ym) => new Date(ym + '-01T00:00:00Z').toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -11334,23 +11338,34 @@ async function loadContentCal() {
   if (!grid) return;
   const note = document.getElementById('ccNote');
   note.textContent = 'Loading…';
-  const d = await api('/api/content-calendar' + (_ccMonth ? '?month=' + encodeURIComponent(_ccMonth) : ''));
+  document.getElementById('ccTabs').innerHTML = CC_BRANDS.map(([k, label]) =>
+    '<div class="lv-tab' + (k === _ccBrand ? ' active' : '') + '" onclick="ccPickBrand(\'' + k + '\')">' + label + '</div>').join('');
+  const brand = _ccBrand;
+  const d = await api('/api/content-calendar?brand=' + brand + (_ccMonth ? '&month=' + encodeURIComponent(_ccMonth) : ''));
+  if (brand !== _ccBrand) return;               // another brand was picked meanwhile
   if (d.error) { note.textContent = ''; grid.innerHTML = '<tr><td class="empty">' + dtEscape(d.error) + '</td></tr>'; return; }
   CC = d; _ccMonth = d.month || '';
-  document.getElementById('ccTabs').innerHTML = d.months.map(m =>
-    '<div class="lv-tab' + (m === d.month ? ' active' : '') + '" onclick="ccPick(\'' + m + '\')">' + dtEscape(ccMonthName(m)) + '</div>').join('');
+  const sel = document.getElementById('ccMonthSel');
+  sel.innerHTML = d.months.slice().reverse().map(m =>
+    '<option value="' + m + '"' + (m === d.month ? ' selected' : '') + '>' + dtEscape(ccMonthName(m)) + '</option>').join('');
+  sel.style.display = d.months.length ? '' : 'none';
   document.getElementById('ccDeleteMonth').style.display = d.month ? '' : 'none';
   document.getElementById('ccBulkBtn').style.display = d.month ? '' : 'none';
   if (!d.month) {
     note.textContent = '';
     document.getElementById('ccToday').innerHTML = '';
-    grid.innerHTML = '<tr><td class="empty">No months yet — use <b>+ New month</b>.</td></tr>';
+    grid.innerHTML = '<tr><td class="empty">No months yet for ' + ccBrandName() + ' — use <b>+ New month</b>.</td></tr>';
     return;
   }
   ccDraw();
 }
 
 function ccPick(m) { _ccMonth = m; loadContentCal(); }
+function ccPickBrand(b) {
+  if (b === _ccBrand) return;
+  _ccBrand = b; _ccMonth = ''; _ccScrolled = '';
+  loadContentCal();
+}
 
 function ccDraw() {
   const d = CC; if (!d || !d.month) return;
@@ -11363,7 +11378,7 @@ function ccDraw() {
   const missed = due.filter(i => !i.done && i.date < d.today).length;
   document.getElementById('ccNote').textContent =
     (due.length ? doneN + ' of ' + due.length + ' items done so far' + (missed ? ' · ' + missed + ' missed' : '') + ' · ' : '')
-    + all.length + ' planned in ' + ccMonthName(d.month);
+    + all.length + ' planned in ' + ccBrandName() + ', ' + ccMonthName(d.month);
 
   // Today's plan, as a checklist.
   const t = d.days.find(x => x.date === d.today);
@@ -11413,7 +11428,7 @@ function ccDraw() {
 async function ccTick(date, channel, done) {
   const day = CC && CC.days.find(x => x.date === date);
   const item = day && day.items.find(i => i.channel === channel);
-  const r = await api('/api/content-calendar/done', 'POST', { date, channel, done, text: item ? item.text : '' });
+  const r = await api('/api/content-calendar/done', 'POST', { brand: _ccBrand, date, channel, done, text: item ? item.text : '' });
   if (r.error) showToast('⚠️ ' + r.error, 'error');
   loadContentCal();
 }
@@ -11439,7 +11454,7 @@ async function ccCellSave(btn) {
   const done = hrmBusy(btn, 'Saving…');
   try {
     const r = await api('/api/content-calendar/item', 'PUT',
-      { ..._ccCell, text: document.getElementById('ccCellText').value });
+      { ..._ccCell, brand: _ccBrand, text: document.getElementById('ccCellText').value });
     if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
     closeModal('ccCellModal');
     // Shown at once; the reload that follows takes a second or two.
@@ -11461,7 +11476,7 @@ const CC_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function ccBulkOpen() {
   if (!CC || !CC.month) return;
   _ccBulkDates = new Set();
-  document.getElementById('ccBulkTitle').textContent = 'Bulk edit — ' + ccMonthName(CC.month);
+  document.getElementById('ccBulkTitle').textContent = 'Bulk edit — ' + ccBrandName() + ', ' + ccMonthName(CC.month);
   document.getElementById('ccBulkChannels').innerHTML = CC.channels.map(c =>
     '<label style="display:flex;gap:6px;align-items:center;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;margin:0;cursor:pointer">'
     + '<input type="checkbox" class="cc-bulk-ch" value="' + c.key + '" style="width:15px;height:15px;accent-color:var(--brand-deep)"/>' + dtEscape(c.label) + '</label>').join('');
@@ -11527,7 +11542,7 @@ async function ccBulkApply(btn) {
   if (action === 'clear' && !confirm('Clear ' + channels.length + ' channel' + (channels.length === 1 ? '' : 's') + ' on ' + dates.length + ' date' + (dates.length === 1 ? '' : 's') + '?')) return;
   const done = hrmBusy(btn, 'Applying…');
   try {
-    const r = await api('/api/content-calendar/bulk', 'PUT', { month: CC.month, action, channels, dates, text });
+    const r = await api('/api/content-calendar/bulk', 'PUT', { brand: _ccBrand, month: CC.month, action, channels, dates, text });
     if (r.error) return fail(r.error);
     closeModal('ccBulkModal');
     showToast('✅ ' + r.changed + ' cell' + (r.changed === 1 ? '' : 's') + ' updated');
@@ -11554,6 +11569,7 @@ function ccNewMonth() {
     + '<input type="checkbox" class="cc-copy-ch" value="' + c.key + '" ' + (CC_NO_COPY.includes(c.key) ? '' : 'checked ')
     + 'style="width:15px;height:15px;accent-color:var(--brand-deep)"/>' + dtEscape(c.label) + '</label>').join('');
   ccMonthFromChanged();
+  document.querySelector('#ccMonthModal h3').textContent = 'New month — ' + ccBrandName();
   document.getElementById('ccMonthErr').style.display = 'none';
   document.getElementById('ccMonthModal').classList.add('open');
 }
@@ -11571,10 +11587,10 @@ async function ccMonthCreate(btn) {
   if (!month) { err.textContent = 'Choose a month.'; err.style.display = 'block'; return; }
   const done = hrmBusy(btn, 'Creating…');
   try {
-    const r = await api('/api/content-calendar/months', 'POST', { month, copyFrom: copyFrom || null, channels });
+    const r = await api('/api/content-calendar/months', 'POST', { brand: _ccBrand, month, copyFrom: copyFrom || null, channels });
     if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
     closeModal('ccMonthModal');
-    showToast('✅ ' + ccMonthName(month) + ' created' + (copyFrom ? ' — ' + r.copied + ' items copied' : ''));
+    showToast('✅ ' + ccBrandName() + ' ' + ccMonthName(month) + ' created' + (copyFrom ? ' — ' + r.copied + ' items copied' : ''));
     _ccMonth = month;
     loadContentCal();
   } finally { done(); }
@@ -11582,9 +11598,9 @@ async function ccMonthCreate(btn) {
 
 async function ccDeleteMonth() {
   if (!CC || !CC.month) return;
-  const name = ccMonthName(CC.month);
+  const name = ccBrandName() + ' ' + ccMonthName(CC.month);
   if (!confirm('Delete ' + name + '? Everything planned and ticked in it goes. This cannot be undone.')) return;
-  const r = await api('/api/content-calendar/months/' + CC.month, 'DELETE');
+  const r = await api('/api/content-calendar/months/' + CC.month + '?brand=' + _ccBrand, 'DELETE');
   if (r.error) return showToast('⚠️ ' + r.error, 'error');
   showToast('✅ ' + name + ' deleted');
   _ccMonth = '';

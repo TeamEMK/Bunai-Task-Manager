@@ -1003,31 +1003,44 @@ const TABLES = [
     label VARCHAR(80) NOT NULL,
     position INT NOT NULL DEFAULT 0
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  //
+  // Each brand - Bunai, Aaheli, Mulmul - has a calendar of its own; the
+  // channels are shared. brand is part of every key. The tables were first
+  // made without it, so on a database that has them already the column is
+  // added by COLUMNS below (every old row is Bunai's) and the keys were
+  // re-made once by hand on 19 Oct 2026:
+  //   ALTER TABLE content_calendar_months DROP PRIMARY KEY, ADD PRIMARY KEY (brand, ym);
+  //   ALTER TABLE content_calendar_items  DROP PRIMARY KEY, ADD PRIMARY KEY (brand, day_date, channel);
+  //   ALTER TABLE content_calendar_done   DROP PRIMARY KEY, ADD PRIMARY KEY (brand, day_date, channel);
   ['content_calendar_months', `CREATE TABLE content_calendar_months (
-    ym CHAR(7) NOT NULL PRIMARY KEY,
+    brand VARCHAR(20) NOT NULL DEFAULT 'bunai',
+    ym CHAR(7) NOT NULL,
     created_by_name VARCHAR(120) NOT NULL DEFAULT '',
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (brand, ym)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
   ['content_calendar_items', `CREATE TABLE content_calendar_items (
+    brand VARCHAR(20) NOT NULL DEFAULT 'bunai',
     day_date DATE NOT NULL,
     channel VARCHAR(60) NOT NULL,
     text VARCHAR(2000) NOT NULL,
     updated_by_name VARCHAR(120) NOT NULL DEFAULT '',
     updated_at DATETIME NOT NULL,
-    PRIMARY KEY (day_date, channel)
+    PRIMARY KEY (brand, day_date, channel)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
   // Which content-calendar items went out: one row per day and channel ticked.
   // The plan itself stays in the team's Google Sheet; the text ticked against
   // is kept so a plan reworded afterwards can be spotted.
   ['content_calendar_done', `CREATE TABLE content_calendar_done (
+    brand VARCHAR(20) NOT NULL DEFAULT 'bunai',
     day_date DATE NOT NULL,
     channel VARCHAR(60) NOT NULL,
     item_text TEXT NULL,
     done_by INT NULL,
     done_by_name VARCHAR(120) NOT NULL DEFAULT '',
     done_at DATETIME NOT NULL,
-    PRIMARY KEY (day_date, channel)
+    PRIMARY KEY (brand, day_date, channel)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
   ['sfy_customers', `CREATE TABLE sfy_customers (
@@ -1177,6 +1190,10 @@ const COLUMNS = [
   ['b2b_orders', 'state', `VARCHAR(120) DEFAULT '' AFTER city`],
   ['b2b_orders', 'pincode', `VARCHAR(12) DEFAULT '' AFTER state`],
   // The same details on a prospect, so they are written down before the first order.
+  // The content calendar became one per brand; everything before was Bunai's.
+  ['content_calendar_months', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],
+  ['content_calendar_items', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],
+  ['content_calendar_done', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],
   ['b2b_parties', 'owner_name', `VARCHAR(255) NOT NULL DEFAULT '' AFTER contact_person`],
   ['b2b_parties', 'whatsapp', `VARCHAR(50) NOT NULL DEFAULT '' AFTER phone`],
   ['b2b_parties', 'address', `VARCHAR(500) NOT NULL DEFAULT '' AFTER whatsapp`],
