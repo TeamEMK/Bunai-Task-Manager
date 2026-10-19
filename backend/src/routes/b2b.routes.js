@@ -366,14 +366,20 @@ function partyBody(req) {
   return {
     party_name: partyTxt(b.party_name, 255),
     contact_person: partyTxt(b.contact_person, 255),
+    owner_name: partyTxt(b.owner_name, 255),
     email: partyTxt(b.email, 255),
     phone: partyTxt(b.phone, 50),
-    city: partyTxt(b.city, 160),
+    whatsapp: partyTxt(b.whatsapp, 50),
+    address: partyTxt(b.address, 500),
+    city: partyTxt(b.city, 120),
+    state: partyTxt(b.state, 120),
+    pincode: partyTxt(b.pincode, 12),
     notes: partyTxt(b.notes, 1000),
   };
 }
 
-const PARTY_COLS = ['party_name', 'contact_person', 'email', 'phone', 'city', 'notes'];
+const PARTY_COLS = ['party_name', 'contact_person', 'owner_name', 'email', 'phone', 'whatsapp',
+  'address', 'city', 'state', 'pincode', 'notes'];
 
 router.get('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const q = partyTxt(req.query.q, 120);
@@ -404,8 +410,8 @@ router.get('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, res
 
   // Prospects are the ones the order book has never heard of.
   const prospects = await db.rows(
-    `SELECT p.id party_id, p.party_name, p.contact_person, p.email, p.phone,
-            p.city, p.notes, p.created_at
+    `SELECT p.id party_id, p.party_name, p.contact_person, p.owner_name, p.email, p.phone,
+            p.whatsapp, p.address, p.city, p.state, p.pincode, p.notes, p.created_at
        FROM b2b_parties p
       WHERE NOT EXISTS (SELECT 1 FROM b2b_orders o WHERE o.party_name = p.party_name)
         ${q ? 'AND (p.party_name LIKE ? OR p.contact_person LIKE ? OR p.city LIKE ?)' : ''}

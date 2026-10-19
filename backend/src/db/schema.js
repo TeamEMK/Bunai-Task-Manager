@@ -1176,6 +1176,12 @@ const COLUMNS = [
   ['b2b_orders', 'address', `VARCHAR(500) DEFAULT '' AFTER whatsapp`],
   ['b2b_orders', 'state', `VARCHAR(120) DEFAULT '' AFTER city`],
   ['b2b_orders', 'pincode', `VARCHAR(12) DEFAULT '' AFTER state`],
+  // The same details on a prospect, so they are written down before the first order.
+  ['b2b_parties', 'owner_name', `VARCHAR(255) NOT NULL DEFAULT '' AFTER contact_person`],
+  ['b2b_parties', 'whatsapp', `VARCHAR(50) NOT NULL DEFAULT '' AFTER phone`],
+  ['b2b_parties', 'address', `VARCHAR(500) NOT NULL DEFAULT '' AFTER whatsapp`],
+  ['b2b_parties', 'state', `VARCHAR(120) NOT NULL DEFAULT '' AFTER city`],
+  ['b2b_parties', 'pincode', `VARCHAR(12) NOT NULL DEFAULT '' AFTER state`],
   // uni_returns pehli deploy par in teeno ke bina bani thi. Yeh fields
   // documentation mein nahi hain — pehle asli return ke payload mein mile.
   // CREATE TABLE IF NOT EXISTS maujooda table par kuch nahi karta, isliye

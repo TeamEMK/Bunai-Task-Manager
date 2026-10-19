@@ -12068,17 +12068,21 @@ function b2bRenderParties() {
   }
 
   note.textContent = 'Parties being talked to that have not ordered yet. They move to Customers on their first order.';
-  head.innerHTML = '<tr><th>Party</th><th>Contact</th><th>Email</th><th>City</th>'
+  head.innerHTML = '<tr><th>Party</th><th>Owner / contact</th><th>Email</th><th>Address</th>'
     + '<th>Notes</th><th>Added</th><th></th></tr>';
   const rows = _b2bParties.prospects || [];
   body.innerHTML = rows.length ? rows.map(r =>
     '<tr>'
     + '<td style="font-weight:600">' + dtEscape(r.party_name) + '</td>'
-    + '<td>' + dtEscape(r.contact_person || '—')
+    + '<td>' + dtEscape(r.owner_name || r.contact_person || '—')
+    + (r.owner_name && r.contact_person ? '<div style="font-size:11.5px;color:var(--muted-foreground)">Contact: ' + dtEscape(r.contact_person) + '</div>' : '')
+    + (r.whatsapp ? '<div style="font-size:11.5px;color:var(--muted-foreground)">WhatsApp ' + dtEscape(r.whatsapp) + '</div>' : '')
     + (r.phone ? '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phone) + '</div>' : '')
     + '</td>'
     + '<td>' + dtEscape(r.email || '—') + '</td>'
-    + '<td>' + dtEscape(r.city || '—') + '</td>'
+    + '<td>' + dtEscape([r.city, r.state, r.pincode].filter(Boolean).join(', ') || '—')
+    + (r.address ? '<div style="font-size:11.5px;color:var(--muted-foreground);max-width:220px">' + dtEscape(r.address) + '</div>' : '')
+    + '</td>'
     + '<td style="max-width:280px">' + dtEscape(r.notes || '—') + '</td>'
     + '<td style="white-space:nowrap">' + when(r.created_at) + '</td>'
     + '<td style="white-space:nowrap">'
@@ -12096,9 +12100,14 @@ function b2bPartyOpen(id) {
   set('b2bPartyEditId', r ? r.party_id : '');
   set('b2bPartyName', r ? r.party_name : '');
   set('b2bPartyContact', r ? r.contact_person : '');
+  set('b2bPartyOwner', r ? r.owner_name : '');
   set('b2bPartyEmail', r ? r.email : '');
   set('b2bPartyPhone', r ? r.phone : '');
+  set('b2bPartyWhatsapp', r ? r.whatsapp : '');
+  set('b2bPartyAddress', r ? r.address : '');
   set('b2bPartyCity', r ? r.city : '');
+  set('b2bPartyState', r ? r.state : '');
+  set('b2bPartyPincode', r ? r.pincode : '');
   set('b2bPartyNotes', r ? r.notes : '');
   document.getElementById('b2bPartyModal').classList.add('open');
 }
@@ -12114,9 +12123,10 @@ async function saveB2BParty(btn) {
     return;
   }
   const payload = {
-    party_name: val('b2bPartyName'), contact_person: val('b2bPartyContact'),
-    email: val('b2bPartyEmail'), phone: val('b2bPartyPhone'),
-    city: val('b2bPartyCity'), notes: val('b2bPartyNotes'),
+    party_name: val('b2bPartyName'), contact_person: val('b2bPartyContact'), owner_name: val('b2bPartyOwner'),
+    email: val('b2bPartyEmail'), phone: val('b2bPartyPhone'), whatsapp: val('b2bPartyWhatsapp'),
+    address: val('b2bPartyAddress'), city: val('b2bPartyCity'), state: val('b2bPartyState'),
+    pincode: val('b2bPartyPincode'), notes: val('b2bPartyNotes'),
   };
   btn.disabled = true;
   const was = btn.textContent;
