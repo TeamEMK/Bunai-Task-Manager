@@ -12344,10 +12344,12 @@ async function loadScot() {
   const q = (document.getElementById('scotSearch').value || '').trim();
   const status = document.getElementById('scotFilter').value;
   const ticket = ++_scotLoadSeq;
+  const fm = status === 'never' ? 'never' : 'customers';
 
   let d;
   try {
-    d = await api('/api/scot?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
+    d = await api('/api/scot?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status)
+      + '&f=' + encodeURIComponent(JSON.stringify(SCOT_F[fm])) + '&sort=' + encodeURIComponent(SCOT_SORT[fm]));
     if (ticket !== _scotLoadSeq) return;     // a newer load is on its way
   } catch (e) {
     if (ticket !== _scotLoadSeq) return;
@@ -12385,15 +12387,10 @@ async function loadScot() {
   }
 
   window._scotRows = d.rows;
-  // The two lists have different columns; the head is swapped with the body.
+  // The two lists have different columns, each with its own filter button.
   const head = document.getElementById('scotHead');
-  if (head) {
-    if (!head.dataset.customers) head.dataset.customers = head.innerHTML;
-    head.innerHTML = d.mode === 'never'
-      ? '<tr><th>Customer</th><th>Email</th><th>City</th><th>Country</th><th>Signed up</th>'
-        + '<th>Marketing</th><th>WhatsApp</th><th>Email</th><th>Calling</th></tr>'
-      : head.dataset.customers;
-  }
+  if (head) head.innerHTML = scotHeadHtml(d.mode === 'never' ? 'never' : 'customers');
+  scotDrawFilterNote(d.mode === 'never' ? 'never' : 'customers');
   if (d.mode === 'never') return scotDrawNever(d, body, { n, country, when });
   const note = document.getElementById('scotNote');
   if (note) {
@@ -12646,6 +12643,203 @@ async function scDelete(id) {
 
 function scotPick(key) {
   document.getElementById('scotFilter').value = key;
+  scotFilterClose();
+  loadScot();
+}
+
+// ══════════════════════════════════════════════════════
+// SCOT column filters - a ▾ on every column, as in Google Sheets.
+// The filters are applied by the server, so they cover every customer, not
+// just the 1,500 on the page. Each list (customers, never ordered) keeps its
+// own filters and sort.
+// ══════════════════════════════════════════════════════
+let SCOT_F = { customers: {}, never: {} }, SCOT_SORT = { customers: '', never: '' };
+// [key, label, type, right-aligned]
+const SCOT_COLS = {
+  customers: [
+    ['name', 'Customer', 'text'], ['city', 'City', 'list'], ['country', 'Country', 'list'], ['status', 'Status', 'status'],
+    ['orders', 'Orders', 'range', 1], ['units', 'Units', 'range', 1], ['value', 'Lifetime', 'range', 1],
+    ['last_order', 'Last order', 'date'], ['call_on', 'Call on', 'date'],
+    ['whatsapp', 'WhatsApp', 'has'], ['email', 'Email', 'has'], ['call', 'Calling', 'has'],
+  ],
+  never: [
+    ['name', 'Customer', 'text'], ['emailtext', 'Email', 'text'], ['city', 'City', 'list'], ['country', 'Country', 'list'],
+    ['signed_up', 'Signed up', 'date'], ['mkt', 'Marketing', 'mkt'],
+    ['whatsapp', 'WhatsApp', 'has'], ['email', 'Email', 'has'], ['call', 'Calling', 'has'],
+  ],
+};
+const SCOT_SORTABLE = ['text', 'list', 'range', 'date'];
+const scotMode = () => (document.getElementById('scotFilter').value === 'never' ? 'never' : 'customers');
+const scotColOn = (mode, key) => key === 'mkt'
+  ? !!(SCOT_F[mode].mkt_email || SCOT_F[mode].mkt_sms) : SCOT_F[mode][key] !== undefined;
+
+function scotHeadHtml(mode) {
+  const sort = SCOT_SORT[mode];
+  return '<tr>' + SCOT_COLS[mode].map(([key, label, type, right]) => {
+    const on = scotColOn(mode, key);
+    const arrow = sort === key ? ' ↑' : sort === '-' + key ? ' ↓' : '';
+    return '<th style="white-space:nowrap' + (right ? ';text-align:right' : '') + '">' + label + arrow
+      + ' <button type="button" onclick="scotFilterOpen(event,\'' + key + '\')" title="Filter / sort"'
+      + ' style="border:1px solid ' + (on ? 'var(--brand-deep)' : 'transparent') + ';background:' + (on ? 'var(--brand-deep)' : 'transparent')
+      + ';color:' + (on ? '#fff' : 'var(--muted-foreground)') + ';border-radius:5px;padding:0 4px;font-size:10px;cursor:pointer;line-height:16px">▾</button></th>';
+  }).join('') + '</tr>';
+}
+
+function scotDrawFilterNote(mode) {
+  const el = document.getElementById('scotFilterNote');
+  if (!el) return;
+  const n = SCOT_COLS[mode].filter(([k]) => scotColOn(mode, k)).length;
+  el.innerHTML = n || SCOT_SORT[mode]
+    ? '<b style="color:var(--brand-deep)">' + (n ? n + ' filter' + (n === 1 ? '' : 's') + ' on' : 'Sorted') + '</b> · '
+      + '<a href="#" onclick="scotClearFilters();return false" style="color:var(--brand-deep)">Clear all</a>'
+    : '';
+}
+
+function scotClearFilters() {
+  const mode = scotMode();
+  SCOT_F[mode] = {}; SCOT_SORT[mode] = '';
+  scotFilterClose();
+  loadScot();
+}
+
+let SCOT_POP = null;   // { mode, key, type, sel:Set }
+function scotFilterClose() {
+  const pop = document.getElementById('scotFilterPop');
+  if (pop) pop.style.display = 'none';
+  SCOT_POP = null;
+}
+document.addEventListener('mousedown', (e) => {
+  const pop = document.getElementById('scotFilterPop');
+  if (SCOT_POP && pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('#scotHead button'))) scotFilterClose();
+});
+
+function scotFilterOpen(ev, key) {
+  ev.stopPropagation();
+  const mode = scotMode();
+  const col = SCOT_COLS[mode].find(c => c[0] === key);
+  if (!col) return;
+  const [, label, type] = col;
+  const pop = document.getElementById('scotFilterPop');
+  if (SCOT_POP && SCOT_POP.key === key && pop.style.display !== 'none') return scotFilterClose();
+  const cur = SCOT_F[mode][key];
+  SCOT_POP = { mode, key, type, sel: new Set(Array.isArray(cur) ? cur : []) };
+  const lab = (t) => '<div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:8px 0 4px">' + t + '</div>';
+  let h = '<div style="font-weight:700;margin-bottom:4px">' + dtEscape(label) + '</div>';
+  if (SCOT_SORTABLE.includes(type)) {
+    const words = type === 'range' ? ['Smallest first', 'Largest first'] : type === 'date' ? ['Oldest first', 'Newest first'] : ['Sort A → Z', 'Sort Z → A'];
+    const s = SCOT_SORT[mode];
+    const sb = (dir, w) => '<button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;'
+      + (s === dir + key ? 'background:var(--brand-tint);border-color:var(--brand-deep)' : '') + '" onclick="scotSortBy(\'' + dir + key + '\')">' + w + '</button>';
+    h += '<div style="display:flex;gap:6px;margin:6px 0 4px">' + sb('', words[0]) + sb('-', words[1]) + '</div>';
+  }
+  if (type === 'text') {
+    h += lab('Contains') + '<input type="text" id="scfText" value="' + dtEscape(cur || '') + '" placeholder="Type to match" style="width:100%"'
+      + ' onkeydown="if(event.key===\'Enter\')scotFilterApply()"/>';
+  } else if (type === 'list') {
+    h += lab('Filter by values') + '<input type="text" id="scfSearch" placeholder="Search" style="width:100%" oninput="scotFilterValuesDebounced()"/>'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin:6px 0">'
+      + '<a href="#" onclick="scotFilterAll(true);return false" style="color:var(--brand-deep)">Select all shown</a>'
+      + '<a href="#" onclick="scotFilterAll(false);return false" style="color:var(--brand-deep)">Clear</a></div>'
+      + '<div id="scfList" style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:4px 6px">Loading…</div>';
+  } else if (type === 'status') {
+    const names = { overdue: 'Overdue', due: 'Due soon', gone: 'Gone quiet', 'on-track': 'On track', 'one-time': 'One-time' };
+    h += lab('Show only') + Object.entries(names).map(([v, n]) => '<label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;letter-spacing:0;margin:3px 0;cursor:pointer">'
+      + '<input type="checkbox" value="' + v + '"' + (SCOT_POP.sel.has(v) ? ' checked' : '') + ' onchange="scotFilterTick(this)" style="width:15px;height:15px"/>' + n + '</label>').join('');
+  } else if (type === 'range') {
+    h += lab('Between') + '<div style="display:flex;gap:6px"><input type="number" id="scfMin" placeholder="Min" value="' + dtEscape(cur && cur.min != null ? cur.min : '') + '" style="width:100%"/>'
+      + '<input type="number" id="scfMax" placeholder="Max" value="' + dtEscape(cur && cur.max != null ? cur.max : '') + '" style="width:100%"/></div>';
+  } else if (type === 'date') {
+    h += lab('From') + '<input type="date" id="scfFrom" value="' + dtEscape(cur && cur.from || '') + '" style="width:100%"/>'
+      + lab('To') + '<input type="date" id="scfTo" value="' + dtEscape(cur && cur.to || '') + '" style="width:100%"/>';
+  } else if (type === 'has') {
+    const v = cur || '';
+    h += lab('Show') + [['', 'Everyone'], ['yes', 'Has an entry'], ['no', 'No entry yet']].map(([k, n]) =>
+      '<label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;letter-spacing:0;margin:3px 0;cursor:pointer">'
+      + '<input type="radio" name="scfHas" value="' + k + '"' + (v === k ? ' checked' : '') + ' style="width:15px;height:15px"/>' + n + '</label>').join('');
+  } else if (type === 'mkt') {
+    const sel = (id, v) => '<select id="' + id + '" style="width:100%"><option value="">Any</option><option value="yes"' + (v === 'yes' ? ' selected' : '')
+      + '>Said yes ✓</option><option value="no"' + (v === 'no' ? ' selected' : '') + '>Said no ✕</option></select>';
+    h += lab('Email marketing') + sel('scfMktEmail', SCOT_F[mode].mkt_email) + lab('SMS marketing') + sel('scfMktSms', SCOT_F[mode].mkt_sms);
+  }
+  h += '<div style="display:flex;justify-content:space-between;margin-top:12px">'
+    + '<button type="button" class="btn btn-outline" style="padding:5px 12px;font-size:12.5px" onclick="scotFilterClear()">Clear</button>'
+    + '<button type="button" class="btn btn-primary" style="padding:5px 14px;font-size:12.5px" onclick="scotFilterApply()">Apply</button></div>';
+  pop.innerHTML = h;
+  const r = ev.currentTarget.getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.top = Math.min(window.innerHeight - 20 - pop.offsetHeight, r.bottom + 6) + 'px';
+  pop.style.left = Math.max(10, Math.min(window.innerWidth - pop.offsetWidth - 10, r.left - 120)) + 'px';
+  if (type === 'list') scotFilterValues();
+  const first = pop.querySelector('input[type=text],input[type=number],input[type=date]');
+  if (first) first.focus();
+}
+
+let _scfTimer = null;
+function scotFilterValuesDebounced() { clearTimeout(_scfTimer); _scfTimer = setTimeout(scotFilterValues, 250); }
+async function scotFilterValues() {
+  const P = SCOT_POP;
+  if (!P || P.type !== 'list') return;
+  const q = (document.getElementById('scfSearch') || {}).value || '';
+  let rows = [];
+  try { rows = await api('/api/scot/values?col=' + P.key + '&mode=' + P.mode + '&q=' + encodeURIComponent(q)); } catch (_) { /* leave the list empty */ }
+  if (SCOT_POP !== P) return;
+  let rn = null;
+  try { rn = new Intl.DisplayNames(['en'], { type: 'region' }); } catch (_) { /* codes */ }
+  const show = (v) => !v ? '(blank)' : P.key === 'country' ? ((rn && (() => { try { return rn.of(v); } catch (_) { return v; } })()) || v) : v;
+  P.shown = (Array.isArray(rows) ? rows : []).map(r => r.v);
+  // Ticked values stay listed even when the search would hide them.
+  const extra = [...P.sel].filter(v => !P.shown.includes(v));
+  const list = document.getElementById('scfList');
+  list.innerHTML = [...extra.map(v => ({ v, n: null })), ...(Array.isArray(rows) ? rows : [])].map(r =>
+    '<label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;letter-spacing:0;margin:3px 0;cursor:pointer">'
+    + '<input type="checkbox" value="' + dtEscape(r.v) + '"' + (P.sel.has(r.v) ? ' checked' : '') + ' onchange="scotFilterTick(this)" style="width:15px;height:15px;flex:none"/>'
+    + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dtEscape(show(r.v)) + '</span>'
+    + (r.n != null ? '<span style="font-size:11px;color:var(--faint)">' + Number(r.n).toLocaleString('en-IN') + '</span>' : '') + '</label>').join('')
+    || '<div style="color:var(--faint);font-size:12px;padding:4px">Nothing matches.</div>';
+}
+function scotFilterTick(cb) { if (!SCOT_POP) return; cb.checked ? SCOT_POP.sel.add(cb.value) : SCOT_POP.sel.delete(cb.value); }
+function scotFilterAll(on) {
+  if (!SCOT_POP) return;
+  (SCOT_POP.shown || []).forEach(v => (on ? SCOT_POP.sel.add(v) : SCOT_POP.sel.delete(v)));
+  if (!on) SCOT_POP.sel.clear();
+  document.querySelectorAll('#scfList input[type=checkbox]').forEach(cb => { cb.checked = SCOT_POP.sel.has(cb.value); });
+}
+function scotSortBy(s) {
+  const mode = scotMode();
+  SCOT_SORT[mode] = SCOT_SORT[mode] === s ? '' : s;   // a second click takes it off
+  scotFilterClose();
+  loadScot();
+}
+function scotFilterClear() {
+  const P = SCOT_POP;
+  if (!P) return;
+  if (P.key === 'mkt') { delete SCOT_F[P.mode].mkt_email; delete SCOT_F[P.mode].mkt_sms; }
+  else delete SCOT_F[P.mode][P.key];
+  scotFilterClose();
+  loadScot();
+}
+function scotFilterApply() {
+  const P = SCOT_POP;
+  if (!P) return;
+  const F = SCOT_F[P.mode];
+  const v = (id) => ((document.getElementById(id) || {}).value || '').trim();
+  const set = (k, val) => { if (val === undefined) delete F[k]; else F[k] = val; };
+  if (P.type === 'text') set(P.key, v('scfText') || undefined);
+  else if (P.type === 'list' || P.type === 'status') set(P.key, P.sel.size ? [...P.sel] : undefined);
+  else if (P.type === 'range') {
+    const min = v('scfMin'), max = v('scfMax');
+    set(P.key, min || max ? { min: min === '' ? null : Number(min), max: max === '' ? null : Number(max) } : undefined);
+  } else if (P.type === 'date') {
+    const from = v('scfFrom'), to = v('scfTo');
+    set(P.key, from || to ? { from: from || null, to: to || null } : undefined);
+  } else if (P.type === 'has') {
+    const r = document.querySelector('input[name=scfHas]:checked');
+    set(P.key, r && r.value ? r.value : undefined);
+  } else if (P.type === 'mkt') {
+    set('mkt_email', v('scfMktEmail') || undefined);
+    set('mkt_sms', v('scfMktSms') || undefined);
+  }
+  scotFilterClose();
   loadScot();
 }
 

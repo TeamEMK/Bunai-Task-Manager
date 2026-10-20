@@ -111,9 +111,120 @@ const LIMIT = 1500;
 // the third with no phone, their Shopify id.
 const PROSPECT_KEY = `IF(phone <> '', phone, CONCAT('c', customer_id))`;
 
-async function prospects(q) {
-  const where = [];
-  const args = [];
+// ── Column filters, as in a spreadsheet ───────────────
+// The page sends `f`, a JSON object keyed by column, and `sort` ("col" or
+// "-col"). Every column a filter may name is listed here with the SQL it
+// stands for, so nothing the browser sends ever becomes SQL itself.
+//
+//   text   {"name": "kaur"}                 any of the column's fields contain it
+//   list   {"city": ["Jaipur", "Pune"]}      one of the values ticked
+//   range  {"value": {"min": 50000}}         between, either end optional
+//   date   {"last_order": {"from": "...", "to": "..."}}
+//   has    {"whatsapp": "yes" | "no"}       a contact logged on that channel, or none
+//   yesno  {"mkt_email": "yes" | "no"}      a consent given, or not
+//   status {"status": ["gone", "overdue"]}  verdict, worked out per row (HAVING)
+const CALL_ON = 'DATE_ADD(DATE(last_order), INTERVAL gap_days DAY)';
+const CONTACTED = (keyExpr) => `EXISTS (SELECT 1 FROM scot_contacts sc WHERE sc.phone = ${keyExpr} AND sc.channel = ?)`;
+const COLS = {
+  customers: {
+    name:       { type: 'text', sql: ['name', 'phone'] },
+    city:       { type: 'list', sql: 'city', sort: 'city' },
+    country:    { type: 'list', sql: 'country', sort: 'country' },
+    status:     { type: 'status' },
+    orders:     { type: 'range', sql: 'orders', sort: 'orders' },
+    units:      { type: 'range', sql: 'units', sort: 'units' },
+    value:      { type: 'range', sql: 'value', sort: 'value' },
+    last_order: { type: 'date', sql: 'DATE(last_order)', sort: 'last_order' },
+    call_on:    { type: 'date', sql: CALL_ON, sort: CALL_ON },
+    whatsapp:   { type: 'has', key: 'sfy_customers.phone' },
+    email:      { type: 'has', key: 'sfy_customers.phone' },
+    call:       { type: 'has', key: 'sfy_customers.phone' },
+  },
+  never: {
+    name:       { type: 'text', sql: ['name', 'phone_full', 'email'] },
+    emailtext:  { type: 'text', sql: ['email'], sort: 'email' },
+    city:       { type: 'list', sql: 'city', sort: 'city' },
+    country:    { type: 'list', sql: 'country', sort: 'country' },
+    signed_up:  { type: 'date', sql: 'DATE(signed_up)', sort: 'signed_up' },
+    mkt_email:  { type: 'yesno', sql: 'accepts_email' },
+    mkt_sms:    { type: 'yesno', sql: 'accepts_sms' },
+    whatsapp:   { type: 'has', key: `IF(sfy_prospects.phone <> '', sfy_prospects.phone, CONCAT('c', sfy_prospects.customer_id))` },
+    email:      { type: 'has', key: `IF(sfy_prospects.phone <> '', sfy_prospects.phone, CONCAT('c', sfy_prospects.customer_id))` },
+    call:       { type: 'has', key: `IF(sfy_prospects.phone <> '', sfy_prospects.phone, CONCAT('c', sfy_prospects.customer_id))` },
+  },
+};
+const HAS_CHANNEL = { whatsapp: 'whatsapp', email: 'email', call: 'call' };
+// The names the "customer" sort uses, so "name" sorts by the name column.
+COLS.customers.name.sort = 'name';
+COLS.never.name.sort = 'name';
+
+function parseFilters(raw) {
+  try { const f = JSON.parse(String(raw || '{}')); return f && typeof f === 'object' && !Array.isArray(f) ? f : {}; }
+  catch (_) { return {}; }
+}
+const isYmdStr = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+const numOr = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+
+// WHERE and HAVING pieces for the filters on one list. Unknown columns and
+// malformed values are ignored rather than failing the page.
+function columnFilters(mode, f) {
+  const cols = COLS[mode];
+  const where = [], args = [], having = [], hargs = [];
+  let active = 0;
+  for (const [key, val] of Object.entries(f || {})) {
+    const c = cols[key];
+    if (!c || val == null || val === '') continue;
+    if (c.type === 'text') {
+      const t = String(val).trim().slice(0, 120);
+      if (!t) continue;
+      where.push('(' + c.sql.map(s => `${s} LIKE ?`).join(' OR ') + ')');
+      c.sql.forEach(() => args.push('%' + t + '%'));
+    } else if (c.type === 'list' || c.type === 'status') {
+      const list = (Array.isArray(val) ? val : []).map(v => String(v).slice(0, 160)).slice(0, 500);
+      if (!list.length) continue;
+      if (c.type === 'status') {
+        const ok = list.filter(v => STATUSES.includes(v));
+        if (!ok.length) continue;
+        having.push(`status IN (${ok.map(() => '?').join(',')})`); hargs.push(...ok);
+      } else {
+        where.push(`${c.sql} IN (${list.map(() => '?').join(',')})`); args.push(...list);
+      }
+    } else if (c.type === 'range') {
+      const min = numOr(val.min), max = numOr(val.max);
+      if (min == null && max == null) continue;
+      if (min != null) { where.push(`${c.sql} >= ?`); args.push(min); }
+      if (max != null) { where.push(`${c.sql} <= ?`); args.push(max); }
+    } else if (c.type === 'date') {
+      const from = isYmdStr(val.from) ? val.from : null, to = isYmdStr(val.to) ? val.to : null;
+      if (!from && !to) continue;
+      if (from) { where.push(`${c.sql} >= ?`); args.push(from); }
+      if (to) { where.push(`${c.sql} <= ?`); args.push(to); }
+    } else if (c.type === 'has') {
+      if (val !== 'yes' && val !== 'no') continue;
+      where.push((val === 'no' ? 'NOT ' : '') + CONTACTED(c.key)); args.push(HAS_CHANNEL[key]);
+    } else if (c.type === 'yesno') {
+      if (val !== 'yes' && val !== 'no') continue;
+      where.push(`${c.sql} = ?`); args.push(val === 'yes' ? 1 : 0);
+    } else continue;
+    active++;
+  }
+  return { where, args, having, hargs, active };
+}
+
+// ORDER BY for a sort the page asked for ("value" up, "-value" down), blanks
+// last either way. Falls back to the list's own order.
+function orderFor(mode, sort, fallback) {
+  const desc = String(sort || '').startsWith('-');
+  const c = COLS[mode][String(sort || '').replace(/^-/, '')];
+  if (!c || !c.sort) return fallback;
+  const blank = (c.type === 'list' || c.type === 'text') ? `(${c.sort} IS NULL OR ${c.sort} = '')` : `${c.sort} IS NULL`;
+  return `ORDER BY ${blank}, ${c.sort} ${desc ? 'DESC' : 'ASC'}`;
+}
+
+async function prospects(q, f, sort) {
+  const cf = columnFilters('never', f);
+  const where = [...cf.where];
+  const args = [...cf.args];
   if (q) {
     const hit = countryCodesMatching(q);
     where.push('(name LIKE ? OR phone LIKE ? OR email LIKE ? OR city LIKE ?'
@@ -126,12 +237,13 @@ async function prospects(q) {
     db.rows(`SELECT ${PROSPECT_KEY} AS ckey, name, email, phone_full, city, country,
                     accepts_email, accepts_sms, DATE_FORMAT(signed_up, '%Y-%m-%d') signed_up
                FROM sfy_prospects ${filter}
-              ORDER BY signed_up IS NULL, signed_up DESC, customer_id DESC LIMIT ${LIMIT}`, args),
-    q ? db.one(`SELECT COUNT(*) n FROM sfy_prospects ${filter}`, args) : null,
+              ${orderFor('never', sort, 'ORDER BY signed_up IS NULL, signed_up DESC, customer_id DESC')} LIMIT ${LIMIT}`, args),
+    q || cf.active ? db.one(`SELECT COUNT(*) n FROM sfy_prospects ${filter}`, args) : null,
   ]);
   const flag = (v) => (v == null ? null : !!Number(v));
   return {
     total: total ? Number(total.n) : null,
+    filters: cf.active,
     rows: rows.map(r => ({
       phone: r.ckey,
       phoneShow: (r.phone_full || '').trim(),
@@ -181,11 +293,14 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   const q = String(req.query.q || '').trim().slice(0, 120);
   const status = STATUSES.includes(String(req.query.status || '')) ? String(req.query.status) : '';
   const never = req.query.status === 'never';
+  const f = parseFilters(req.query.f);
+  const sort = String(req.query.sort || '').slice(0, 40);
+  const cf = never ? null : columnFilters('customers', f);
 
   // Filters on stored columns go in WHERE; the status is worked out per row,
   // so it is filtered in HAVING, which can name it.
-  const where = [];
-  const args = [];
+  const where = cf ? [...cf.where] : [];
+  const args = cf ? [...cf.args] : [];
   if (!status && req.query.status === 'abroad') where.push(ABROAD);
   if (q) {
     // Country is stored as its two-letter code, but people type "India" or
@@ -198,18 +313,20 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
     args.push(like, like, like, like, ...hit);
   }
   const filter = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  const having = status ? 'HAVING status = ?' : '';
-  const rowArgs = status ? [...args, status] : args;
+  const hav = [...(status ? ['status = ?'] : []), ...(cf ? cf.having : [])];
+  const having = hav.length ? 'HAVING ' + hav.join(' AND ') : '';
+  const rowArgs = [...args, ...(status ? [status] : []), ...(cf ? cf.hargs : [])];
+  const filtered = !!q || !!(cf && cf.active);
 
   // Counted over everyone, not the filtered set: the tiles are what the
   // filter is chosen from, so narrowing them would strand the other numbers.
   // Without a search the total is one of those counts, so it is not asked for.
   const [rows, tc, searched, pros] = await Promise.all([
-    never ? [] : db.rows(`${BASE} ${filter} ${having} ${ORDER} LIMIT ${LIMIT}`, rowArgs),
+    never ? [] : db.rows(`${BASE} ${filter} ${having} ${orderFor('customers', sort, ORDER)} LIMIT ${LIMIT}`, rowArgs),
     tabCounts(),
-    never || !q ? null
-      : db.one(`SELECT COUNT(*) n FROM (${BASE} ${filter}) y ${status ? 'WHERE status = ?' : ''}`, rowArgs),
-    never ? prospects(q) : null,
+    never || !filtered ? null
+      : db.one(`SELECT COUNT(*) n FROM (${BASE} ${filter}) y ${hav.length ? 'WHERE ' + hav.join(' AND ') : ''}`, rowArgs),
+    never ? prospects(q, f, sort) : null,
   ]);
   const by = tc.by;
   const allCounts = {
@@ -246,6 +363,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   if (never) {
     return res.json({
       mode: 'never',
+      filters: pros.filters,
       counts: allCounts,
       asOf: tc.asOf,
       total: pros.total == null ? allCounts.never : pros.total,
@@ -254,6 +372,7 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   }
 
   res.json({
+    filters: cf ? cf.active : 0,
     sheet: tc.sheet,
     counts: allCounts,
     total: Number(total?.n) || 0,
@@ -279,6 +398,22 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
       status: r.status,
     })),
   });
+}));
+
+// The values a list filter offers - a column's values with how many have
+// each, the commonest first - narrowed by what is typed in the filter's box.
+router.get('/scot/values', requireAuth, requirePage('scot'), asyncRoute(async (req, res) => {
+  const col = ['city', 'country'].includes(String(req.query.col)) ? String(req.query.col) : null;
+  if (!col) throw httpError(400, 'Unknown column.');
+  const table = req.query.mode === 'never' ? 'sfy_prospects' : 'sfy_customers';
+  const q = String(req.query.q || '').trim().slice(0, 80);
+  // A country is stored as its code; typing its name finds it too.
+  const codes = col === 'country' && q ? countryCodesMatching(q) : [];
+  const where = q ? `WHERE ${col} LIKE ?${codes.length ? ` OR ${col} IN (${codes.map(() => '?').join(',')})` : ''}` : '';
+  const rows = await db.rows(
+    `SELECT ${col} v, COUNT(*) n FROM ${table} ${where} GROUP BY ${col} ORDER BY n DESC LIMIT 200`,
+    q ? ['%' + q + '%', ...codes] : []);
+  res.json(rows.map(r => ({ v: r.v == null ? '' : String(r.v), n: Number(r.n) })));
 }));
 
 // ══════════════════════════════════════════════════════
