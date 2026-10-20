@@ -63,10 +63,40 @@ const BASE = `
          END AS status
     FROM sfy_customers`;
 
-// Late first, and the biggest spender at the top of each band. "Gone" sits
-// below "overdue" because overdue is still winnable.
-const ORDER = `
-  ORDER BY FIELD(status, 'overdue', 'due', 'gone', 'on-track', 'one-time'), value DESC`;
+// Biggest lifetime spender first, on every tab. "Everyone" used to put the
+// overdue band above the rest, which hid a 16-lakh customer who had gone quiet
+// below a 2-lakh one who was merely late; the status tabs are how to look at
+// one band. Sorting on value alone also lets MySQL walk the value index and
+// stop at the page, instead of building all 252,000 verdicts to sort them.
+const ORDER = `ORDER BY value DESC`;
+
+// The tab badges: one read for every status, Outside India and Never ordered,
+// kept for two minutes. They only move when a sync rebuilds the tables, and
+// counting a quarter of a million customers on every click and keystroke was
+// most of what made the page slow.
+const COUNTS_TTL_MS = 2 * 60 * 1000;
+let countsCache = null;   // { at, by, abroad, never, sheet, asOf }
+async function tabCounts() {
+  if (countsCache && Date.now() - countsCache.at < COUNTS_TTL_MS) return countsCache;
+  const [byStatus, never, sheetLog, asOf] = await Promise.all([
+    db.rows(`SELECT status, COUNT(*) n, SUM(${ABROAD}) abroad FROM (${BASE}) y GROUP BY status`),
+    db.one('SELECT COUNT(*) n FROM sfy_prospects').catch(() => null),
+    // When each tab of the Google Sheet was last written, in India's time. The
+    // table may not exist on a database the sheet has never been written from.
+    db.rows(`SELECT tab, DATE_FORMAT(MAX(ended_at) + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
+               FROM scot_sheet_log WHERE ok = 1 GROUP BY tab`).catch(() => null),
+    prospectsAsOf(),
+  ]);
+  countsCache = {
+    at: Date.now(),
+    by: Object.fromEntries(byStatus.map(c => [c.status, Number(c.n)])),
+    abroad: byStatus.reduce((a, c) => a + (Number(c.abroad) || 0), 0),
+    never: Number(never?.n) || 0,
+    sheet: sheetLog ? Object.fromEntries(sheetLog.map(r => [r.tab === 'SCOT Lifetime' ? 'lifetime' : 'scot', r.at])) : null,
+    asOf,
+  };
+  return countsCache;
+}
 
 const LIMIT = 1500;
 
@@ -152,10 +182,11 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
   const status = STATUSES.includes(String(req.query.status || '')) ? String(req.query.status) : '';
   const never = req.query.status === 'never';
 
+  // Filters on stored columns go in WHERE; the status is worked out per row,
+  // so it is filtered in HAVING, which can name it.
   const where = [];
   const args = [];
-  if (status) { where.push('status = ?'); args.push(status); }
-  else if (req.query.status === 'abroad') where.push(ABROAD);
+  if (!status && req.query.status === 'abroad') where.push(ABROAD);
   if (q) {
     // Country is stored as its two-letter code, but people type "India" or
     // "australia". Whatever country names contain the text become the codes to
@@ -167,18 +198,28 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
     args.push(like, like, like, like, ...hit);
   }
   const filter = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const having = status ? 'HAVING status = ?' : '';
+  const rowArgs = status ? [...args, status] : args;
 
-  const [rows, counts, total, pros, neverCount] = await Promise.all([
-    never ? [] : db.rows(`SELECT * FROM (${BASE}) y ${filter} ${ORDER} LIMIT ${LIMIT}`, args),
-    // Counted over everyone, not the filtered set: the tiles are what the
-    // filter is chosen from, so narrowing them would strand the other numbers.
-    db.rows(`SELECT status, COUNT(*) n FROM (${BASE}) y GROUP BY status`),
-    never ? null : db.one(`SELECT COUNT(*) n FROM (${BASE}) y ${filter}`, args),
+  // Counted over everyone, not the filtered set: the tiles are what the
+  // filter is chosen from, so narrowing them would strand the other numbers.
+  // Without a search the total is one of those counts, so it is not asked for.
+  const [rows, tc, searched, pros] = await Promise.all([
+    never ? [] : db.rows(`${BASE} ${filter} ${having} ${ORDER} LIMIT ${LIMIT}`, rowArgs),
+    tabCounts(),
+    never || !q ? null
+      : db.one(`SELECT COUNT(*) n FROM (${BASE} ${filter}) y ${status ? 'WHERE status = ?' : ''}`, rowArgs),
     never ? prospects(q) : null,
-    db.one('SELECT COUNT(*) n FROM sfy_prospects').catch(() => null),
   ]);
-
-  const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
+  const by = tc.by;
+  const allCounts = {
+    all: Object.values(by).reduce((a, n) => a + n, 0),
+    abroad: tc.abroad,
+    never: tc.never,
+    ...STATUSES.reduce((a, s) => (a[s] = by[s] || 0, a), {}),
+  };
+  const total = searched ? { n: searched.n }
+    : { n: status ? allCounts[status] : req.query.status === 'abroad' ? allCounts.abroad : allCounts.all };
 
   // For the customers on this page: the latest entry in EACH channel and how
   // many there are, so a new WhatsApp never hides the email beside it.
@@ -202,36 +243,18 @@ router.get('/scot', requireAuth, requirePage('scot'), asyncRoute(async (req, res
       };
     });
   }
-  const abroad = await db.one(`SELECT COUNT(*) n FROM sfy_customers WHERE ${ABROAD}`);
-  const allCounts = {
-    all: counts.reduce((a, c) => a + Number(c.n), 0),
-    abroad: Number(abroad?.n) || 0,
-    never: Number(neverCount?.n) || 0,
-    ...STATUSES.reduce((a, s) => (a[s] = by[s] || 0, a), {}),
-  };
   if (never) {
     return res.json({
       mode: 'never',
       counts: allCounts,
-      asOf: await prospectsAsOf(),
+      asOf: tc.asOf,
       total: pros.total == null ? allCounts.never : pros.total,
       rows: pros.rows.map(r => ({ ...r, contacts: last[r.phone] || {} })),
     });
   }
 
-  // When each tab of the Google Sheet was last written, in India's time. The
-  // log is in UTC; the table may not exist yet on a database the sheet has
-  // never been written from, and that is not an error worth failing the page.
-  let sheet = null;
-  try {
-    const w = await db.rows(
-      `SELECT tab, DATE_FORMAT(MAX(ended_at) + INTERVAL 330 MINUTE, '%e %b, %l:%i %p') at
-         FROM scot_sheet_log WHERE ok = 1 GROUP BY tab`);
-    sheet = Object.fromEntries(w.map(r => [r.tab === 'SCOT Lifetime' ? 'lifetime' : 'scot', r.at]));
-  } catch (_) { /* no log yet */ }
-
   res.json({
-    sheet,
+    sheet: tc.sheet,
     counts: allCounts,
     total: Number(total?.n) || 0,
     rows: rows.map(r => ({
