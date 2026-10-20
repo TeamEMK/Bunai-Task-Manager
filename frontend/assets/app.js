@@ -1667,8 +1667,15 @@ async function updateStatus(id, status, from, type) {
 }
 
 async function deleteTask(id, type) {
-  if (!confirm('Delete this task?')) return;
-  await api(`/api/tasks/${id}?type=${type||tasksType}`,'DELETE');
+  // A step of a step-by-step task is deleted with the whole task, so say so.
+  const t = (window._taskDetailMap || {})[id];
+  const msg = t && t.chain_id
+    ? `This is step ${t.chain_step} of "${t.chain_title}". Deleting it deletes the whole step-by-step task - all ${t.chain_total} steps. Continue?`
+    : 'Delete this task?';
+  if (!confirm(msg)) return;
+  const r = await api(`/api/tasks/${id}?type=${type||tasksType}`,'DELETE');
+  if (r && r.error) return showToast('⚠️ ' + r.error, 'error');
+  if (r && r.chain) showToast(`✅ Whole task deleted (${r.deleted} step${r.deleted === 1 ? '' : 's'})`);
   loadAllTasks();
 }
 

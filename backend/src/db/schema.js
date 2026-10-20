@@ -130,6 +130,7 @@ const TABLES = [
     client_id INT DEFAULT NULL,
     priority VARCHAR(10) NOT NULL DEFAULT 'low',
     status VARCHAR(10) NOT NULL DEFAULT 'running',
+    steps INT NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL,
     done_at DATETIME DEFAULT NULL,
     KEY idx_task_chains_by (created_by)
@@ -1307,6 +1308,7 @@ const COLUMNS = [
   ['delegation_tasks', 'reminder_count', `INT NOT NULL DEFAULT 0 AFTER last_reminder_at`],
   // A step of a task chain: which chain, its place, its days from the step
   // before, and whether it is still waiting for that step (no due date then).
+  ['task_chains', 'steps', `INT NOT NULL DEFAULT 0 AFTER status`],
   ['delegation_tasks', 'chain_id', `INT DEFAULT NULL`],
   ['delegation_tasks', 'chain_step', `INT DEFAULT NULL`],
   ['delegation_tasks', 'chain_days', `INT DEFAULT NULL`],

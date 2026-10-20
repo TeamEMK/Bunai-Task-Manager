@@ -471,14 +471,41 @@ router.put('/tasks/:id/edit', requireAuth, requireAdmin, asyncRoute(async (req, 
 }));
 
 router.delete('/tasks/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
-  await db.query(`DELETE FROM ${getTable(req.query.type || 'delegation')} WHERE id=?`, [req.params.id]);
+  const table = getTable(req.query.type || 'delegation');
+  // A step of a step-by-step task goes with the whole task. Deleting one step
+  // alone left the rest stranded - "Step 2 of 1", waiting on a step that no
+  // longer existed, or open with nothing before it.
+  if (table === 'delegation_tasks') {
+    const t = await db.one('SELECT chain_id FROM delegation_tasks WHERE id=?', [req.params.id]);
+    if (t && t.chain_id) {
+      const [r] = await db.query('DELETE FROM delegation_tasks WHERE chain_id=?', [t.chain_id]);
+      await db.query('DELETE FROM task_chains WHERE id=?', [t.chain_id]);
+      return res.json({ success: true, chain: true, deleted: r.affectedRows });
+    }
+  }
+  await db.query(`DELETE FROM ${table} WHERE id=?`, [req.params.id]);
   res.json({ success: true });
 }));
+
+// After a bulk delete: a step-by-step task that lost any of its steps is gone
+// too, rather than left half there.
+async function pruneChains() {
+  await db.query(
+    `DELETE t FROM delegation_tasks t
+       JOIN task_chains ch ON ch.id = t.chain_id
+      WHERE ch.steps > (SELECT n FROM (SELECT chain_id, COUNT(*) n FROM delegation_tasks
+                                        WHERE chain_id IS NOT NULL GROUP BY chain_id) c
+                         WHERE c.chain_id = t.chain_id)`);
+  await db.query(
+    `DELETE ch FROM task_chains ch
+      WHERE NOT EXISTS (SELECT 1 FROM delegation_tasks t WHERE t.chain_id = ch.id)`);
+}
 
 // Bulk delete by user
 router.delete('/tasks/user/:userId', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const table = getTable(req.query.type || 'delegation');
   await db.query(`DELETE FROM ${table} WHERE assigned_to = ?`, [req.params.userId]);
+  if (table === 'delegation_tasks') await pruneChains();
   res.json({ success: true });
 }));
 

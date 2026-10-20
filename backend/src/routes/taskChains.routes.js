@@ -39,8 +39,8 @@ router.post('/task-chains', requireAuth, asyncRoute(async (req, res) => {
 
   const firstDue = await chain.dueAfter(steps[0].days);
   const [ins] = await db.query(
-    `INSERT INTO task_chains (title, created_by, client_id, priority, status, created_at)
-     VALUES (?,?,?,?, 'running', UTC_TIMESTAMP())`, [title, req.session.userId, clientId, priority]);
+    `INSERT INTO task_chains (title, created_by, client_id, priority, status, steps, created_at)
+     VALUES (?,?,?,?, 'running', ?, UTC_TIMESTAMP())`, [title, req.session.userId, clientId, priority, steps.length]);
   const chainId = ins.insertId;
   let firstId = null;
   for (const s of steps) {
