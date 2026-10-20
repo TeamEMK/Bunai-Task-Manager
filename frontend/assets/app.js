@@ -300,7 +300,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Inventory — Equipment'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');

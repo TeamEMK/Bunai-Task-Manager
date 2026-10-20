@@ -105,17 +105,13 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
       <span class="nav-label-text">Recruitment</span>
     </div>
+    <div class="nav-item" id="nav-inventory" onclick="navigate('inventory',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      <span class="nav-label-text">Team Assets</span>
+    </div>
     <div class="nav-item" id="nav-b2b" onclick="navigate('b2b',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7V5a1 1 0 011-1h12a1 1 0 011 1v2M4 7l1 12a1 1 0 001 1h12a1 1 0 001-1l1-12M9 11v5M15 11v5"/></svg>
       <span class="nav-label-text">Bunai B2B</span>
-    </div>
-    <div class="nav-item" id="nav-contentcal" style="display:none" onclick="navigate('contentcal',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      <span class="nav-label-text">Content Calendar</span>
-    </div>
-    <div class="nav-item" id="nav-influencers" onclick="navigate('influencers',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 8a3 3 0 10-6 0 3 3 0 006 0zM4.5 19.5a7.5 7.5 0 0115 0M19 4l1.5 1.5L19 7M5 4L3.5 5.5 5 7"/></svg>
-      <span class="nav-label-text">Influencers</span>
     </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -126,11 +122,17 @@
       <span class="nav-label-text">Compliance Tracker</span>
     </div>
 
-    <div class="nav-section">Inventory &amp; Sales</div>
-    <div class="nav-item" id="nav-inventory" onclick="navigate('inventory',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-      <span class="nav-label-text">Inventory</span>
+    <div class="nav-section" id="navsec-social">Social Media</div>
+    <div class="nav-item" id="nav-influencers" onclick="navigate('influencers',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 8a3 3 0 10-6 0 3 3 0 006 0zM4.5 19.5a7.5 7.5 0 0115 0M19 4l1.5 1.5L19 7M5 4L3.5 5.5 5 7"/></svg>
+      <span class="nav-label-text">Influencers</span>
     </div>
+    <div class="nav-item" id="nav-contentcal" style="display:none" onclick="navigate('contentcal',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      <span class="nav-label-text">Content Calendar</span>
+    </div>
+
+    <div class="nav-section">Inventory &amp; Sales</div>
     <div class="nav-item" id="nav-ims" style="display:none" onclick="navigate('ims',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
       <span class="nav-label-text">IMS</span>
