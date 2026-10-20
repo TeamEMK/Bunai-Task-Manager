@@ -333,6 +333,11 @@
   <div class="header-right">
     <div class="today-badge" id="buildBadge" style="opacity:0.75;border-color:var(--accent);color:var(--accent);">build v7 · clean-ui</div>
     <div class="today-badge" id="todayBadge">—</div>
+    <select class="refresh-btn" id="imsChannel" onchange="imsPickChannel(this.value)" title="Whose sales the numbers are measured on. Stock is both warehouses together.">
+      <option value="">All channels</option>
+      <option value="myntra">Myntra</option>
+      <option value="shopify">Shopify</option>
+    </select>
     <button class="refresh-btn" id="refreshBtn" onclick="loadCurrentTab()">⟳ Refresh</button>
     <button class="refresh-btn" id="exportAllBtn" onclick="exportAllCSV()" style="border-color:var(--accent2);background:var(--blue-bg);color:var(--accent2);" title="Download every tab as CSV files inside one ZIP (uses the filters currently applied)">⬇ Export All (ZIP)</button>
   </div>
@@ -765,6 +770,21 @@
   let orderData     = null;
   let rankData      = null;
   let topData       = null;
+
+  // Channel: Myntra, Shopify or all. Sent with every call (the bridge reads
+  // window.__imsChannel), remembered on this browser, and a change reloads
+  // the tab in view and forgets the others so they load afresh.
+  try { window.__imsChannel = localStorage.getItem('imsChannel') || ''; } catch (_) { window.__imsChannel = ''; }
+  document.addEventListener('DOMContentLoaded', function () {
+    var sel = document.getElementById('imsChannel');
+    if (sel) sel.value = window.__imsChannel;
+  });
+  function imsPickChannel(v) {
+    window.__imsChannel = v || '';
+    try { localStorage.setItem('imsChannel', window.__imsChannel); } catch (_) {}
+    dashData = null; orderData = null; rankData = null; topData = null;
+    loadCurrentTab();
+  }
   let currentTab    = 'dashboard';
   let _modalSku = '', _modalProductName = '';
   let currentTopView = 'cards';

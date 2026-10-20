@@ -22,6 +22,26 @@
 // treating it as sold would have us reorder against sales that undid themselves.
 // ══════════════════════════════════════════════════════
 const { db } = require('../db/pool');
+const { AsyncLocalStorage } = require('async_hooks');
+
+// Which channel's sales the screens are measured on: Myntra, Shopify, or both.
+// Stock is never split - it is the two warehouses together whichever is
+// chosen, because either channel can be sent from either one. The screens
+// call the handlers with fixed arguments, so the choice travels beside the
+// call (a request header, set by the bridge) rather than inside it.
+//
+// The order's source is enough to tell them apart: Shopify's orders come from
+// the store itself, and every other order on file is Myntra (its own account
+// and the two Unicommerce PPMP ones).
+const CHANNELS = ['myntra', 'shopify'];
+const channelCtx = new AsyncLocalStorage();
+const withChannel = (ch, fn) => channelCtx.run(CHANNELS.includes(ch) ? ch : '', fn);
+function chan(alias) {
+  const c = channelCtx.getStore();
+  if (c === 'shopify') return ` AND ${alias}.source = 'shopify'`;
+  if (c === 'myntra') return ` AND ${alias}.source <> 'shopify'`;
+  return '';
+}
 
 // How far back to measure the selling rate. Long enough to survive a quiet
 // week, short enough to notice a product going out of fashion.
@@ -79,7 +99,7 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
                     FROM ims_order_items it
                    WHERE LOWER(it.status) <> 'cancelled'
                      AND it.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
-                     AND it.order_date <  DATE_ADD(?, INTERVAL 1 DAY)
+                     AND it.order_date <  DATE_ADD(?, INTERVAL 1 DAY)${chan('it')}
                    GROUP BY it.sku) sold
               ON sold.sku = u.sku
        LEFT JOIN (SELECT ri.sku, SUM(ri.return_qty) qty
@@ -87,7 +107,7 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
                     JOIN ims_returns rr ON rr.return_no = ri.return_no
                     JOIN ims_orders o   ON o.order_id = rr.eretail_order_no
                    WHERE o.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
-                     AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)
+                     AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)${chan('o')}
                    GROUP BY ri.sku) ret
               ON ret.sku = u.sku`,
     [ck.anchor, ck.anchor, ck.anchor, ck.anchor]);
@@ -255,7 +275,7 @@ async function getSalesRankData(fromStr, toStr) {
               ROUND(AVG(NULLIF(it.unit_price,0)), 2) avg_price,
               ROUND(SUM(it.order_qty * it.unit_price)) value
          FROM ims_order_items it
-        WHERE LOWER(it.status) <> 'cancelled' AND ${where}
+        WHERE LOWER(it.status) <> 'cancelled' AND ${where}${chan('it')}
         GROUP BY it.sku`, args);
 
     const base = new Map((await skuBase()).map(r => [r.sku, r]));
@@ -410,6 +430,7 @@ async function getTopProductsData(fromStr, toStr) {
 
 module.exports = {
   skuBase,
+  withChannel,
   getDashboardData,
   getToBeOrderData,
   getSalesRankData,
