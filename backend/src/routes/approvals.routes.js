@@ -7,6 +7,7 @@ const { db } = require('../db/pool');
 const { requireAuth } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { getTable } = require('./tasks.routes');
+const taskChain = require('../services/taskChain');
 
 const router = express.Router();
 
@@ -84,6 +85,11 @@ router.put('/approvals/:id', requireAuth, asyncRoute(async (req, res) => {
       await db.query(`UPDATE ${table} SET status=? WHERE id=?`, [appr.action_type, appr.task_id]);
     } else {
       await db.query(`UPDATE ${table} SET status=?,waiting_approval=0 WHERE id=?`, [appr.action_type, appr.task_id]);
+      // An approved step of a chain opens the next one.
+      if (appr.action_type === 'completed') {
+        const t = await db.one('SELECT chain_id FROM delegation_tasks WHERE id=?', [appr.task_id]);
+        if (t && t.chain_id) await taskChain.advance(t.chain_id);
+      }
     }
   } else if (!isChecklist) {
     // Rejected — keep the original status & due date, just clear the flag.

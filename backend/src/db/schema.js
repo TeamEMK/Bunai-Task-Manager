@@ -121,6 +121,20 @@ const TABLES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // A task done in steps by different people, in order (services/taskChain.js).
+  // The steps are delegation_tasks rows carrying chain_id and chain_step.
+  ['task_chains', `CREATE TABLE task_chains (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    created_by INT NOT NULL,
+    client_id INT DEFAULT NULL,
+    priority VARCHAR(10) NOT NULL DEFAULT 'low',
+    status VARCHAR(10) NOT NULL DEFAULT 'running',
+    created_at DATETIME NOT NULL,
+    done_at DATETIME DEFAULT NULL,
+    KEY idx_task_chains_by (created_by)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['checklist_tasks', `CREATE TABLE checklist_tasks (
     id INT AUTO_INCREMENT PRIMARY KEY,
     description TEXT NOT NULL,
@@ -1291,6 +1305,12 @@ const COLUMNS = [
   // server's own timezone never enters into it.
   ['delegation_tasks', 'last_reminder_at', `DATETIME DEFAULT NULL AFTER url`],
   ['delegation_tasks', 'reminder_count', `INT NOT NULL DEFAULT 0 AFTER last_reminder_at`],
+  // A step of a task chain: which chain, its place, its days from the step
+  // before, and whether it is still waiting for that step (no due date then).
+  ['delegation_tasks', 'chain_id', `INT DEFAULT NULL`],
+  ['delegation_tasks', 'chain_step', `INT DEFAULT NULL`],
+  ['delegation_tasks', 'chain_days', `INT DEFAULT NULL`],
+  ['delegation_tasks', 'chain_locked', `TINYINT(1) NOT NULL DEFAULT 0`],
 
   // Checklist series metadata — end_date = the series' last date,
   // frequency = daily/weekly/monthly… Both are stored on every row of a series
@@ -1399,6 +1419,7 @@ const INDEXES = [
 
   // ── delegation_tasks ──
   ['delegation_tasks', 'idx_assigned_to', 'assigned_to'],
+  ['delegation_tasks', 'idx_chain', 'chain_id, chain_step'],
   ['delegation_tasks', 'idx_status', 'status'],
   ['delegation_tasks', 'idx_due_date', 'due_date'],
   ['delegation_tasks', 'idx_approver', 'approver_id'],

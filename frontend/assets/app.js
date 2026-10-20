@@ -964,13 +964,16 @@ async function loadDashboard() {
            style="text-decoration:none">🎨 Bunai Graphics</a>
         <button class="btn btn-yellow" onclick="openHoliday()">🗓 Holidays</button>
         <button class="btn btn-green" onclick="openChecklist()">+ Checklist</button>
+        <button class="btn btn-outline" onclick="openChain()" title="One task, several people, one after another">🧱 Step-by-step</button>
         <button class="btn btn-primary" onclick="openDelegate()">+ Delegate</button>`;
     } else if (isHod) {
       document.getElementById('dashBtns').innerHTML = `
         <button class="btn btn-green" onclick="openChecklist()">+ Checklist</button>
+        <button class="btn btn-outline" onclick="openChain()" title="One task, several people, one after another">🧱 Step-by-step</button>
         <button class="btn btn-primary" onclick="openDelegate()">+ Delegate</button>`;
     } else if (ME.role === 'user') {
       document.getElementById('dashBtns').innerHTML = `
+        <button class="btn btn-outline" onclick="openChain()" title="One task, several people, one after another">🧱 Step-by-step</button>
         <button class="btn btn-primary" onclick="openDelegate()">+ Assign Task</button>`;
     }
   }
@@ -1407,11 +1410,14 @@ function renderTasksTable() {
     // today, whether it is pending or was revised into the future.
     const matchStatus =
       taskStatusFilter === 'all'      ? true :
-      taskStatusFilter === 'pending'  ? ((t.status === 'pending' || t.status === 'revised') && (!t.due_date || t.due_date <= todayStr)) :
-      taskStatusFilter === 'upcoming' ? (t.status !== 'completed' && t.due_date > todayStr) :
+      // A locked step of a step-by-step task cannot be worked on yet, so it is
+      // upcoming, not pending, whatever its (empty) date says.
+      taskStatusFilter === 'pending'  ? ((t.status === 'pending' || t.status === 'revised') && t.chain_locked != 1 && (!t.due_date || t.due_date <= todayStr)) :
+      taskStatusFilter === 'upcoming' ? (t.status !== 'completed' && (t.due_date > todayStr || t.chain_locked == 1)) :
       t.status === taskStatusFilter;
     const matchSearch = !search ||
       (t.description||'').toLowerCase().includes(search) ||
+      (t.chain_title||'').toLowerCase().includes(search) ||
       (t.assignedToName||'').toLowerCase().includes(search) ||
       (t.assignedByName||'').toLowerCase().includes(search) ||
       (t.due_date||'').includes(search) ||
@@ -1443,7 +1449,10 @@ function renderTasksTable() {
   // Shared row builder — the flat and grouped views must render rows identically.
   const rowsFor = rowList => rowList.map(t => {
     const isCompleted = t.status === 'completed';
-    const isWaiting = t.waiting_approval == 1;
+    // A locked step of a step-by-step task is shown, but cannot be acted on
+    // until the step ahead of it is done - treated like waiting, with its own label.
+    const isLocked = t.chain_locked == 1;
+    const isWaiting = t.waiting_approval == 1 || isLocked;
     const isChecklist = tasksType === 'checklist' || isChecklistFull;
     const editType = isDelegateByMe ? 'delegation' : (isChecklistFull ? 'checklist' : tasksType);
     if (isClickable) window._taskDetailMap[t.id] = t;
@@ -1454,7 +1463,7 @@ function renderTasksTable() {
       <button class="action-btn" style="background:#eff6ff;color:#1d4ed8;padding:4px 7px;margin-left:3px" onclick="openComments(${t.id},'${editType}')" title="Comments">💬</button>
       ${!isCompleted && !isWaiting ? `<button class="action-btn done" style="margin-left:3px" onclick="updateStatus(${t.id},'completed','alltasks','${editType}')">Done</button>` : ''}
       ${!isChecklist && !isCompleted && !isWaiting ? `<button class="action-btn revise" style="margin-left:3px" onclick="openReviseModal(${t.id},'${editType}')">Revise</button>` : ''}
-      ${isWaiting ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;margin-left:4px">⏳ Waiting</span>` : ''}
+      ${isLocked ? `<span style="font-size:11px;color:#64748b;font-weight:600;margin-left:4px">🔒 After step ${t.chain_step - 1}</span>` : isWaiting ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;margin-left:4px">⏳ Waiting</span>` : ''}
     ` : (ME.role==='pc') ? `
       <button class="action-btn" style="background:#eff6ff;color:#1d4ed8;padding:4px 7px" onclick="openComments(${t.id},'${tasksType}')" title="Comments">💬</button>
       ${isChecklist && !isCompleted && !isWaiting ? `<button class="action-btn done" style="margin-left:3px" onclick="updateStatus(${t.id},'completed','alltasks','${tasksType}')">Done</button>` : ''}
@@ -1465,7 +1474,7 @@ function renderTasksTable() {
         <button class="action-btn done" style="margin-left:3px" onclick="updateStatus(${t.id},'completed','alltasks','${tasksType}')">Done</button>
         ${!isChecklist ? `<button class="action-btn revise" style="margin-left:3px" onclick="openReviseModal(${t.id},'${tasksType}')">Revise</button>` : ''}
       ` : ''}
-      ${isWaiting ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;margin-left:4px">⏳ Waiting Approval</span>` : ''}
+      ${isLocked ? `<span style="font-size:11px;color:#64748b;font-weight:600;margin-left:4px">🔒 Waiting for step ${t.chain_step - 1}</span>` : isWaiting ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;margin-left:4px">⏳ Waiting Approval</span>` : ''}
     `;
     const clientCell = (tasksType === 'delegation' || isDelegateByMe)
       ? `<td style="white-space:nowrap;font-size:12px">${t.client_name ? `<span style="background:#fff7ed;color:#A63F43;padding:2px 7px;border-radius:6px;font-weight:600">🏢 ${dtEscape(t.client_name)}</span>` : '<span style="color:var(--faint)">—</span>'}</td>`
@@ -1475,13 +1484,13 @@ function renderTasksTable() {
       : '';
     return `<tr ${trClick}>
       <td style="white-space:nowrap;padding-right:12px" onclick="event.stopPropagation()">${actionBtns}</td>
-      <td>${t.description||''}</td>
+      <td>${t.chain_id ? `<a href="#" onclick="event.stopPropagation();openChainView(${t.chain_id});return false" style="display:inline-block;font-size:11px;font-weight:700;color:var(--brand-deep);background:var(--brand-tint);padding:2px 8px;border-radius:6px;margin-bottom:3px;text-decoration:none">🧱 ${dtEscape(t.chain_title || 'Step-by-step')} · Step ${t.chain_step} of ${t.chain_total}</a><br>` : ''}${t.description||''}</td>
       <td style="white-space:nowrap">${t.assignedToName||''}</td>
       <td style="white-space:nowrap">${t.assignedByName||''}</td>
       <td style="white-space:nowrap">${fmtDate(t.due_date||'')||''}${(isChecklist && t.end_date) ? `<div style="font-size:10px;color:var(--faint);font-weight:600">🏁 ends ${fmtDate(t.end_date)}</div>` : ''}</td>
       ${clientCell}
       <td style="color:var(--muted-foreground);max-width:220px;word-break:break-word;overflow-wrap:anywhere;font-size:12px">${t.remarks||'—'}</td>
-      <td style="white-space:nowrap"><span class="status-badge ${t.status}">${t.waiting_approval==1?'Awaiting Approval':t.status==='revised'?'Revised':t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span></td>
+      <td style="white-space:nowrap"><span class="status-badge ${isLocked ? '' : t.status}"${isLocked ? ' style="background:#f1f5f9;color:#64748b"' : ''}>${isLocked ? '🔒 Locked' : t.waiting_approval==1?'Awaiting Approval':t.status==='revised'?'Revised':t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span></td>
     </tr>`;
   }).join('');
   const pageRows = rowsFor(pageTasks);
@@ -1649,6 +1658,7 @@ function toggleBlock(header) { header.nextElementSibling.classList.toggle('open'
 // ══════════════════════════════════════════════════════
 async function updateStatus(id, status, from, type) {
   const r = await api(`/api/tasks/${id}/status`,'PUT',{status, type: type || dashType});
+  if (r.error) { showToast('⚠️ ' + r.error, 'error'); return; }
   if (r.needsApproval) {
     showToast('✅ Approval request sent to your manager!');
   }
@@ -1918,6 +1928,115 @@ async function saveDelegate() {
     showToast('Task delegated successfully!');
   }
   loadDashboard();
+}
+
+// ══════════════════════════════════════════════════════
+// STEP-BY-STEP TASK - one task, several people, in order
+// Each step is its own delegated task; only step 1 is open at first, and each
+// next one opens (and its doer is told) when the one before is marked Done.
+// ══════════════════════════════════════════════════════
+let CH_STEPS = [], CH_USERS = [], _chainViewId = null;
+const chBlank = () => ({ desc: '', doer: '', days: '1' });
+
+async function openChain() {
+  document.getElementById('chainErr').style.display = 'none';
+  document.getElementById('chTitle').value = '';
+  document.getElementById('chRemarks').value = '';
+  document.getElementById('chPriority').value = 'low';
+  const [users, clients] = await Promise.all([api('/api/users'), api('/api/clients')]);
+  CH_USERS = Array.isArray(users) ? users : [];
+  document.getElementById('chClient').innerHTML = '<option value="">— No Project —</option>'
+    + (clients || []).map(c => `<option value="${c.id}">${dtEscape(c.name)}</option>`).join('');
+  CH_STEPS = [chBlank(), chBlank()];
+  chainDraw();
+  document.getElementById('chainModal').classList.add('open');
+  document.getElementById('chTitle').focus();
+}
+
+function chainDraw() {
+  const opts = (sel) => '<option value="">Who does it</option>' + CH_USERS.map(u =>
+    `<option value="${u.id}"${String(u.id) === String(sel) ? ' selected' : ''}>${dtEscape(u.name)}</option>`).join('');
+  const grid = 'display:grid;grid-template-columns:28px 2.4fr 1.4fr .6fr 22px;gap:6px;align-items:center';
+  document.getElementById('chSteps').innerHTML =
+    `<div style="${grid};font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:4px">
+       <span>#</span><span>What to do</span><span>Doer</span><span>Days</span><span></span></div>`
+    + CH_STEPS.map((s, i) => `<div style="${grid};margin-bottom:6px">
+       <span style="font-weight:700;color:var(--brand-deep)">${i + 1}</span>
+       <input type="text" value="${dtEscape(s.desc)}" placeholder="${i === 0 ? 'e.g. Get the bricks' : 'Next step'}" oninput="CH_STEPS[${i}].desc=this.value"/>
+       <select onchange="CH_STEPS[${i}].doer=this.value">${opts(s.doer)}</select>
+       <input type="number" min="0" max="365" value="${dtEscape(s.days)}" oninput="CH_STEPS[${i}].days=this.value"/>
+       <a href="#" onclick="chainDropStep(${i});return false" title="Remove" style="color:#b91c1c;text-decoration:none;text-align:center">✕</a>
+     </div>`).join('');
+}
+function chainAddStep() { CH_STEPS.push(chBlank()); chainDraw(); }
+function chainDropStep(i) { CH_STEPS.splice(i, 1); while (CH_STEPS.length < 2) CH_STEPS.push(chBlank()); chainDraw(); }
+
+async function saveChain(btn) {
+  const err = document.getElementById('chainErr');
+  err.style.display = 'none';
+  const fail = (m) => { err.textContent = m; err.style.display = 'block'; };
+  const title = document.getElementById('chTitle').value.trim();
+  const steps = CH_STEPS.filter(s => s.desc.trim() || s.doer).map(s => ({ desc: s.desc.trim(), assignedTo: s.doer, days: s.days }));
+  if (!title) return fail('Write what the main task is.');
+  if (steps.length < 2) return fail('Add at least two steps.');
+  const bad = steps.findIndex(s => !s.desc || !s.assignedTo);
+  if (bad > -1) return fail('Step ' + (bad + 1) + ' needs both what to do and who does it.');
+  const done = hrmBusy(btn, 'Assigning…');
+  try {
+    const r = await api('/api/task-chains', 'POST', {
+      title, steps, priority: document.getElementById('chPriority').value,
+      client_id: document.getElementById('chClient').value || null,
+      remarks: document.getElementById('chRemarks').value.trim(),
+    });
+    if (r.error) return fail(r.error);
+    closeModal('chainModal');
+    showToast(`✅ ${steps.length}-step task assigned — step 1 is due ${fmtDate(r.firstDue)}`);
+    if (typeof loadDashboard === 'function') loadDashboard();
+    if (document.getElementById('page-alltasks')?.classList.contains('active')) loadAllTasks();
+  } finally { done(); }
+}
+
+// The whole chain: every step, whose it is, and where it stands.
+async function openChainView(id) {
+  _chainViewId = id;
+  const box = document.getElementById('cvSteps');
+  box.innerHTML = '<div style="font-size:13px;color:var(--faint)">Loading…</div>';
+  document.getElementById('cvTitle').textContent = '🧱 Step-by-step task';
+  document.getElementById('cvSub').textContent = '';
+  document.getElementById('cvDelete').style.display = 'none';
+  document.getElementById('chainViewModal').classList.add('open');
+  const d = await api('/api/task-chains/' + id);
+  if (d.error) { box.innerHTML = '<div style="color:#b91c1c;font-size:13px">' + dtEscape(d.error) + '</div>'; return; }
+  document.getElementById('cvTitle').textContent = '🧱 ' + d.title;
+  document.getElementById('cvSub').textContent = (d.status === 'done' ? '✅ Complete' + (d.done ? ' · ' + d.done : '') : d.done + ' of ' + d.steps.length + ' steps done')
+    + ' · by ' + d.created_by_name + (d.client_name ? ' · ' + d.client_name : '');
+  document.getElementById('cvDelete').style.display = d.canEdit ? '' : 'none';
+  const current = d.steps.find(s => s.status !== 'completed');
+  box.innerHTML = d.steps.map(s => {
+    const isDone = s.status === 'completed';
+    const isNow = current && current.id === s.id;
+    const icon = isDone ? '✅' : s.locked ? '🔒' : s.waiting_approval ? '⏳' : '🟡';
+    const state = isDone ? 'Done'
+      : s.locked ? `Waiting for step ${s.step - 1} · gets ${s.days} day${s.days == 1 ? '' : 's'} once it opens`
+      : s.waiting_approval ? 'Done, waiting for approval'
+      : 'Now · due ' + fmtDate(s.due_date);
+    return `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px${isNow ? ';background:var(--brand-tint);border-color:var(--brand-mid)' : ''}">
+      <div style="font-size:18px;line-height:1.2">${icon}</div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:13.5px">Step ${s.step}: ${dtEscape(s.description)}</div>
+        <div style="font-size:12.5px;color:var(--muted-foreground);margin-top:2px">${dtEscape(s.doer)} · ${dtEscape(state)}</div>
+      </div></div>`;
+  }).join('');
+}
+
+async function chainDelete() {
+  if (!_chainViewId || !confirm('Delete this task and all its steps? This cannot be undone.')) return;
+  const r = await api('/api/task-chains/' + _chainViewId, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  closeModal('chainViewModal');
+  showToast('✅ Deleted');
+  if (typeof loadDashboard === 'function') loadDashboard();
+  if (document.getElementById('page-alltasks')?.classList.contains('active')) loadAllTasks();
 }
 
 // ══════════════════════════════════════════════════════

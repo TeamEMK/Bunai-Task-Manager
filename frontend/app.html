@@ -342,6 +342,7 @@
         </div>
         <button class="btn btn-outline" id="transferModeBtn" onclick="openNewTransferModal()"
           style="color:#7c3aed;border-color:#c4b5fd">🔀 Transfer</button>
+        <button class="btn btn-outline" id="tasksChainBtn" onclick="openChain()" title="One task, several people, one after another">🧱 Step-by-step</button>
         <button class="btn btn-primary" id="tasksAssignBtn" onclick="openDelegate()" style="display:none">+ Assign Task</button>
         <button class="btn btn-outline" id="bulkDeleteBtn" onclick="openBulkDeleteModal()"
           style="color:#dc2626;border-color:#fecaca;display:none">🗑 Bulk Delete</button>
@@ -2690,6 +2691,47 @@
     <div id="weekTasksBody"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('weekTasksModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chainModal">
+  <div class="modal" style="width:760px;max-width:95vw;max-height:92vh;overflow:auto">
+    <h3>🧱 Step-by-step task</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground);line-height:1.5">
+      One task, done by several people one after another. Only step 1 starts now; each next step opens - and its doer is told -
+      when the step before it is marked Done. The task is complete when the last step is.
+    </div>
+    <div class="alert error" id="chainErr"></div>
+    <div class="form-group"><label>Main task</label>
+      <input type="text" id="chTitle" placeholder="e.g. Build the wall"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Priority</label>
+        <select id="chPriority"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+      <div class="form-group"><label>Project <span style="color:var(--faint);font-weight:400;font-size:11px">(optional)</span></label>
+        <select id="chClient"><option value="">— No Project —</option></select></div>
+    </div>
+    <div style="margin:6px 0 6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)">Steps, in order</div>
+    <div style="font-size:11.5px;color:var(--faint);margin-bottom:8px">Days = how long that step gets. Step 1 counts from today; every other step counts from the day the step before it is done.</div>
+    <div id="chSteps"></div>
+    <button type="button" class="btn btn-outline" style="padding:6px 14px;font-size:13px;margin:4px 0 12px" onclick="chainAddStep()">+ Add step</button>
+    <div class="form-group"><label>Remarks <span style="color:var(--faint);font-weight:400;font-size:11px">(optional, shown on every step)</span></label>
+      <textarea id="chRemarks" style="min-height:50px"></textarea></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('chainModal')">Close</button>
+      <button class="btn btn-primary" onclick="saveChain(this)">Assign</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chainViewModal">
+  <div class="modal" style="width:640px;max-width:95vw;max-height:92vh;overflow:auto">
+    <h3 id="cvTitle">Task</h3>
+    <div id="cvSub" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
+    <div id="cvSteps"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" id="cvDelete" style="color:#dc2626;border-color:#fecaca;display:none" onclick="chainDelete()">Delete this task</button>
+      <button class="btn btn-outline" onclick="closeModal('chainViewModal')">Close</button>
     </div>
   </div>
 </div>

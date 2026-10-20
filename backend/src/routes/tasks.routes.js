@@ -11,6 +11,7 @@ const { placeholders, indexBy } = require('../utils/collections');
 const { loadHolidaysSet, isUserOffOn, nextWorkingDay } = require('../services/holidays');
 const wa = require('../services/whatsapp');
 const mail = require('../services/email');
+const taskChain = require('../services/taskChain');
 
 const router = express.Router();
 
@@ -63,7 +64,9 @@ router.get('/tasks', requireAuth, asyncRoute(async (req, res) => {
 
   const typeSpecific = isDeleg
     ? `COALESCE(t.approval,'no') AS approval,COALESCE(t.waiting_approval,0) AS waiting_approval,
-       t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,`
+       t.approver_id,u3.name AS approverName,t.remarks,t.revise_reason,t.url,
+       t.chain_id,t.chain_step,t.chain_locked,ch.title AS chain_title,
+       (SELECT COUNT(*) FROM delegation_tasks cx WHERE cx.chain_id=t.chain_id) AS chain_total,`
     : `'no' AS approval,0 AS waiting_approval,NULL AS approver_id,NULL AS approverName,
        t.remarks,NULL AS url,`;
   const seriesCols = isDeleg
@@ -79,7 +82,7 @@ router.get('/tasks', requireAuth, asyncRoute(async (req, res) => {
        FROM ${table} t
        JOIN users u1 ON t.assigned_to=u1.id
        JOIN users u2 ON t.assigned_by=u2.id
-       ${isDeleg ? 'LEFT JOIN users u3 ON t.approver_id=u3.id' : ''}
+       ${isDeleg ? 'LEFT JOIN users u3 ON t.approver_id=u3.id LEFT JOIN task_chains ch ON ch.id=t.chain_id' : ''}
        LEFT JOIN clients c ON t.client_id=c.id
        ${where} ORDER BY t.due_date ASC`, params);
 
@@ -390,9 +393,13 @@ router.put('/tasks/:id/status', requireAuth, asyncRoute(async (req, res) => {
   const uid = req.session.userId;
 
   const task = await db.one(
-    `SELECT id, assigned_to, assigned_by${tType === 'delegation' ? ', approval, approver_id' : ''}
+    `SELECT id, assigned_to, assigned_by${tType === 'delegation' ? ', approval, approver_id, chain_id, chain_step, chain_locked' : ''}
        FROM ${table} WHERE id=?`, [id]);
   if (!task) throw httpError(404, 'Task not found');
+  // A step of a chain cannot be done, or re-dated, before the step ahead of it.
+  if (task.chain_locked) {
+    throw httpError(400, `This is step ${task.chain_step} - it opens when step ${task.chain_step - 1} is done.`);
+  }
 
   const isDoer = task.assigned_to === uid;
   if (!isAdmin && !isPC && !isDoer) throw httpError(403, 'Not allowed');
@@ -435,6 +442,8 @@ router.put('/tasks/:id/status', requireAuth, asyncRoute(async (req, res) => {
 
   // Clear any leftover pending approval (e.g. after an admin override).
   await db.query(`DELETE FROM task_approvals WHERE task_id=? AND task_type=? AND status='pending'`, [id, tType]);
+  // A finished step opens the next one, or closes the chain.
+  if (status === 'completed' && task.chain_id) await taskChain.advance(task.chain_id);
   res.json({ success: true, needsApproval: false });
 }));
 

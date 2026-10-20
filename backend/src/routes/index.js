@@ -13,6 +13,7 @@ const api = express.Router();
 api.use(require('./auth.routes'));
 api.use(require('./dashboard.routes'));
 api.use(require('./tasks.routes').router);
+api.use(require('./taskChains.routes'));
 api.use(require('./approvals.routes'));
 api.use(require('./transfers.routes'));
 api.use(require('./mis.routes'));
