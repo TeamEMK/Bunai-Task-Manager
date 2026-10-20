@@ -64,12 +64,36 @@ const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, 
 // run for three weeks, measuring "the last 45 days" from today counts twenty of
 // them as days nobody bought anything, which halves every selling rate and
 // quietly turns real shortages into comfortable-looking stock.
+// The last order on file is read from the three order tables directly, each
+// by its date index. Asking the ims_orders view built the whole deduplicated
+// union first - three seconds on every screen, for one date.
+const LAST_ORDER = `GREATEST(
+  COALESCE((SELECT MAX(order_date) FROM sfy_orders), '1970-01-01'),
+  COALESCE((SELECT MAX(order_date) + INTERVAL 330 MINUTE FROM uni_orders), '1970-01-01'),
+  COALESCE((SELECT MAX(order_date) FROM vin_orders), '1970-01-01'))`;
+
+// Worked-out figures, kept for two minutes. Every screen starts from skuBase,
+// and Top Products asked for it twice in one call; switching tabs asked again.
+// The orders behind it change eight times a day, not between two clicks.
+const CACHE_MS = 2 * 60 * 1000;
+const cache = new Map();
+async function remember(key, fn) {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  const value = await fn();
+  cache.set(key, { at: Date.now(), value });
+  if (cache.size > 50) cache.delete(cache.keys().next().value);
+  return value;
+}
+
 async function dataClock() {
+  return remember('clock', dataClockFresh);
+}
+async function dataClockFresh() {
   const r = await db.one(
     `SELECT CURDATE() today,
-            DATE(MAX(order_date)) last_order,
-            DATEDIFF(CURDATE(), DATE(MAX(order_date))) stale_days
-       FROM ims_orders`);
+            DATE(${LAST_ORDER}) last_order,
+            DATEDIFF(CURDATE(), DATE(${LAST_ORDER})) stale_days`);
   const today = r && r.today ? ymd(new Date(r.today)) : ymd(new Date());
   const anchor = r && r.last_order ? ymd(new Date(r.last_order)) : today;
   return { today, anchor, staleDays: Math.max(0, Number(r && r.stale_days) || 0) };
@@ -79,29 +103,40 @@ async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, c
   const w = Math.max(1, Math.min(365, Math.round(windowDays)));
   const c = Math.max(1, Math.min(365, Math.round(coverDays)));
   const ck = clock || await dataClock();
+  return remember(['base', channelCtx.getStore() || 'all', w, c, ck.anchor].join('|'),
+    () => skuBaseFresh(w, c, ck));
+}
+
+async function skuBaseFresh(w, c, ck) {
 
   // A SKU can sell without being in the master list, and can sit in stock
   // without either. Starting from ims_skus alone dropped those, and a missing
   // row reads as "nothing to order", which is the wrong way to be wrong.
+  //
+  // But only the SKUs that sold in the window are added from the orders, not
+  // every SKU ever sold: one with no stock, no catalogue entry and no sale in
+  // the window has nothing to order either way. Reading DISTINCT sku over the
+  // whole 580,000-line history took seven of the fourteen seconds.
   const rows = await db.rows(
-    `SELECT u.sku,
+    `WITH sold AS (SELECT it.sku, SUM(it.order_qty) qty
+                     FROM ims_order_items it
+                    WHERE LOWER(it.status) <> 'cancelled'
+                      AND it.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
+                      AND it.order_date <  DATE_ADD(?, INTERVAL 1 DAY)${chan('it')}
+                      AND it.sku <> ''
+                    GROUP BY it.sku)
+     SELECT u.sku,
             COALESCE(NULLIF(s.description,''), u.sku)        AS product_name,
             COALESCE(inv.qty, 0)                             AS today_stock,
             COALESCE(sold.qty, 0)                            AS sold_qty,
             COALESCE(ret.qty, 0)                             AS returned_qty
        FROM (SELECT sku FROM ims_skus
              UNION SELECT sku FROM ims_inventory
-             UNION SELECT DISTINCT sku FROM ims_order_items WHERE sku <> '') u
+             UNION SELECT sku FROM sold) u
        LEFT JOIN ims_skus s ON s.sku = u.sku
        LEFT JOIN (SELECT sku, SUM(qty) qty FROM ims_inventory GROUP BY sku) inv
               ON inv.sku = u.sku
-       LEFT JOIN (SELECT it.sku, SUM(it.order_qty) qty
-                    FROM ims_order_items it
-                   WHERE LOWER(it.status) <> 'cancelled'
-                     AND it.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
-                     AND it.order_date <  DATE_ADD(?, INTERVAL 1 DAY)${chan('it')}
-                   GROUP BY it.sku) sold
-              ON sold.sku = u.sku
+       LEFT JOIN sold ON sold.sku = u.sku
        LEFT JOIN (SELECT ri.sku, SUM(ri.return_qty) qty
                     FROM ims_return_items ri
                     JOIN ims_returns rr ON rr.return_no = ri.return_no
