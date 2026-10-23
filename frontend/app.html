@@ -2010,11 +2010,17 @@
 
 <style>
   #ccGrid th, #ccGrid td { vertical-align: top; font-size: 12.5px; }
+  /* A line between every channel and every day, as in a sheet, so a cell's
+     plan never reads as the next column's. The date column is sticky, and a
+     sticky cell loses its collapsed border, so its divider is a shadow. */
+  #ccGrid th, #ccGrid td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  #ccGrid th:last-child, #ccGrid td:last-child { border-right: none; }
+  #ccGrid .cc-date { box-shadow: inset -2px 0 0 var(--border); }
   #ccGrid thead th { position: sticky; top: 0; z-index: 2; background: var(--muted); white-space: nowrap; }
   #ccGrid .cc-date { position: sticky; left: 0; z-index: 1; background: var(--card); white-space: nowrap; font-weight: 600; }
   #ccGrid thead .cc-date { z-index: 3; background: var(--muted); }
   #ccGrid tr.cc-today td { background: #fffbeb; }
-  #ccGrid tr.cc-today td.cc-date { box-shadow: inset 3px 0 0 #d97706; }
+  #ccGrid tr.cc-today td.cc-date { box-shadow: inset 3px 0 0 #d97706, inset -2px 0 0 var(--border); }
   #ccGrid tr td.cc-missed { background: #fef2f2; }
   #ccGrid tr td.cc-done { background: #f0fdf4; }
   .cc-cell { display: flex; gap: 6px; align-items: flex-start; min-width: 130px; max-width: 220px; }
