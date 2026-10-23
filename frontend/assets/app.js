@@ -685,7 +685,8 @@ async function loadStock() {
       // Period cards — recompute whenever the "Sold: N days" window changes.
       (d.period && d.period.hasOrders
         ? stockTile(`Sold (${d.period.mtd ? 'MTD' : d.period.soldDays + 'd'})`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`) +
-          stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'), `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn')
+          stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'),
+            d.period.reorderRule === 'ims' ? 'same as IMS To Be Order' : `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn')
         : '');
 
     // The sync timestamp is the honest part of this page: stale data that looks
@@ -741,9 +742,9 @@ async function loadStock() {
     body.innerHTML = d.rows.length ? d.rows.map((r, i) => {
       const qty = Number(r.qty);
       const sold = Number(r.sold) || 0;
-      // Fewer units in stock than sold in the window ⇒ under one window's cover
-      // at the current pace: flag it for reorder.
-      const reorder = sold > 0 && qty < sold;
+      // Flagged when the IMS says to order it - the same rule as the card.
+      const toOrder = Number(r.toOrder) || 0;
+      const reorder = toOrder > 0;
       const colour = qty <= 0 ? '#dc2626' : qty <= 5 ? '#d97706' : 'var(--foreground)';
       const soldCol = reorder ? '#dc2626' : 'var(--muted-foreground)';
       return `<tr${canOrders ? ` onclick="stockOrders(${i})" style="cursor:pointer" title="See the orders behind this row"` : ''}>
@@ -756,7 +757,7 @@ async function loadStock() {
           : ''}</td>
         <td style="white-space:nowrap">${dtEscape(r.warehouse)}</td>
         <td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:${colour}">${qty.toLocaleString('en-IN')}</td>
-        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${soldCol}">${sold ? sold.toLocaleString('en-IN') : '—'}${reorder ? ' <span style="font-size:10.5px;font-weight:700" title="Stock is below window sales — reorder">⚠</span>' : ''}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${soldCol}">${sold ? sold.toLocaleString('en-IN') : '—'}${reorder ? ` <span style="font-size:10.5px;font-weight:700;color:#dc2626" title="IMS To Be Order: order ${toOrder}">⚠ order ${toOrder}</span>` : ''}</td>
       </tr>`;
     }).join('') + (d.truncated
       ? `<tr><td colspan="6" style="text-align:center;font-size:12px;color:var(--faint);padding:10px">Showing the first 500 — narrow the search to see the rest</td></tr>`

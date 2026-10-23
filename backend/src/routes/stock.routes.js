@@ -12,6 +12,23 @@ const { runUnicommerceSync } = require('../services/scheduler');
 const uni = require('../../unicommerce');
 const skuGroup = require('../services/skuGroup');
 const brands = require('../services/brands');
+const imsData = require('../services/imsData');
+
+// "Needs reorder" is the IMS's own answer, not a second rule: a SKU needs
+// reordering when its stock is below its order point - average daily sale over
+// the IMS window (net of returns, every channel) times the cover days. The
+// Stock page used to flag "sold this month > stock", which named 90 SKUs while
+// the IMS named 135 for the same day, and nobody could say which was right.
+// Read from the IMS's own calculation, so the two can never disagree.
+async function reorderPlan() {
+  try {
+    const base = await imsData.skuBase();
+    return new Map(base.filter(r => r.toBeOrder > 0).map(r => [r.sku, r]));
+  } catch (e) {
+    console.error('  ⚠ reorder plan:', e.message);
+    return null;
+  }
+}
 
 const router = express.Router();
 
@@ -108,6 +125,8 @@ router.get('/stock', requireAuth, async (req, res) => {
     // Started now and awaited at the end, so it runs while the rows are read
     // and their sales looked up, instead of after.
     const periodP = periodFigures(soldDays, mtd, wh, brand);
+    const planP = reorderPlan();
+    const whSkusP = wh ? db.rows('SELECT DISTINCT sku FROM ims_inventory WHERE warehouse = ?', [wh]) : null;
 
     // Every query here is a round trip to a database in another region (about
     // a quarter of a second each), through a pool of two connections. So
@@ -121,7 +140,7 @@ router.get('/stock', requireAuth, async (req, res) => {
            LEFT JOIN ims_skus s ON s.sku = i.sku
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY i.qty ASC, i.sku ASC
-          LIMIT ${grouping ? GROUP_SCAN_LIMIT : reorder ? 2000 : ROW_LIMIT}`, args),
+          LIMIT ${grouping || reorder ? GROUP_SCAN_LIMIT : ROW_LIMIT}`, args),
       // Two questions, not one. "How old is this data?" is answered by the last
       // run that actually succeeded; "is anything wrong?" by the most recent
       // attempt. Reporting only the latest row makes good data look broken the
@@ -242,17 +261,36 @@ router.get('/stock', requireAuth, async (req, res) => {
       if (!reorder && Number.isFinite(low)) rows = rows.filter(r => Number(r.qty) <= low);
     }
 
-    // In reorder mode, keep only SKUs whose sales outrun their stock, most
-    // under-stocked first, then trim to the display limit.
+    // How many to order, from the IMS, on every row - a clubbed row is the sum
+    // of its sizes.
+    const [plan, whSkuRows] = await Promise.all([planP, whSkusP]);
+    const toOrderOf = (r) => (plan ? (r.skus || [r.sku]).reduce((a, s) => a + ((plan.get(s) || {}).toBeOrder || 0), 0) : 0);
+    rows.forEach(r => { r.toOrder = toOrderOf(r); });
+
+    // In reorder mode, the IMS's list: the most to order first. A SKU the IMS
+    // wants that has no stock row anywhere (sold, never stocked here) is still
+    // listed, at zero, so the list and the count are the same SKUs.
     let outRows = rows;
     if (reorder) {
-      outRows = rows
-        .filter(r => Number(r.sold) > 0 && Number(r.sold) > Number(r.qty))
-        .sort((a, b) => (Number(b.sold) - Number(b.qty)) - (Number(a.sold) - Number(a.qty)))
-        .slice(0, ROW_LIMIT);
+      outRows = rows.filter(r => r.toOrder > 0);
+      if (plan && !wh && !grouping && !q) {
+        const listed = new Set(outRows.map(r => r.sku));
+        for (const [sku, p] of plan) {
+          if (listed.has(sku) || (brand && brands.of(sku) !== brand)) continue;
+          outRows.push({ sku, warehouse: '—', qty: 0, sold: 0, description: p.productName || '', toOrder: p.toBeOrder });
+        }
+      }
+      outRows = outRows.sort((a, b) => b.toOrder - a.toOrder).slice(0, ROW_LIMIT);
     }
 
     const period = await periodP;
+    // The card counts SKUs, as the IMS does - for the brand and warehouse chosen.
+    if (period && plan) {
+      const inWh = whSkuRows ? new Set(whSkuRows.map(r => r.sku)) : null;
+      period.reorderCount = [...plan.keys()]
+        .filter(s => (!brand || brands.of(s) === brand) && (!inWh || inWh.has(s))).length;
+      period.reorderRule = 'ims';
+    }
 
     res.json({
       rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
