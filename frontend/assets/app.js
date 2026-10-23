@@ -7493,7 +7493,7 @@ function renderFMSRows() {
       <td>${fmsStatusPill(row.status)}</td>
       ${colKeys.map(k => `<td>${dtEscape(row.data[k] || '') || '—'}</td>`).join('')}
       <td>${done
-        ? '<button class="fms-row-btn" disabled>View</button>'
+        ? `<button class="fms-row-btn" onclick="openFMSViewModal(${ri})">View</button>`
         : `<button class="fms-row-btn" onclick="openFMSDoneModal(${ri})">Update</button>`}</td>
     </tr>`;
   }).join('');
@@ -7509,6 +7509,36 @@ function renderFMSRows() {
         <tbody>${body}</tbody>
       </table>
     </div>`;
+}
+
+// A completed row, read only: when it was planned, when it was done and by
+// whom, and every column of the row this step shows.
+function openFMSViewModal(rowIdx) {
+  const row = (window._fmsCurrentRows || [])[rowIdx];
+  if (!row) return;
+  const stepName = (document.getElementById('fmsTaskStepName') || {}).textContent || '';
+  document.getElementById('fmsViewTitle').textContent = 'Row details';
+  document.getElementById('fmsViewSub').textContent = (stepName.trim() && stepName.trim() !== '—' ? stepName.trim() + ' · ' : '') + 'sheet row ' + row.sheetRowNumber;
+  const line = (k, v, strong) => '<div style="display:grid;grid-template-columns:170px 1fr;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">'
+    + '<div style="font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-foreground)">' + dtEscape(k) + '</div>'
+    + '<div style="font-size:13.5px' + (strong ? ';font-weight:700' : '') + ';word-break:break-word">'
+    + (/^https?:\/\//.test(String(v || '').trim())
+        ? '<a href="' + dtEscape(String(v).trim()) + '" target="_blank" rel="noopener" style="color:var(--brand-deep)">Open link ↗</a>'
+        : dtEscape(v || '') || '<span style="color:var(--faint)">—</span>')
+    + '</div></div>';
+  const top = [
+    ['Status', FMS_STATUS_LABEL[row.status] || row.status, true],
+    ['Planned', row.planValue],
+    ['Done on (actual)', row.actualValue, true],
+    ['Doer', row.rowDoerName],
+  ];
+  if (row.sheetStatus) top.push(['Sheet status', row.sheetStatus]);
+  const shown = new Set(['Planned']);
+  const rest = Object.entries(row.data || {}).filter(([k]) => !shown.has(k));
+  document.getElementById('fmsViewBody').innerHTML = top.map(([k, v, s]) => line(k, v, s)).join('')
+    + '<div style="margin:14px 0 4px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--brand-deep)">Row</div>'
+    + rest.map(([k, v]) => line(k, v)).join('');
+  document.getElementById('fmsViewModal').classList.add('open');
 }
 
 function openFMSDoneModal(rowIdx) {
