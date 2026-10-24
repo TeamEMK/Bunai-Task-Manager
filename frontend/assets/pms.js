@@ -467,8 +467,8 @@ function pmsNewOrder() {
     <div class="pm-hero"><div><h2>New Order</h2><p>Once the order is created, Step 1 (${pmsEsc(PMS.meta.steps[0]?.name || 'PM Decision')}) goes to the PM. Step 1 plan date = Order date + TAT.</p></div></div>
     <div class="pm-card pm-pad">
       <div class="pm-uni">
-        <div class="pm-sec">Pull from a Unicommerce order <span class="pm-muted">optional — fills the form for you</span></div>
-        <div class="pm-filters"><input id="pmUniQ" placeholder="Search Unicommerce order code, customer name or mobile…" onkeydown="if(event.key==='Enter')pmsUniSearch()"/>
+        <div class="pm-sec">Pull from an order <span class="pm-muted">optional — fills the form for you</span></div>
+        <div class="pm-filters"><input id="pmUniQ" placeholder="Website order: customer name, phone, email or order no. · Myntra: order ID" onkeydown="if(event.key==='Enter')pmsUniSearch()"/>
           <button class="btn btn-outline" onclick="pmsUniSearch()">Search</button></div>
         <div id="pmUniResults"></div>
         ${pre.uni_order_code ? `<div class="pm-note">Linked to Unicommerce order <b>${pmsEsc(pre.uni_order_code)}</b> <a onclick="PMS.newPrefill=null;pmsNewOrder()">remove</a></div>` : ''}
@@ -487,10 +487,10 @@ async function pmsUniSearch() {
   PMS.uni = d.orders;
   box.innerHTML = d.orders.length ? `<div class="pm-uni-list">${d.orders.map((u, i) => `
     <div class="pm-row">
-      <div><b>${pmsEsc(u.display_code || u.code)}</b> · ${pmsEsc(u.customer_name || '')} <span class="pm-muted">${pmsEsc(u.channel || '')} · ${pmsDate(u.order_date)} · ${u.items.length} item${u.items.length === 1 ? '' : 's'}</span>
+      <div><b>${pmsEsc(u.display_code || u.code)}</b> · ${u.customer_name ? pmsEsc(u.customer_name) : '<span class="pm-muted">buyer not shared by Myntra</span>'}${u.notification_mobile ? ` <span class="pm-muted">· ${pmsEsc(u.notification_mobile)}</span>` : ''} <span class="pm-muted">${pmsEsc(u.channel || '')} · ${pmsDate(u.order_date)} · ${u.items.length} item${u.items.length === 1 ? '' : 's'}${u.ship_city ? ' · ' + pmsEsc(u.ship_city) : ''}</span>
         <div class="pm-muted">${u.items.slice(0, 3).map(it => pmsEsc(it.item_name || it.sku)).join(' · ')}</div></div>
       <div class="pm-right">${u.pms_code ? `<span class="pm-chip good">In PMS · ${pmsEsc(u.pms_code)}</span>` : `<button class="btn btn-outline btn-sm" onclick="pmsUniPick(${i})">Use</button>`}</div>
-    </div>`).join('')}</div>` : '<div class="pm-muted">No Unicommerce order matches.</div>';
+    </div>`).join('')}</div>` : '<div class="pm-muted">No order matches. Website orders can be found by customer name, phone, email or order number; Myntra orders only by their order ID.</div>';
 }
 function pmsUniPick(i) {
   const u = PMS.uni[i];
@@ -502,7 +502,8 @@ function pmsUniPick(i) {
     channel: u.channel || '', product: u.items.length > 1 ? `${it.item_name || it.sku} + ${u.items.length - 1} more` : (it.item_name || it.sku || ''),
     sku: it.sku || '', color: it.color || '', qty: u.items.length || 1,
     sizes: Object.entries(sizes).map(([k, n]) => `${k}:${n}`).join(', '), order_date: (u.order_date || '').slice(0, 10),
-    description: u.items.map(x => `${x.sku || ''} ${x.item_name || ''} ${x.color || ''} ${x.size || ''}`.trim()).join('\n'),
+    description: u.items.map(x => `${x.sku || ''} ${x.item_name || ''} ${x.color || ''} ${x.size || ''}`.trim()).join('\n')
+      + ((u.email || u.ship_city) ? '\n' + [u.email ? 'Email: ' + u.email : '', u.ship_city ? 'City: ' + u.ship_city : ''].filter(Boolean).join(' · ') : ''),
   };
   pmsNewOrder();
 }

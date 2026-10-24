@@ -451,27 +451,101 @@ router.get('/pms/updates', requireAuth, asyncRoute(async (req, res) => {
   res.json({ from, to, orders: rows });
 }));
 
-// ── Unicommerce orders to pull in ─────────────────────
-router.get('/pms/uni-orders', requireAuth, asyncRoute(async (req, res) => {
-  const q = String(req.query.q || '').trim();
-  const params = [];
-  let where = '1=1';
-  if (q) {
-    where = '(u.code LIKE ? OR u.display_code LIKE ? OR u.customer_name LIKE ? OR u.notification_mobile LIKE ?)';
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+// ── Orders to pull in: Shopify and Unicommerce ────────
+// Unicommerce masks the customer on every order it hands over - name and
+// mobile come back as "********" on Shopify orders and empty on Myntra ones -
+// so searching it by name or phone could never find anything. Shopify itself
+// gives the real name, phone and email, and every Shopify order is already in
+// sfy_orders, so website orders are found there: by name, phone, email or order
+// number. Unicommerce is still searched for the marketplace (Myntra) orders,
+// which Shopify never sees; those can only be found by their order code.
+const skuGroup = require('../services/skuGroup');
+
+async function shopifyOrders(q) {
+  const digits = q.replace(/\D/g, '');
+  const where = [];
+  const args = [];
+  if (digits.length >= 10) {
+    // A phone, however it was written: +91 98792 54702, 098792-54702 ...
+    where.push('s.phone10 = ?');
+    args.push(digits.slice(-10));
+  } else if (/^\d{3,9}$/.test(q.replace(/^#?bunai/i, ''))) {
+    // An order number: 483102, #483102 or Bunai483102.
+    where.push('s.order_ref = ?');
+    args.push(q.replace(/^#?bunai/i, ''));
+  } else {
+    where.push('(s.customer_name LIKE ? OR s.customer_email LIKE ? OR s.order_no LIKE ?)');
+    args.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   const orders = await db.rows(
-    `SELECT u.code,u.display_code,u.channel,u.status,u.customer_name,u.notification_mobile,u.ship_city,u.item_count,
-            ${dd('u.order_date', 'order_date')}, p.order_code AS pms_code
-       FROM uni_orders u
-       LEFT JOIN pms_orders p ON p.uni_order_code=u.code AND p.status<>'cancelled'
-      WHERE ${where} ORDER BY u.order_date DESC LIMIT 25`, params);
+    `SELECT s.order_no, s.order_ref, s.customer_name, s.customer_email, s.customer_phone,
+            s.ship_city, s.ship_state, s.status, s.cancelled_at,
+            DATE_FORMAT(s.order_date, '%Y-%m-%d %H:%i:%s') order_date,
+            u.code AS uni_code
+       FROM sfy_orders s
+       LEFT JOIN uni_orders u ON u.channel = 'SHOPIFY' AND u.display_code = s.order_ref
+      WHERE ${where.join(' AND ')}
+      ORDER BY s.order_date DESC LIMIT 20`, args);
+  if (!orders.length) return [];
+  const [items, linked] = await Promise.all([
+    db.rows('SELECT order_no, sku, sku_name, order_qty FROM sfy_order_items WHERE order_no IN (?)', [orders.map(o => o.order_no)]),
+    db.rows(`SELECT uni_order_code, order_code FROM pms_orders WHERE status <> 'cancelled' AND uni_order_code IN (?)`,
+      [orders.flatMap(o => [o.order_no, o.uni_code].filter(Boolean))]),
+  ]);
+  const pms = Object.fromEntries(linked.map(r => [r.uni_order_code, r.order_code]));
+  return orders.map(o => ({
+    source: 'shopify',
+    // Linked by the Unicommerce code when Unicommerce has the order, so an
+    // order pulled either way is recognised as already in PMS.
+    code: o.uni_code || o.order_no,
+    display_code: o.order_no,
+    channel: 'Shopify',
+    status: o.cancelled_at ? 'Cancelled' : (o.status || ''),
+    customer_name: (o.customer_name || '').trim(),
+    notification_mobile: (o.customer_phone || '').trim(),
+    email: (o.customer_email || '').trim(),
+    ship_city: [o.ship_city, o.ship_state].filter(Boolean).join(', '),
+    order_date: o.order_date,
+    pms_code: pms[o.uni_code] || pms[o.order_no] || null,
+    // One entry per piece, as Unicommerce lists them, so the form's quantity
+    // and size counts read the same whichever source the order came from.
+    items: items.filter(i => i.order_no === o.order_no).flatMap(i =>
+      Array.from({ length: Math.max(1, Number(i.order_qty) || 1) }, () => ({
+        sku: i.sku, item_name: i.sku_name, color: '', size: (skuGroup.splitSize(i.sku || '').size || ''),
+      }))),
+  }));
+}
+
+router.get('/pms/uni-orders', requireAuth, asyncRoute(async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 120);
+  const params = [];
+  // Shopify orders come from Shopify; Unicommerce supplies the rest.
+  let where = "u.channel <> 'SHOPIFY'";
+  if (q) {
+    where += ' AND (u.code LIKE ? OR u.display_code LIKE ?)';
+    params.push(`%${q}%`, `%${q}%`);
+  }
+  const [shop, orders] = await Promise.all([
+    q ? shopifyOrders(q) : [],
+    db.rows(
+      `SELECT u.code,u.display_code,u.channel,u.status,u.customer_name,u.notification_mobile,u.ship_city,u.item_count,
+              ${dd('u.order_date', 'order_date')}, p.order_code AS pms_code
+         FROM uni_orders u
+         LEFT JOIN pms_orders p ON p.uni_order_code=u.code AND p.status<>'cancelled'
+        WHERE ${where} ORDER BY u.order_date DESC LIMIT ${q ? 25 : 15}`, params),
+  ]);
   if (orders.length) {
     const items = await db.rows(
       `SELECT order_code,sku,item_name,color,size FROM uni_order_items WHERE order_code IN (?)`, [orders.map(o => o.code)]);
-    orders.forEach(o => { o.items = items.filter(i => i.order_code === o.code); });
+    orders.forEach(o => {
+      o.source = 'unicommerce';
+      o.items = items.filter(i => i.order_code === o.code);
+      // Myntra never shares the buyer; say so rather than show asterisks.
+      if (/^\*+$/.test(o.customer_name || '')) o.customer_name = '';
+      if (/^\*+$/.test(o.notification_mobile || '')) o.notification_mobile = '';
+    });
   }
-  res.json({ orders });
+  res.json({ orders: [...shop, ...orders] });
 }));
 
 // ── Vendors ───────────────────────────────────────────

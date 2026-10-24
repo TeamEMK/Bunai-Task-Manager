@@ -1241,6 +1241,11 @@ const COLUMNS = [
   // Bengaluru from one in Brisbane. Stored as the code Shopify uses; the page
   // turns it into a name. NULL for an order whose address names no country.
   ['sfy_orders', 'ship_country', `VARCHAR(8) NULL AFTER ship_pincode`],
+  // The customer's phone as its last ten digits, worked out by MySQL. Old
+  // orders hold it as ",,9876543210", "09876543210", "+919876543210"... so a
+  // phone search had to clean every one of 450,000 rows (five seconds); this
+  // is indexed. VIRTUAL, so adding it rewrites nothing - only the index is built.
+  ['sfy_orders', 'phone10', `VARCHAR(10) GENERATED ALWAYS AS (RIGHT(REGEXP_REPLACE(COALESCE(customer_phone,''),'[^0-9]',''),10)) VIRTUAL`],
   ['sfy_customers', 'country', `VARCHAR(8) DEFAULT '' AFTER state`],
   // hrm_candidates shipped without this one. CREATE TABLE IF NOT EXISTS no-ops
   // once the table is there, so a database that already has it would never get
@@ -1385,6 +1390,7 @@ const INDEXES = [
   // seconds, the same numbers. Every figure on the Sales page is some
   // combination of these three columns over a date window.
   ['sfy_orders', 'idx_sfy_o_date_amt', 'order_date, order_amount, status'],
+  ['sfy_orders', 'idx_sfy_o_phone10', 'phone10'],
   ['hrm_candidates', 'idx_hrm_status', 'status'],
   ['hrm_candidates', 'idx_hrm_interview', 'interview_date'],
   ['hrm_candidates', 'idx_hrm_join_token', 'joining_form_token'],
