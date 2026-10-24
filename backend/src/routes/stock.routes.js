@@ -80,6 +80,10 @@ router.get('/stock', requireAuth, async (req, res) => {
     // "low" is a threshold, not a flag — different categories reorder at
     // different levels, so the caller decides what counts as low.
     const low = req.query.low ? Number(req.query.low) : null;
+    // The lists behind two of the cards: "oos" - selling, and none left (the
+    // Out of stock card); "sold" - sold in the window, most sold first (the
+    // Sold card). Like reorder, both need the sales before they can filter.
+    const view = ['oos', 'sold'].includes(req.query.view) ? req.query.view : '';
     // Window for the "sold" / reorder column (days). Validated to a bare int so
     // it is safe to interpolate into the INTERVAL below.
     // "mtd" is the window the page opens on: from the 1st of this month, India's
@@ -119,7 +123,8 @@ router.get('/stock', requireAuth, async (req, res) => {
     // applied after the sold figures are known.
     // It is also skipped when clubbing: filtering single sizes and then adding
     // them up would report a product as low on stock because one size is.
-    if (!reorder && !grouping && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
+    if (!reorder && !view && !grouping && Number.isFinite(low)) { where.push('i.qty <= ?'); args.push(low); }
+    if (view === 'oos') where.push('i.qty <= 0');
 
     // Five independent reads, issued together.
     // Started now and awaited at the end, so it runs while the rows are read
@@ -140,7 +145,7 @@ router.get('/stock', requireAuth, async (req, res) => {
            LEFT JOIN ims_skus s ON s.sku = i.sku
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY i.qty ASC, i.sku ASC
-          LIMIT ${grouping || reorder ? GROUP_SCAN_LIMIT : ROW_LIMIT}`, args),
+          LIMIT ${grouping || reorder || view ? GROUP_SCAN_LIMIT : ROW_LIMIT}`, args),
       // Two questions, not one. "How old is this data?" is answered by the last
       // run that actually succeeded; "is anything wrong?" by the most recent
       // attempt. Reporting only the latest row makes good data look broken the
@@ -258,7 +263,7 @@ router.get('/stock', requireAuth, async (req, res) => {
     if (grouping) {
       rows = skuGroup.collapse(rows, grouping);
       rows.sort((a, b) => (a.qty - b.qty) || String(a.sku).localeCompare(String(b.sku)));
-      if (!reorder && Number.isFinite(low)) rows = rows.filter(r => Number(r.qty) <= low);
+      if (!reorder && !view && Number.isFinite(low)) rows = rows.filter(r => Number(r.qty) <= low);
     }
 
     // How many to order, from the IMS, on every row - a clubbed row is the sum
@@ -282,6 +287,10 @@ router.get('/stock', requireAuth, async (req, res) => {
       }
       outRows = outRows.sort((a, b) => b.toOrder - a.toOrder).slice(0, ROW_LIMIT);
     }
+    if (view) {
+      outRows = rows.filter(r => Number(r.sold) > 0 && (view === 'sold' || Number(r.qty) <= 0))
+        .sort((a, b) => Number(b.sold) - Number(a.sold)).slice(0, ROW_LIMIT);
+    }
 
     const period = await periodP;
     // The card counts SKUs, as the IMS does - for the brand and warehouse chosen.
@@ -299,7 +308,8 @@ router.get('/stock', requireAuth, async (req, res) => {
       warehouse: known ? wh : '',
       brand,
       groupBy: grouping || 'sku',
-      truncated: scanCutShort || (reorder
+      view,
+      truncated: scanCutShort || (reorder || view
         ? outRows.length === ROW_LIMIT
         : outRows.length > ROW_LIMIT || (!grouping && rows.length === ROW_LIMIT)),
     });

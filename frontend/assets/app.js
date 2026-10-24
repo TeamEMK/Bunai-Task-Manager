@@ -459,9 +459,9 @@ function stockDebounced() {
   _stockTimer = setTimeout(loadStock, 300);   // typing shouldn't fire a query per keystroke
 }
 
-function stockTile(label, value, note, tone) {
+function stockTile(label, value, note, tone, onclick) {
   const colors = { good: '#16a34a', warn: '#d97706', bad: '#dc2626' };
-  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+  return `<div ${onclick ? `onclick="${onclick}" title="Click to see these below" onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--border)'" ` : ''}style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px${onclick ? ';cursor:pointer;transition:border-color .15s' : ''}">
     <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:9px">${label}</div>
     <div style="font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1;color:${colors[tone] || 'var(--foreground)'};font-variant-numeric:tabular-nums">${value}</div>
     ${note ? `<div style="font-size:12px;color:var(--faint);margin-top:6px">${note}</div>` : ''}
@@ -618,6 +618,22 @@ function stockPickBrand() {
   loadStockMovement();
 }
 
+// Each card opens the list behind its number: the warehouse, or the stock
+// filter that makes the table show exactly those rows.
+function stockCard(kind, wh) {
+  const low = document.getElementById('stockLow');
+  if (kind === 'warehouse') {
+    if (low) low.value = '';
+    stockPickWh(wh || '');
+  } else {
+    if (low) low.value = kind;
+    stockFade(true);
+    loadStock();
+  }
+  const table = document.getElementById('stockBody');
+  if (table) table.closest('table').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function stockFade(on) {
   ['stockTiles', 'stockMovement', 'stockBody'].forEach(id => {
     const el = document.getElementById(id);
@@ -645,6 +661,7 @@ async function loadStock() {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (low === 'reorder') params.set('reorder', '1');
+    else if (low === 'oos' || low === 'sold') params.set('view', low);
     else if (low !== '') params.set('low', low);
     if (soldDays) params.set('soldDays', soldDays);
     const groupSel = document.getElementById('stockGroupBy');
@@ -671,22 +688,24 @@ async function loadStock() {
     const totalUnits = d.totals.reduce((s, t) => s + Number(t.units || 0), 0);
     document.getElementById('stockTiles').innerHTML =
       stockTile('Total units', totalUnits.toLocaleString('en-IN'),
-        d.totals.length === 1 ? `${d.totals[0].skus} SKUs · ${d.totals[0].styles || 0} styles in ${d.totals[0].warehouse}` : `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`) +
+        d.totals.length === 1 ? `${d.totals[0].skus} SKUs · ${d.totals[0].styles || 0} styles in ${d.totals[0].warehouse}` : `${d.counts ? d.counts.tracked : 0} SKU-warehouse rows`,
+        null, "stockCard('warehouse','')") +
       // Per-warehouse cards only when there is more than one — with a single
       // warehouse the card would just repeat Total units.
       (d.totals.length > 1
         ? d.totals.map(t => stockTile(t.warehouse, Number(t.units).toLocaleString('en-IN'),
             // A SKU is one size, so six sizes of a kurta are six SKUs and one style.
-            `${Number(t.skus).toLocaleString('en-IN')} SKUs · ${Number(t.styles || 0).toLocaleString('en-IN')} styles in stock`)).join('') : '') +
+            `${Number(t.skus).toLocaleString('en-IN')} SKUs · ${Number(t.styles || 0).toLocaleString('en-IN')} styles in stock`,
+            null, `stockCard('warehouse','${dtEscape(t.warehouse)}')`)).join('') : '') +
       (d.counts && d.counts.out_of_stock > 0
         ? stockTile('Out of stock', d.counts.out_of_stock,
             `sold recently, none left${d.counts.zero_rows ? ` · ${Number(d.counts.zero_rows).toLocaleString('en-IN')} rows at zero` : ''}`,
-            'bad') : '') +
+            'bad', "stockCard('oos')") : '') +
       // Period cards — recompute whenever the "Sold: N days" window changes.
       (d.period && d.period.hasOrders
-        ? stockTile(`Sold (${d.period.mtd ? 'MTD' : d.period.soldDays + 'd'})`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`) +
+        ? stockTile(`Sold (${d.period.mtd ? 'MTD' : d.period.soldDays + 'd'})`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`, null, "stockCard('sold')") +
           stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'),
-            d.period.reorderRule === 'ims' ? 'same as IMS To Be Order' : `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn')
+            d.period.reorderRule === 'ims' ? 'same as IMS To Be Order' : `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn', "stockCard('reorder')")
         : '');
 
     // The sync timestamp is the honest part of this page: stale data that looks
