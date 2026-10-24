@@ -9557,6 +9557,45 @@ async function b2bSkuPicked(i, value) {
   else show('Not in the Unicommerce catalogue');
 }
 
+// Everything about one order on one screen, read only - the row in the table
+// shows a summary, and opening the edit form just to read it invited mistakes.
+function b2bView(idx) {
+  const r = B2B_ROWS[idx];
+  if (!r) return;
+  const sec = (t) => '<div style="margin:16px 0 6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--brand-deep)">' + t + '</div>';
+  const pair = (k, v) => '<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-foreground)">'
+    + k + '</div><div style="font-size:13.5px;margin-top:2px;word-break:break-word;white-space:pre-line">' + (v ? dtEscape(v) : '<span style="color:var(--faint)">—</span>') + '</div></div>';
+  const grid = (items) => '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">' + items.map(([k, v]) => pair(k, v)).join('') + '</div>';
+  const lines = r.lines || [];
+  const itemsHtml = lines.length
+    ? '<div class="table-container" style="overflow-x:auto"><table><thead><tr><th>#</th><th>SKU</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Discount</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+      + lines.map((l, k) => '<tr><td>' + (k + 1) + '</td><td><b>' + dtEscape(l.sku) + '</b>' + (l.name ? '<div style="font-size:11.5px;color:var(--faint)">' + dtEscape(l.name) + '</div>' : '') + '</td>'
+        + '<td style="text-align:right">' + l.qty + '</td><td style="text-align:right">' + b2bMoney(l.price) + '</td>'
+        + '<td style="text-align:right">' + (l.disc_value ? (l.disc_type === 'amt' ? b2bMoney(l.disc_value) : l.disc_value + '%') : '—') + '</td>'
+        + '<td style="text-align:right;font-weight:700">' + b2bMoney(l.amount) + '</td></tr>').join('')
+      + '</tbody></table></div>'
+    : grid([['What was sold', r.what_was_sold], ['Pieces × rate', (r.pieces != null ? r.pieces + ' pcs' : '') + (r.rate_per_piece != null ? ' × ' + b2bMoney(r.rate_per_piece) : '')]]);
+  document.getElementById('b2bViewTitle').textContent = r.party_name;
+  document.getElementById('b2bViewSub').innerHTML = [b2bPill(r.order_status, B2B_STATUS_PILL), b2bPill(r.payment_status, B2B_PAY_PILL),
+    r.created_by_name ? '<span>Added by ' + dtEscape(r.created_by_name) + '</span>' : ''].filter(Boolean).join(' &nbsp; ');
+  document.getElementById('b2bViewBody').innerHTML =
+    sec('Party')
+    + grid([['Owner', r.owner_name], ['Contact person', r.contact_person], ['Email 1', r.email], ['Email 2', r.email2],
+            ['WhatsApp', r.whatsapp], ['Phone', r.phone]])
+    + pair('Address', [r.address, [r.city, r.state, r.pincode].filter(Boolean).join(', ')].filter(Boolean).join('\n'))
+    + sec('What was sold' + (lines.length ? ' · ' + lines.length + ' SKUs · ' + Number(r.pieces || 0).toLocaleString('en-IN') + ' pcs' : ''))
+    + itemsHtml
+    + sec('Money')
+    + grid([['Order value', b2bMoney(r.total_order_value)], ['Received', b2bMoney(r.amount_received)],
+            ['Balance', b2bMoney(r.balance_amount)], ['Payment status', r.payment_status]])
+    + sec('Dates')
+    + grid([['Ordered', r.order_date ? b2bDate(r.order_date) : ''], ['Dispatched', r.dispatch_date ? b2bDate(r.dispatch_date) : ''],
+            ['Delivered', r.delivery_date ? b2bDate(r.delivery_date) : ''], ['Order status', r.order_status]])
+    + (r.remarks ? sec('Remarks') + '<div style="font-size:13.5px;white-space:pre-line">' + dtEscape(r.remarks) + '</div>' : '');
+  document.getElementById('b2bViewEdit').onclick = () => { closeModal('b2bViewModal'); openB2B(idx); };
+  document.getElementById('b2bViewModal').classList.add('open');
+}
+
 // The full list behind "N SKUs" in the table.
 function b2bShowItems(idx) {
   const r = B2B_ROWS[idx];
@@ -9634,7 +9673,7 @@ async function loadB2B(){
     body.innerHTML = B2B_ROWS.map((r, i) => {
       const bal = Number(r.balance_amount);
       const owes = Number.isFinite(bal) && bal > 0;
-      return `<tr>
+      return `<tr onclick="b2bView(${i})" style="cursor:pointer" title="Click to see the whole order">
       <td>
         <b>${dtEscape(r.party_name)}</b>
         <div style="font-size:11.5px;color:var(--faint)">${[r.owner_name || r.contact_person, r.city, r.state].filter(Boolean).map(dtEscape).join(' · ') || '—'}</div>
@@ -9642,7 +9681,7 @@ async function loadB2B(){
       </td>
       <td style="font-size:13px;max-width:220px">
         ${(r.lines || []).length
-          ? `<a href="#" onclick="b2bShowItems(${i});return false" style="font-weight:600;color:var(--brand-deep);text-decoration:none">
+          ? `<a href="#" onclick="event.stopPropagation();b2bShowItems(${i});return false" style="font-weight:600;color:var(--brand-deep);text-decoration:none">
                ${r.lines.length} SKU${r.lines.length === 1 ? '' : 's'} · ${Number(r.pieces || 0).toLocaleString('en-IN')} pcs</a>
              <div style="font-size:11.5px;color:var(--faint)">click for details</div>`
           : `${dtEscape(r.what_was_sold || '—')}
@@ -9658,7 +9697,7 @@ async function loadB2B(){
       <td style="font-size:13px;white-space:nowrap">${b2bDate(r.dispatch_date)}</td>
       <td style="font-size:13px;white-space:nowrap">${b2bDate(r.delivery_date)}</td>
       <td>${b2bPill(r.order_status, B2B_STATUS_PILL)}</td>
-      <td style="white-space:nowrap">
+      <td style="white-space:nowrap" onclick="event.stopPropagation()">
         <button class="action-btn" onclick="openB2B(${i})">Edit</button>
         <button class="action-btn delete" style="margin-left:6px" onclick="deleteB2B(${r.id})">Delete</button>
       </td>
