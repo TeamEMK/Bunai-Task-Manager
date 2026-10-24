@@ -34,10 +34,22 @@ const { AsyncLocalStorage } = require('async_hooks');
 // the store itself, and every other order on file is Myntra (its own account
 // and the two Unicommerce PPMP ones).
 const CHANNELS = ['myntra', 'shopify'];
+// The sales window travels the same way: the last 45 days (the default), the
+// last 30, or this month so far. Month to date ends at the last order on file
+// and starts on the 1st of that month.
+const WINDOWS = ['30', 'mtd'];
 const channelCtx = new AsyncLocalStorage();
-const withChannel = (ch, fn) => channelCtx.run(CHANNELS.includes(ch) ? ch : '', fn);
+const withChannel = (ch, fn, win) => channelCtx.run(
+  { channel: CHANNELS.includes(ch) ? ch : '', window: WINDOWS.includes(win) ? win : '' }, fn);
+const ctxChannel = () => (channelCtx.getStore() || {}).channel || '';
+function windowDaysFor(clock) {
+  const w = (channelCtx.getStore() || {}).window || '';
+  if (w === '30') return 30;
+  if (w === 'mtd') return Math.max(1, Number(String(clock.anchor).slice(8, 10)) || 1);
+  return AVG_WINDOW_DAYS;
+}
 function chan(alias) {
-  const c = channelCtx.getStore();
+  const c = ctxChannel();
   if (c === 'shopify') return ` AND ${alias}.source = 'shopify'`;
   if (c === 'myntra') return ` AND ${alias}.source <> 'shopify'`;
   return '';
@@ -99,11 +111,11 @@ async function dataClockFresh() {
   return { today, anchor, staleDays: Math.max(0, Number(r && r.stale_days) || 0) };
 }
 
-async function skuBase({ windowDays = AVG_WINDOW_DAYS, coverDays = COVER_DAYS, clock = null } = {}) {
-  const w = Math.max(1, Math.min(365, Math.round(windowDays)));
-  const c = Math.max(1, Math.min(365, Math.round(coverDays)));
+async function skuBase({ windowDays = null, coverDays = COVER_DAYS, clock = null } = {}) {
   const ck = clock || await dataClock();
-  return remember(['base', channelCtx.getStore() || 'all', w, c, ck.anchor].join('|'),
+  const w = Math.max(1, Math.min(365, Math.round(windowDays == null ? windowDaysFor(ck) : windowDays)));
+  const c = Math.max(1, Math.min(365, Math.round(coverDays)));
+  return remember(['base', ctxChannel() || 'all', w, c, ck.anchor].join('|'),
     () => skuBaseFresh(w, c, ck));
 }
 
@@ -121,7 +133,7 @@ async function skuBaseFresh(w, c, ck) {
     `WITH sold AS (SELECT it.sku, SUM(it.order_qty) qty
                      FROM ims_order_items it
                     WHERE LOWER(it.status) <> 'cancelled'
-                      AND it.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
+                      AND it.order_date >= DATE_SUB(?, INTERVAL ${w - 1} DAY)
                       AND it.order_date <  DATE_ADD(?, INTERVAL 1 DAY)${chan('it')}
                       AND it.sku <> ''
                     GROUP BY it.sku)
@@ -141,7 +153,7 @@ async function skuBaseFresh(w, c, ck) {
                     FROM ims_return_items ri
                     JOIN ims_returns rr ON rr.return_no = ri.return_no
                     JOIN ims_orders o   ON o.order_id = rr.eretail_order_no
-                   WHERE o.order_date >  DATE_SUB(?, INTERVAL ${w} DAY)
+                   WHERE o.order_date >= DATE_SUB(?, INTERVAL ${w - 1} DAY)
                      AND o.order_date <  DATE_ADD(?, INTERVAL 1 DAY)${chan('o')}
                    GROUP BY ri.sku) ret
               ON ret.sku = u.sku`,
@@ -278,7 +290,7 @@ async function getToBeOrderData() {
         maxLevel: r.maxLevel,
         avgDaily: r.avgDaily,
       }));
-    return { success: true, orders, basis: { windowDays: AVG_WINDOW_DAYS, coverDays: COVER_DAYS } };
+    return { success: true, orders, basis: { windowDays: windowDaysFor(await dataClock()), coverDays: COVER_DAYS } };
   } catch (e) { return { success: false, error: e.message }; }
 }
 
@@ -299,7 +311,7 @@ async function getSalesRankData(fromStr, toStr) {
       // An explicit range is taken literally, both ends included.
       ? 'it.order_date >= ? AND it.order_date < DATE_ADD(?, INTERVAL 1 DAY)'
       // The default is the window ending at the last order, matching skuBase.
-      : `it.order_date > DATE_SUB(?, INTERVAL ${AVG_WINDOW_DAYS} DAY)
+      : `it.order_date >= DATE_SUB(?, INTERVAL ${windowDaysFor(clock) - 1} DAY)
          AND it.order_date < DATE_ADD(?, INTERVAL 1 DAY)`;
     const args = ranged ? [fromStr, toStr] : [clock.anchor, clock.anchor];
 
@@ -358,7 +370,7 @@ async function getSKUSalesData(masterSku, productName) {
     const base = await skuBase();
     const members = base.filter(r => skuGroup.styleKey(r.sku) === style);
     if (!members.length) {
-      return { success: true, sizes: [], days: AVG_WINDOW_DAYS, productName: productName || masterSku, dateColFound: false };
+      return { success: true, sizes: [], days: windowDaysFor(await dataClock()), productName: productName || masterSku, dateColFound: false };
     }
     const sizes = members.map(r => ({
       sku: r.sku,
@@ -373,7 +385,7 @@ async function getSKUSalesData(masterSku, productName) {
     return {
       success: true,
       sizes,
-      days: AVG_WINDOW_DAYS,
+      days: windowDaysFor(await dataClock()),
       productName: productName || members[0].productName,
       dateColFound: true,
     };
@@ -459,7 +471,7 @@ async function getTopProductsData(fromStr, toStr) {
       pct: g.totalMaxLevel > 0 ? Math.round(g.totalStock / g.totalMaxLevel * 100) : null,
     })).sort((a, b) => b.totalSales - a.totalSales);
 
-    return { success: true, products, basis: { windowDays: AVG_WINDOW_DAYS, coverDays: COVER_DAYS } };
+    return { success: true, products, basis: { windowDays: windowDaysFor(await dataClock()), coverDays: COVER_DAYS } };
   } catch (e) { return { success: false, error: e.message }; }
 }
 

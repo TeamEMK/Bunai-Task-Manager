@@ -333,6 +333,11 @@
   <div class="header-right">
     <div class="today-badge" id="buildBadge" style="opacity:0.75;border-color:var(--accent);color:var(--accent);">build v7 · clean-ui</div>
     <div class="today-badge" id="todayBadge">—</div>
+    <select class="refresh-btn" id="imsWindow" onchange="imsPickWindow(this.value)" title="Which sales the selling rate is worked out from">
+      <option value="">Sales: last 45 days</option>
+      <option value="30">Sales: last 30 days</option>
+      <option value="mtd">Sales: month to date</option>
+    </select>
     <select class="refresh-btn" id="imsChannel" onchange="imsPickChannel(this.value)" title="Whose sales the numbers are measured on. Stock is both warehouses together.">
       <option value="">All channels</option>
       <option value="myntra">Myntra</option>
@@ -775,10 +780,21 @@
   // window.__imsChannel), remembered on this browser, and a change reloads
   // the tab in view and forgets the others so they load afresh.
   try { window.__imsChannel = localStorage.getItem('imsChannel') || ''; } catch (_) { window.__imsChannel = ''; }
+  try { window.__imsWindow = localStorage.getItem('imsWindow') || ''; } catch (_) { window.__imsWindow = ''; }
   document.addEventListener('DOMContentLoaded', function () {
     var sel = document.getElementById('imsChannel');
     if (sel) sel.value = window.__imsChannel;
+    var win = document.getElementById('imsWindow');
+    if (win) win.value = window.__imsWindow;
   });
+  // The sales window: 45 days, 30 days or month to date - remembered, and a
+  // change reloads the tab in view as the channel does.
+  function imsPickWindow(v) {
+    window.__imsWindow = v || '';
+    try { localStorage.setItem('imsWindow', window.__imsWindow); } catch (_) {}
+    dashData = null; orderData = null; rankData = null; topData = null;
+    loadCurrentTab();
+  }
   function imsPickChannel(v) {
     window.__imsChannel = v || '';
     try { localStorage.setItem('imsChannel', window.__imsChannel); } catch (_) {}
