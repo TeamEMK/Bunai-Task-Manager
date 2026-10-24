@@ -131,7 +131,12 @@ router.get('/stock', requireAuth, async (req, res) => {
     // and their sales looked up, instead of after.
     const periodP = periodFigures(soldDays, mtd, wh, brand);
     const planP = reorderPlan();
-    const whSkusP = wh ? db.rows('SELECT DISTINCT sku FROM ims_inventory WHERE warehouse = ?', [wh]) : null;
+    // "__none" is the tab for SKUs the IMS wants reordered that no warehouse
+    // lists at all - sold in the window, but Unicommerce holds no stock row for
+    // them anywhere. Without it Bunai + Gujarat never added up to All.
+    const NONE = '__none';
+    const whSkusP = wh && wh !== NONE ? db.rows('SELECT DISTINCT sku FROM ims_inventory WHERE warehouse = ?', [wh]) : null;
+    const allSkusP = db.rows('SELECT DISTINCT sku FROM ims_inventory');
 
     // Every query here is a round trip to a database in another region (about
     // a quarter of a second each), through a pool of two connections. So
@@ -268,9 +273,12 @@ router.get('/stock', requireAuth, async (req, res) => {
 
     // How many to order, from the IMS, on every row - a clubbed row is the sum
     // of its sizes.
-    const [plan, whSkuRows] = await Promise.all([planP, whSkusP]);
+    const [plan, whSkuRows, allSkuRows] = await Promise.all([planP, whSkusP, allSkusP]);
     const toOrderOf = (r) => (plan ? (r.skus || [r.sku]).reduce((a, s) => a + ((plan.get(s) || {}).toBeOrder || 0), 0) : 0);
     rows.forEach(r => { r.toOrder = toOrderOf(r); });
+    const stocked = new Set(allSkuRows.map(r => r.sku));
+    const noWh = plan ? [...plan.entries()].filter(([s]) => !stocked.has(s) && (!brand || brands.of(s) === brand)
+      && (!q || s.toLowerCase().includes(q.toLowerCase()) || String((plan.get(s) || {}).productName || '').toLowerCase().includes(q.toLowerCase()))) : [];
 
     // In reorder mode, the IMS's list: the most to order first. A SKU the IMS
     // wants that has no stock row anywhere (sold, never stocked here) is still
@@ -291,12 +299,16 @@ router.get('/stock', requireAuth, async (req, res) => {
       outRows = rows.filter(r => Number(r.sold) > 0 && (view === 'sold' || Number(r.qty) <= 0))
         .sort((a, b) => Number(b.sold) - Number(a.sold)).slice(0, ROW_LIMIT);
     }
+    if (wh === NONE) {
+      outRows = noWh.map(([sku, p]) => ({ sku, warehouse: '—', qty: 0, sold: p.soldQty || 0, description: p.productName || '', toOrder: p.toBeOrder }))
+        .sort((a, b) => b.toOrder - a.toOrder).slice(0, ROW_LIMIT);
+    }
 
     const period = await periodP;
     // The card counts SKUs, as the IMS does - for the brand and warehouse chosen.
     if (period && plan) {
       const inWh = whSkuRows ? new Set(whSkuRows.map(r => r.sku)) : null;
-      period.reorderCount = [...plan.keys()]
+      period.reorderCount = wh === NONE ? noWh.length : [...plan.keys()]
         .filter(s => (!brand || brands.of(s) === brand) && (!inWh || inWh.has(s))).length;
       period.reorderRule = 'ims';
     }
@@ -305,7 +317,8 @@ router.get('/stock', requireAuth, async (req, res) => {
       rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
       totals, lastSync, lastOk, counts, soldDays, mtd, period,
       warehouses: allWh.map(w => ({ warehouse: w.warehouse, units: Number(w.units) || 0, skus: Number(w.skus) || 0 })),
-      warehouse: known ? wh : '',
+      warehouse: wh === NONE ? NONE : (known ? wh : ''),
+      noWarehouse: noWh.length,
       brand,
       groupBy: grouping || 'sku',
       view,

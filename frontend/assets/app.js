@@ -585,18 +585,25 @@ function _vinSyncWatch(kind, before, startedAt) {
 
 // The warehouse tabs on the Stock page. Codes come from Unicommerce; the names
 // are the ones the team uses.
-const STOCK_WH_NAME = { bunai: 'Bunai', MYNTRA_GUJRAT: 'Gujarat' };
+const STOCK_WH_NAME = { bunai: 'Bunai', MYNTRA_GUJRAT: 'Gujarat', __none: 'Not in any warehouse' };
 const stockWhName = (w) => STOCK_WH_NAME[w] || w;
 
-function stockDrawWhTabs(list, current) {
+function stockDrawWhTabs(list, current, noWh) {
   const host = document.getElementById('stockWhTabs');
   if (!host) return;
-  if (list.length < 2) { host.innerHTML = ''; return; }
+  if (list.length < 2 && !noWh && current !== '__none') { host.innerHTML = ''; return; }
   const all = list.reduce((s, w) => s + Number(w.units || 0), 0);
-  const tab = (key, label, units) =>
-    '<div class="lv-tab' + (current === key ? ' active' : '') + '" onclick="stockPickWh(\'' + dtEscape(key) + '\')">'
-    + dtEscape(label) + '<span class="lv-tab-badge">' + Number(units).toLocaleString('en-IN') + '</span></div>';
-  host.innerHTML = tab('', 'All warehouses', all) + list.map(w => tab(w.warehouse, stockWhName(w.warehouse), w.units)).join('');
+  const tab = (key, label, badge, title) =>
+    '<div class="lv-tab' + (current === key ? ' active' : '') + '" onclick="stockPickWh(\'' + dtEscape(key) + '\')"'
+    + (title ? ' title="' + dtEscape(title) + '"' : '') + '>'
+    + dtEscape(label) + '<span class="lv-tab-badge">' + badge + '</span></div>';
+  host.innerHTML = tab('', 'All warehouses', Number(all).toLocaleString('en-IN'))
+    + list.map(w => tab(w.warehouse, stockWhName(w.warehouse), Number(w.units).toLocaleString('en-IN'))).join('')
+    // Sold, need reordering, and listed by no warehouse - so Bunai + Gujarat +
+    // this always add up to the All warehouses reorder count.
+    + (noWh || current === '__none'
+      ? tab('__none', stockWhName('__none'), Number(noWh || 0).toLocaleString('en-IN') + ' to order',
+          'SKUs that sold and need reordering, but no warehouse holds a stock row for them') : '');
 }
 
 // The tab answers the click at once and the old figures fade, so it is plain
@@ -676,7 +683,7 @@ async function loadStock() {
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
     if (ticket !== _stockSeq) return;
     stockFade(false);
-    stockDrawWhTabs(d.warehouses || [], d.warehouse || '');
+    stockDrawWhTabs(d.warehouses || [], d.warehouse || '', d.noWarehouse || 0);
 
     if (d.notConfigured) {
       document.getElementById('stockTiles').innerHTML = '';
