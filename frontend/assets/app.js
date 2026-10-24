@@ -7399,9 +7399,9 @@ function buildFMSSteps(steps) {
           <span class="fms-stepcard-name">${dtEscape(fmsShortName(s.step_name))}</span>
         </div>
         <div class="fms-stepcard-counts">
-          <div><div class="n pend">${pend === null ? '—' : pend}</div><div class="l">Pending</div></div>
-          <div><div class="n over">${over === null ? '—' : over}</div><div class="l">Overdue</div></div>
-          <div><div class="n done">${done === null ? '—' : done}</div><div class="l">Completed</div></div>
+          ${[['pending', 'pend', pend, 'Pending'], ['overdue', 'over', over, 'Overdue'], ['completed', 'done', done, 'Completed']].map(([f, cls, n, label]) =>
+            `<div class="fms-count${mine ? ' go' : ''}"${mine ? ` onclick="event.stopPropagation();selectFMSStep(${s.id},'${f}')" title="Show the ${label.toLowerCase()} rows of this step"` : ''}>
+              <div class="n ${cls}">${n === null ? '—' : n}</div><div class="l">${label}</div></div>`).join('')}
         </div>
       </div>${arrow}`;
   }).join('');
@@ -7420,8 +7420,13 @@ function fmsShortName(name) {
   return String(name || '').replace(/^\s*STEP\s*\d+\s*[—–-]\s*/i, '').trim() || String(name || '');
 }
 
-function selectFMSStep(stepId) {
+// A card opens its step with every row; one of its counts opens it showing just
+// those rows - the filter pill below is set to match.
+function selectFMSStep(stepId, filter) {
   fmsTasksActiveStepId = stepId;
+  window._fmsFilter = filter || 'all';
+  document.querySelectorAll('#fmsFilterPills .fms-pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.f === window._fmsFilter));
   const step = (window._fmsAllSteps || []).find(s => s.id === stepId) || null;
   window._fmsActiveStepData = step;
 
