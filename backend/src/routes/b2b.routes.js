@@ -130,6 +130,12 @@ function fromBody(b, lines = []) {
       ? round2(lines.reduce((a, l) => a + (l.amount || 0), 0)) : null;
     sold = lines.map((l) => l.sku + (l.qty > 1 ? ' x' + l.qty : '')).join(', ').slice(0, 1000);
   }
+  // GST goes on top of the order value: 5%, 18% or whatever was typed. Without a
+  // rate (an order from before GST) the total is the value as it was.
+  let gstRate = numOrNull(b.gst_rate);
+  if (gstRate !== null) gstRate = Math.max(0, Math.min(100, gstRate));
+  const subtotal = total;
+  if (subtotal !== null && gstRate !== null) total = round2(subtotal * (1 + gstRate / 100));
   const received = numOrNull(b.amount_received);
   // Never taken from the form. Two numbers and a subtraction cannot disagree
   // with each other; a third stored number can, and eventually does.
@@ -150,6 +156,8 @@ function fromBody(b, lines = []) {
     what_was_sold: sold,
     pieces,
     rate_per_piece: rate,
+    subtotal,
+    gst_rate: gstRate,
     total_order_value: total,
     payment_status: PAYMENT_STATUSES.includes(clean(b.payment_status)) ? clean(b.payment_status) : '',
     amount_received: received,

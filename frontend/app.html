@@ -173,6 +173,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 5h11v12H3zM14 9h3l3 3v5h-6z"/></svg>
       <span class="nav-label-text">Shipments</span>
     </div>
+    <div class="nav-item" id="nav-vendors" style="display:none" onclick="navigate('vendors',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5M9 10h.01M15 10h.01"/></svg>
+      <span class="nav-label-text">Vendor Name</span>
+    </div>
 
     <div class="nav-section" id="navsec-admin">Admin &amp; Reports</div>
     <div class="nav-item" id="nav-mis" style="display:none" onclick="navigate('mis',this)">
@@ -506,7 +510,7 @@
         <option value="style">Club sizes</option>
         <option value="design">Club sizes + colours</option>
       </select>
-      <select id="stockSoldDays" onchange="loadStock()" title="Sales window for the Sold / reorder column">
+      <select id="stockSoldDays" onchange="loadStock()" title="Sales window for Sold and Needs reorder - same windows as the IMS">
         <option value="mtd" selected>Sold: Month to date</option>
         <option value="7">Sold: 7 days</option>
         <option value="30">Sold: 30 days</option>
@@ -762,6 +766,22 @@
           </tr>
         </thead>
         <tbody id="whBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="page-vendors" class="page">
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="vbSearch" type="text" placeholder="Search vendor, company, phone, style…" oninput="vbDraw()" style="min-width:260px;max-width:380px"/>
+      <span id="vbNote" style="font-size:12px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary" onclick="vbOpen()">+ Add vendor</button>
+    </div>
+    <div class="table-container" style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Vendor name</th><th>Company</th><th>Phone</th><th style="text-align:right">Styles</th>
+          <th>Last call</th><th>Action</th></tr></thead>
+        <tbody id="vbBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1856,10 +1876,25 @@
           <input type="number" id="b2bRate" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
       </div>
     </div>
-    <div class="form-group"><label>Total order value (₹)</label>
+    <div class="form-group"><label>Order value before GST (₹)</label>
       <input type="number" id="b2bTotal" min="0" step="0.01" oninput="b2bRecalc(true)" placeholder="0.00"/>
       <div id="b2bTotalHint" style="font-size:11.5px;color:var(--faint);margin-top:4px">
         Filled in from pieces × rate. Type over it if the agreed price is different.</div></div>
+    <div class="form-row">
+      <div class="form-group"><label>GST</label>
+        <div style="display:flex;gap:8px">
+          <select id="b2bGst" onchange="b2bGstPicked()" style="flex:1">
+            <option value="5">5%</option>
+            <option value="18">18%</option>
+            <option value="custom">Custom</option>
+          </select>
+          <input type="number" id="b2bGstCustom" min="0" max="100" step="0.01" placeholder="%" oninput="b2bRecalc()"
+            style="display:none;width:90px"/>
+        </div>
+        <div id="b2bGstHint" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
+      <div class="form-group"><label>Total with GST (₹)</label>
+        <input type="text" id="b2bGrand" readonly style="background:#f1f5f9;font-weight:700"/></div>
+    </div>
 
     <div style="margin:16px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
       text-transform:uppercase;color:var(--muted-foreground)">Money</div>
@@ -1907,6 +1942,39 @@
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-outline" onclick="closeModal('b2bModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveB2B(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="vbModal">
+  <div class="modal" style="width:640px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="vbModalTitle">Add vendor</h3>
+    <input type="hidden" id="vbEditId"/>
+    <div class="form-row">
+      <div class="form-group"><label>Vendor name *</label><input type="text" id="vbName" placeholder="Who you deal with"/></div>
+      <div class="form-group"><label>Vendor company</label><input type="text" id="vbCompany" placeholder="Company / firm name"/></div>
+    </div>
+    <div class="form-group"><label>Company address</label><textarea id="vbAddress" rows="2" placeholder="Shop / factory address, city, pincode"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Phone</label><input type="text" id="vbPhone" placeholder="9876543210"/></div>
+      <div class="form-group"><label>Styles qty</label><input type="number" id="vbStyleQty" min="0" max="200" step="1" placeholder="0" oninput="vbStyleQty()"/></div>
+    </div>
+    <div id="vbStyles" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px"></div>
+    <div id="vbErr" style="display:none;color:#dc2626;font-size:13px;margin-top:8px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('vbModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="vbSave(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="vbViewModal">
+  <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3 id="vbViewTitle">Vendor</h3>
+    <div id="vbViewBody"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('vbViewModal')">Close</button>
+      <button class="btn btn-primary" id="vbViewEdit">Edit</button>
     </div>
   </div>
 </div>

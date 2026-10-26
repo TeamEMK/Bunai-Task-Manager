@@ -46,6 +46,7 @@ const GRANTABLE_PAGES = [
   { key: 'sales', label: 'Sales' },
   { key: 'returns', label: 'Returns' },
   { key: 'shipments', label: 'Shipments' },
+  { key: 'vendors', label: 'Vendor Name' },
   { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' },
   { key: 'warehouse', label: 'Warehouse' },

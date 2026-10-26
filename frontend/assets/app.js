@@ -300,7 +300,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -350,7 +350,7 @@ function hideEmptyNavSections() {
 // key added there needs adding here.
 const PAGE_GRANTS = [
   { key: 'sales', label: 'Sales' }, { key: 'returns', label: 'Returns' },
-  { key: 'shipments', label: 'Shipments' }, { key: 'catalog', label: 'Catalog' },
+  { key: 'shipments', label: 'Shipments' }, { key: 'vendors', label: 'Vendor Name' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' },
   { key: 'contentcal', label: 'Content Calendar' },
@@ -438,6 +438,7 @@ function navigate(page, el, fromHash) {
   if (page==='sales') loadSales();
   if (page==='returns') loadReturns();
   if (page==='shipments') loadShipments();
+  if (page==='vendors') loadVendors();
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
   if (page==='mulmulcost') loadMulmulCosts();
@@ -712,7 +713,7 @@ async function loadStock() {
       (d.period && d.period.hasOrders
         ? stockTile(`Sold (${d.period.mtd ? 'MTD' : d.period.soldDays + 'd'})`, Number(d.period.soldUnits).toLocaleString('en-IN'), `${d.period.skusSold} SKUs sold`, null, "stockCard('sold')") +
           stockTile('Needs reorder', Number(d.period.reorderCount).toLocaleString('en-IN'),
-            d.period.reorderRule === 'ims' ? 'same as IMS To Be Order' : `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn', "stockCard('reorder')")
+            d.period.reorderRule === 'ims' ? `same as IMS To Be Order · ${d.period.mtd ? 'month to date' : 'last ' + d.period.soldDays + ' days'}` : `stock below ${d.period.mtd ? 'month-to-date' : d.period.soldDays + 'd'} sales`, 'warn', "stockCard('reorder')")
         : '');
 
     // The sync timestamp is the honest part of this page: stale data that looks
@@ -9397,6 +9398,21 @@ const b2bPill = (value, map) => {
 // The dialog's two worked-out figures. The total follows pieces × rate until
 // somebody types their own number, and then it stops arguing with them — a
 // negotiated price is a fact the multiplication does not know about.
+// The GST rate on the form: 5 or 18 from the dropdown, or the typed custom one.
+function b2bGstRate() {
+  const sel = document.getElementById('b2bGst').value;
+  if (sel !== 'custom') return Number(sel);
+  const n = b2bNum(document.getElementById('b2bGstCustom').value);
+  return n === null ? 0 : Math.max(0, Math.min(100, n));
+}
+function b2bGstPicked() {
+  const custom = document.getElementById('b2bGst').value === 'custom';
+  const c = document.getElementById('b2bGstCustom');
+  c.style.display = custom ? '' : 'none';
+  if (custom) c.focus();
+  b2bRecalc();
+}
+
 function b2bRecalc(totalWasTyped){
   const pieces = b2bNum(document.getElementById('b2bPieces').value);
   const rate = b2bNum(document.getElementById('b2bRate').value);
@@ -9419,7 +9435,12 @@ function b2bRecalc(totalWasTyped){
   const computed = byLines ? null : (pieces !== null && rate !== null) ? Math.round(pieces * rate * 100) / 100 : null;
   if (!byLines && !totalEl.dataset.typed && computed !== null) totalEl.value = computed;
 
-  const total = b2bNum(totalEl.value);
+  const sub = b2bNum(totalEl.value);
+  const gstRate = b2bGstRate();
+  const total = sub === null ? null : Math.round(sub * (1 + gstRate / 100) * 100) / 100;
+  document.getElementById('b2bGrand').value = total === null ? '' : b2bMoney(total, '');
+  document.getElementById('b2bGstHint').textContent = sub === null ? ''
+    : `GST ${gstRate}% = ${b2bMoney(Math.round((total - sub) * 100) / 100, '₹0')}`;
   const received = b2bNum(document.getElementById('b2bReceived').value);
   document.getElementById('b2bBalance').value =
     total === null ? '' : b2bMoney(Math.round((total - (received || 0)) * 100) / 100, '');
@@ -9598,7 +9619,11 @@ function b2bView(idx) {
     + sec('What was sold' + (lines.length ? ' · ' + lines.length + ' SKUs · ' + Number(r.pieces || 0).toLocaleString('en-IN') + ' pcs' : ''))
     + itemsHtml
     + sec('Money')
-    + grid([['Order value', b2bMoney(r.total_order_value)], ['Received', b2bMoney(r.amount_received)],
+    + (r.gst_rate !== null && r.gst_rate !== undefined
+      ? grid([['Before GST', b2bMoney(r.subtotal)], ['GST ' + Number(r.gst_rate) + '%',
+              b2bMoney(Math.round((Number(r.total_order_value) - Number(r.subtotal)) * 100) / 100)]]) : '')
+    + grid([['Order value' + (r.gst_rate !== null && r.gst_rate !== undefined ? ' (with GST)' : ''), b2bMoney(r.total_order_value)],
+            ['Received', b2bMoney(r.amount_received)],
             ['Balance', b2bMoney(r.balance_amount)], ['Payment status', r.payment_status]])
     + sec('Dates')
     + grid([['Ordered', r.order_date ? b2bDate(r.order_date) : ''], ['Dispatched', r.dispatch_date ? b2bDate(r.dispatch_date) : ''],
@@ -9623,6 +9648,10 @@ function b2bShowItems(idx) {
     + '<td style="text-align:right">' + b2bMoney(l.price) + '</td>'
     + '<td style="text-align:right">' + (l.disc_value ? (l.disc_type === 'amt' ? b2bMoney(l.disc_value) : l.disc_value + '%') : '—') + '</td>'
     + '<td style="text-align:right;font-weight:700">' + b2bMoney(l.amount) + '</td></tr>').join('')
+    + (r.gst_rate !== null && r.gst_rate !== undefined
+      ? '<tr><td></td><td>Before GST</td><td></td><td></td><td></td><td style="text-align:right">' + b2bMoney(r.subtotal) + '</td></tr>'
+        + '<tr><td></td><td>GST ' + Number(r.gst_rate) + '%</td><td></td><td></td><td></td><td style="text-align:right">'
+        + b2bMoney(Math.round((Number(r.total_order_value) - Number(r.subtotal)) * 100) / 100) + '</td></tr>' : '')
     + '<tr><td></td><td><b>Total</b></td><td style="text-align:right"><b>' + Number(r.pieces || 0) + '</b></td><td></td><td></td>'
     + '<td style="text-align:right"><b>' + b2bMoney(r.total_order_value) + '</b></td></tr>';
   document.getElementById('b2bItemsModal').classList.add('open');
@@ -9748,7 +9777,14 @@ function openB2B(idx){
   set('b2bSold', r?.what_was_sold);
   set('b2bPieces', r?.pieces);
   set('b2bRate', r?.rate_per_piece);
-  set('b2bTotal', r?.total_order_value);
+  // Before GST: the saved subtotal; an order from before GST has none, and its
+  // total was the whole value, with no GST on it.
+  set('b2bTotal', r ? (r.subtotal ?? r.total_order_value) : null);
+  const rate = !r ? 5 : (r.gst_rate === null || r.gst_rate === undefined ? 0 : Number(r.gst_rate));
+  const preset = rate === 5 || rate === 18;
+  document.getElementById('b2bGst').value = preset ? String(rate) : 'custom';
+  document.getElementById('b2bGstCustom').value = preset ? '' : String(rate);
+  document.getElementById('b2bGstCustom').style.display = preset ? 'none' : '';
   set('b2bPayStatus', r?.payment_status);
   set('b2bReceived', r?.amount_received);
   set('b2bOrdered', r?.order_date);
@@ -9780,7 +9816,7 @@ async function saveB2B(btn){
     what_was_sold: val('b2bSold'),
     lines: B2B_LINES.filter(l => l.sku.trim()).map(l => ({ sku: l.sku.trim(), qty: l.qty, price: l.price,
       disc_type: l.disc_type, disc_value: l.disc_value })),
-    pieces: val('b2bPieces'), rate_per_piece: val('b2bRate'), total_order_value: val('b2bTotal'),
+    pieces: val('b2bPieces'), rate_per_piece: val('b2bRate'), total_order_value: val('b2bTotal'), gst_rate: b2bGstRate(),
     payment_status: val('b2bPayStatus'), amount_received: val('b2bReceived'),
     order_date: val('b2bOrdered'), dispatch_date: val('b2bDispatched'),
     delivery_date: val('b2bDelivered'), order_status: val('b2bStatus'), remarks: val('b2bRemarks'),
@@ -9802,6 +9838,199 @@ async function saveB2B(btn){
       'error', 9000);
     loadB2B();
   } finally { done(); }
+}
+
+// ══════════════════════════════════════════════════════
+// VENDOR NAME — the vendor book, with a call log per vendor (as SCOT has).
+// ══════════════════════════════════════════════════════
+let VB_ROWS = [];
+const vbDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+const vbTel = (p) => String(p || '').replace(/[^\d+]/g, '');
+
+async function loadVendors() {
+  const body = document.getElementById('vbBody');
+  const r = await api('/api/vendors');
+  if (r.error) { body.innerHTML = `<tr><td colspan="6" class="empty">${dtEscape(r.error)}</td></tr>`; return; }
+  VB_ROWS = Array.isArray(r) ? r : [];
+  vbDraw();
+}
+
+function vbDraw() {
+  const body = document.getElementById('vbBody');
+  const q = document.getElementById('vbSearch').value.trim().toLowerCase();
+  const rows = VB_ROWS.map((v, i) => [v, i]).filter(([v]) => !q
+    || [v.vendor_name, v.company, v.phone, v.address, ...v.styles].join(' ').toLowerCase().includes(q));
+  document.getElementById('vbNote').textContent = VB_ROWS.length ? `${rows.length} of ${VB_ROWS.length} vendors` : '';
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">${VB_ROWS.length ? 'No vendor matches.' : 'No vendors yet — use <b>+ Add vendor</b>.'}</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(([v, i]) => `<tr onclick="vbView(${i})" style="cursor:pointer" title="Click to see everything about this vendor">
+    <td><b>${dtEscape(v.vendor_name)}</b></td>
+    <td>${dtEscape(v.company || '—')}</td>
+    <td style="white-space:nowrap">${dtEscape(v.phone || '—')}</td>
+    <td style="text-align:right">${v.styles.length}</td>
+    <td style="font-size:13px;white-space:nowrap">${v.last_call ? vbDate(v.last_call) + ` <span style="color:var(--faint)">· ${v.calls} call${v.calls === 1 ? '' : 's'}</span>` : '—'}
+      ${v.next_call ? `<div style="font-size:11.5px;color:${v.next_call <= new Date().toISOString().slice(0, 10) ? '#dc2626' : 'var(--faint)'}">next: ${vbDate(v.next_call)}</div>` : ''}</td>
+    <td style="white-space:nowrap" onclick="event.stopPropagation()">
+      <button class="action-btn" onclick="vbView(${i}, true)">📞 Call</button>
+      <button class="action-btn" style="margin-left:6px" onclick="vbOpen(${i})">Edit</button>
+      ${ME && ME.role === 'admin' ? `<button class="action-btn delete" style="margin-left:6px" onclick="vbDelete(${v.id})">Delete</button>` : ''}
+    </td></tr>`).join('');
+}
+
+// Styles qty sets how many style boxes there are; what is typed in them is kept.
+function vbStyleQty(values) {
+  const host = document.getElementById('vbStyles');
+  const keep = values || [...host.querySelectorAll('input')].map(x => x.value);
+  const n = Math.max(0, Math.min(200, parseInt(document.getElementById('vbStyleQty').value, 10) || 0));
+  host.innerHTML = Array.from({ length: n }, (_, k) =>
+    `<input type="text" class="vbStyle" placeholder="Style ${k + 1}" value="${dtEscape(keep[k] || '')}"/>`).join('');
+}
+
+function vbOpen(idx) {
+  const v = idx === undefined ? null : VB_ROWS[idx];
+  document.getElementById('vbModalTitle').textContent = v ? 'Edit vendor' : 'Add vendor';
+  document.getElementById('vbEditId').value = v ? v.id : '';
+  document.getElementById('vbName').value = v ? v.vendor_name : '';
+  document.getElementById('vbCompany').value = v ? v.company : '';
+  document.getElementById('vbAddress').value = v ? v.address : '';
+  document.getElementById('vbPhone').value = v ? v.phone : '';
+  document.getElementById('vbStyleQty').value = v ? v.styles.length : '';
+  vbStyleQty(v ? v.styles : []);
+  document.getElementById('vbErr').style.display = 'none';
+  document.getElementById('vbModal').classList.add('open');
+}
+
+async function vbSave(btn) {
+  const err = document.getElementById('vbErr');
+  const id = document.getElementById('vbEditId').value;
+  const body = {
+    vendor_name: document.getElementById('vbName').value.trim(),
+    company: document.getElementById('vbCompany').value.trim(),
+    address: document.getElementById('vbAddress').value.trim(),
+    phone: document.getElementById('vbPhone').value.trim(),
+    styles: [...document.querySelectorAll('#vbStyles input')].map(x => x.value.trim()),
+  };
+  if (!body.vendor_name) { err.textContent = 'The vendor name is required'; err.style.display = 'block'; return; }
+  btn.disabled = true;
+  const r = await api('/api/vendors' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', body);
+  btn.disabled = false;
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('vbModal');
+  showToast('✅ Saved');
+  loadVendors();
+}
+
+async function vbDelete(id) {
+  if (!confirm('Delete this vendor and its call history?')) return;
+  const r = await api('/api/vendors/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  showToast('✅ Deleted');
+  loadVendors();
+}
+
+// Everything about one vendor, and its calls: ring the number, then write down
+// what was said and when to call next.
+async function vbView(idx, focusCall) {
+  const v = VB_ROWS[idx];
+  if (!v) return;
+  const row = (label, val) => `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">${label}</div>
+    <div style="font-size:14px;white-space:pre-line">${val || '—'}</div></div>`;
+  const sec = (t) => `<div style="margin:16px 0 6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--brand-deep)">${t}</div>`;
+  const tel = vbTel(v.phone);
+  document.getElementById('vbViewTitle').textContent = v.vendor_name;
+  document.getElementById('vbViewBody').innerHTML =
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">
+      ${row('Vendor name', dtEscape(v.vendor_name))}${row('Vendor company', dtEscape(v.company))}
+      ${row('Phone', tel ? `<a href="tel:${tel}" style="color:var(--brand-deep);font-weight:600">${dtEscape(v.phone)}</a>` : '')}
+      ${row('Styles qty', String(v.styles.length))}</div>`
+    + row('Company address', dtEscape(v.address))
+    + sec('Styles · ' + v.styles.length)
+    + (v.styles.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${v.styles.map((s, k) =>
+        `<span style="background:var(--muted);border-radius:7px;padding:4px 10px;font-size:13px"><span style="color:var(--faint)">${k + 1}.</span> ${dtEscape(s || '—')}</span>`).join('')}</div>`
+      : '<div style="color:var(--faint);font-size:13px">No styles added.</div>')
+    + sec('📞 Calls')
+    + `<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--card)">
+        ${tel ? `<a class="btn btn-outline btn-sm" href="tel:${tel}" style="margin-bottom:10px;display:inline-flex">📞 Call ${dtEscape(v.phone)}</a>` : ''}
+        <input type="hidden" id="vbCallId"/>
+        <div class="form-row">
+          <div class="form-group"><label>Call date</label><input type="date" id="vbCallDate"/></div>
+          <div class="form-group"><label>Next call date</label><input type="date" id="vbCallNext"/></div>
+        </div>
+        <div class="form-group"><label>What was said</label><textarea id="vbCallNotes" rows="2" placeholder="Rates, delivery, samples, follow-up…"></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-outline btn-sm" id="vbCallCancel" style="display:none" onclick="vbCallReset()">Cancel edit</button>
+          <button class="btn btn-primary btn-sm" onclick="vbCallSave(${v.id}, this)">Save call</button>
+        </div></div>
+      <div id="vbCalls"><div class="empty">Loading…</div></div>`;
+  document.getElementById('vbViewEdit').onclick = () => { closeModal('vbViewModal'); vbOpen(idx); };
+  document.getElementById('vbViewModal').classList.add('open');
+  vbCallReset();
+  if (focusCall) document.getElementById('vbCallNotes').focus();
+  vbLoadCalls(v.id);
+}
+
+let VB_CALLS = [];
+function vbCallReset() {
+  document.getElementById('vbCallId').value = '';
+  document.getElementById('vbCallDate').value = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  document.getElementById('vbCallNext').value = '';
+  document.getElementById('vbCallNotes').value = '';
+  document.getElementById('vbCallCancel').style.display = 'none';
+}
+
+async function vbLoadCalls(vendorId) {
+  const host = document.getElementById('vbCalls');
+  const r = await api('/api/vendors/' + vendorId + '/calls');
+  if (r.error) { host.innerHTML = `<div class="empty">${dtEscape(r.error)}</div>`; return; }
+  VB_CALLS = r;
+  host.innerHTML = r.length ? r.map((c, k) => `<div style="border-bottom:1px solid var(--border);padding:9px 2px">
+      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+        <b style="font-size:13px">${vbDate(c.call_date)}</b>
+        <span style="font-size:11.5px;color:var(--faint)">by ${dtEscape(c.by_name || '—')} · ${dtEscape(c.created_at_ist)}</span>
+        <span style="flex:1"></span>
+        <a href="#" style="font-size:12px" onclick="vbCallEdit(${k});return false">Edit</a>
+        <a href="#" style="font-size:12px;color:#dc2626" onclick="vbCallDelete(${c.id}, ${vendorId});return false">Delete</a>
+      </div>
+      <div style="font-size:13.5px;white-space:pre-line;margin-top:3px">${dtEscape(c.notes)}</div>
+      ${c.next_call_date ? `<div style="font-size:12px;color:var(--brand-deep);margin-top:3px">Next call: ${vbDate(c.next_call_date)}</div>` : ''}
+    </div>`).join('') : '<div style="color:var(--faint);font-size:13px">No calls yet.</div>';
+}
+
+function vbCallEdit(k) {
+  const c = VB_CALLS[k];
+  document.getElementById('vbCallId').value = c.id;
+  document.getElementById('vbCallDate').value = c.call_date;
+  document.getElementById('vbCallNext').value = c.next_call_date || '';
+  document.getElementById('vbCallNotes').value = c.notes || '';
+  document.getElementById('vbCallCancel').style.display = '';
+  document.getElementById('vbCallNotes').focus();
+}
+
+async function vbCallSave(vendorId, btn) {
+  const id = document.getElementById('vbCallId').value;
+  const body = { call_date: document.getElementById('vbCallDate').value,
+    next_call_date: document.getElementById('vbCallNext').value,
+    notes: document.getElementById('vbCallNotes').value.trim() };
+  if (!body.notes) return showToast('⚠️ Write what was said on the call');
+  btn.disabled = true;
+  const r = await api(id ? '/api/vendors/calls/' + id : '/api/vendors/' + vendorId + '/calls', id ? 'PUT' : 'POST', body);
+  btn.disabled = false;
+  if (r.error) return showToast('⚠️ ' + r.error);
+  showToast('✅ Call saved');
+  vbCallReset();
+  vbLoadCalls(vendorId);
+  loadVendors();
+}
+
+async function vbCallDelete(id, vendorId) {
+  if (!confirm('Delete this call entry?')) return;
+  const r = await api('/api/vendors/calls/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error);
+  vbLoadCalls(vendorId);
+  loadVendors();
 }
 
 async function deleteB2B(id){

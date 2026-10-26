@@ -967,6 +967,32 @@ const TABLES = [
   // every Shopify sync and a row id there means nothing from one run to the
   // next. The times are written by the app from the database clock (UTC) and
   // shown in India's time, like every other log here.
+  // The vendor book (Inventory → Vendor Name): who, their company and address,
+  // their phone, and the styles they make - a JSON list, one entry per style.
+  ['vendor_book', `CREATE TABLE vendor_book (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    vendor_name VARCHAR(160) NOT NULL,
+    company VARCHAR(200) NOT NULL DEFAULT '',
+    address VARCHAR(600) NOT NULL DEFAULT '',
+    phone VARCHAR(40) NOT NULL DEFAULT '',
+    styles TEXT NULL,
+    created_by INT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  // One row per call to a vendor, as SCOT keeps them for customers.
+  ['vendor_calls', `CREATE TABLE vendor_calls (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    vendor_id INT NOT NULL,
+    call_date DATE NOT NULL,
+    notes TEXT NULL,
+    next_call_date DATE NULL,
+    created_by INT NULL,
+    created_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    KEY idx_vendor_calls (vendor_id, call_date, id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   ['scot_contacts', `CREATE TABLE scot_contacts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     phone VARCHAR(20) NOT NULL,
@@ -1204,6 +1230,11 @@ const COLUMNS = [
   ['b2b_orders', 'address', `VARCHAR(500) DEFAULT '' AFTER whatsapp`],
   ['b2b_orders', 'state', `VARCHAR(120) DEFAULT '' AFTER city`],
   ['b2b_orders', 'pincode', `VARCHAR(12) DEFAULT '' AFTER state`],
+  // GST on a B2B order: the value before tax and the rate. total_order_value is
+  // the amount with GST, which is what the party owes. NULL rate = no GST (every
+  // order saved before GST existed).
+  ['b2b_orders', 'subtotal', `DECIMAL(14,2) DEFAULT NULL AFTER rate_per_piece`],
+  ['b2b_orders', 'gst_rate', `DECIMAL(5,2) DEFAULT NULL AFTER subtotal`],
   // The same details on a prospect, so they are written down before the first order.
   // The content calendar became one per brand; everything before was Bunai's.
   ['content_calendar_months', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],

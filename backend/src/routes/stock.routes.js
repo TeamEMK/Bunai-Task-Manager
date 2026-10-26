@@ -20,9 +20,14 @@ const imsData = require('../services/imsData');
 // Stock page used to flag "sold this month > stock", which named 90 SKUs while
 // the IMS named 135 for the same day, and nobody could say which was right.
 // Read from the IMS's own calculation, so the two can never disagree.
-async function reorderPlan() {
+// It follows the page's Sold dropdown: month to date is the IMS's own month to
+// date (withChannel + 'mtd'), any other choice that many days - so Stock and
+// the IMS on the same window always name the same SKUs.
+async function reorderPlan(soldDays, mtd) {
   try {
-    const base = await imsData.skuBase();
+    const base = mtd
+      ? await imsData.withChannel('', () => imsData.skuBase(), 'mtd')
+      : await imsData.skuBase({ windowDays: soldDays });
     return new Map(base.filter(r => r.toBeOrder > 0).map(r => [r.sku, r]));
   } catch (e) {
     console.error('  ⚠ reorder plan:', e.message);
@@ -130,7 +135,7 @@ router.get('/stock', requireAuth, async (req, res) => {
     // Started now and awaited at the end, so it runs while the rows are read
     // and their sales looked up, instead of after.
     const periodP = periodFigures(soldDays, mtd, wh, brand);
-    const planP = reorderPlan();
+    const planP = reorderPlan(soldDays, mtd);
     // "__none" is the tab for SKUs the IMS wants reordered that no warehouse
     // lists at all - sold in the window, but Unicommerce holds no stock row for
     // them anywhere. Without it Bunai + Gujarat never added up to All.
