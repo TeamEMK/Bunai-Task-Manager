@@ -52,6 +52,7 @@ const GRANTABLE_PAGES = [
   { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' },
   { key: 'mulmulcost', label: 'Mulmul Product Cost' },
+  { key: 'bunaicost', label: 'Bunai Product Cost' },
   { key: 'contentcal', label: 'Content Calendar' },
   { key: 'ims', label: 'IMS' },
   { key: 'mis', label: 'MIS Report' },

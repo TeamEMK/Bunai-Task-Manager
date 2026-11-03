@@ -1235,6 +1235,16 @@ const COLUMNS = [
   // order saved before GST existed).
   ['b2b_orders', 'subtotal', `DECIMAL(14,2) DEFAULT NULL AFTER rate_per_piece`],
   ['b2b_orders', 'gst_rate', `DECIMAL(5,2) DEFAULT NULL AFTER subtotal`],
+  // A vendor call's notes per style: JSON [{ style, note }].
+  ['vendor_calls', 'style_notes', `TEXT NULL AFTER notes`],
+  // Product cost: one list per brand, and the vendor's and the final costing
+  // beside the tentative one (the sum of the lines).
+  ['mulmul_costs', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'mulmul' AFTER id`],
+  ['mulmul_costs', 'vendor_cost', `DECIMAL(14,2) NULL AFTER category`],
+  ['mulmul_costs', 'final_cost', `DECIMAL(14,2) NULL AFTER vendor_cost`],
+  // Sample styles: a wholesale price beside website and Myntra. App only - the
+  // client's sheet keeps its sixteen columns.
+  ['sample_styles', 'price_wholesale', `DECIMAL(12,2) DEFAULT NULL AFTER price_myntra`],
   // The same details on a prospect, so they are written down before the first order.
   // The content calendar became one per brand; everything before was Bunai's.
   ['content_calendar_months', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],

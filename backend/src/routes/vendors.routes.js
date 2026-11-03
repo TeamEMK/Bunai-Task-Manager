@@ -79,14 +79,21 @@ router.delete('/vendors/:id', requireAuth, requireAdmin, asyncRoute(async (req, 
 }));
 
 // ── calls ─────────────────────────────────────────────
+// A call can say what was discussed about particular styles: a list of
+// { style, note }, kept with the call so a style's own history is every call
+// that mentions it.
+const parseStyleNotes = (v) => {
+  try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
+};
+
 router.get('/vendors/:id/calls', requireAuth, PAGE, asyncRoute(async (req, res) => {
   const rows = await db.rows(
-    `SELECT id, notes, created_by_name AS by_name,
+    `SELECT id, notes, style_notes, created_by_name AS by_name,
             DATE_FORMAT(call_date, '%Y-%m-%d') AS call_date,
             DATE_FORMAT(next_call_date, '%Y-%m-%d') AS next_call_date,
             DATE_FORMAT(created_at + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p') AS created_at_ist
        FROM vendor_calls WHERE vendor_id=? ORDER BY call_date DESC, id DESC`, [parseInt(req.params.id, 10)]);
-  res.json(rows);
+  res.json(rows.map(r => ({ ...r, style_notes: parseStyleNotes(r.style_notes) })));
 }));
 
 function callFromBody(b) {
@@ -95,8 +102,11 @@ function callFromBody(b) {
   const next = b.next_call_date ? String(b.next_call_date) : null;
   if (next && !isYmd(next)) throw httpError(400, 'The next call date is not valid.');
   const notes = clip(b.notes, 4000);
-  if (!notes) throw httpError(400, 'Write what was said on the call.');
-  return { date, next, notes };
+  const styleNotes = (Array.isArray(b.style_notes) ? b.style_notes : []).slice(0, 200)
+    .map(s => ({ style: clip(s && s.style, 160), note: clip(s && s.note, 2000) }))
+    .filter(s => s.style);
+  if (!notes && !styleNotes.some(s => s.note)) throw httpError(400, 'Write what was said on the call.');
+  return { date, next, notes, styleNotes: JSON.stringify(styleNotes) };
 }
 
 router.post('/vendors/:id/calls', requireAuth, PAGE, asyncRoute(async (req, res) => {
@@ -105,16 +115,16 @@ router.post('/vendors/:id/calls', requireAuth, PAGE, asyncRoute(async (req, res)
   const c = callFromBody(req.body || {});
   const me = await db.one('SELECT name FROM users WHERE id=?', [req.session.userId]);
   const [ins] = await db.query(
-    `INSERT INTO vendor_calls (vendor_id, call_date, notes, next_call_date, created_by, created_by_name, created_at)
-     VALUES (?,?,?,?,?,?, UTC_TIMESTAMP())`,
-    [id, c.date, c.notes, c.next, req.session.userId, (me && me.name) || '']);
+    `INSERT INTO vendor_calls (vendor_id, call_date, notes, style_notes, next_call_date, created_by, created_by_name, created_at)
+     VALUES (?,?,?,?,?,?,?, UTC_TIMESTAMP())`,
+    [id, c.date, c.notes, c.styleNotes, c.next, req.session.userId, (me && me.name) || '']);
   res.json({ id: ins.insertId });
 }));
 
 router.put('/vendors/calls/:callId', requireAuth, PAGE, asyncRoute(async (req, res) => {
   const c = callFromBody(req.body || {});
-  await db.query('UPDATE vendor_calls SET call_date=?, notes=?, next_call_date=? WHERE id=?',
-    [c.date, c.notes, c.next, parseInt(req.params.callId, 10)]);
+  await db.query('UPDATE vendor_calls SET call_date=?, notes=?, style_notes=?, next_call_date=? WHERE id=?',
+    [c.date, c.notes, c.styleNotes, c.next, parseInt(req.params.callId, 10)]);
   res.json({ success: true });
 }));
 

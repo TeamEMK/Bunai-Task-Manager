@@ -1,14 +1,20 @@
 // ══════════════════════════════════════════════════════
-// MULMUL PRODUCT COST (/api/mulmul-costs)
+// PRODUCT COST (/api/mulmul-costs) - Mulmul and Bunai
 //
-// What one Mulmul product costs to make, part by part: main fabric, dye,
-// lining, dupatta, laces, handwork, stitching and the rest. The fields are the
-// client's own cost sheet: per line a component, the material, a quantity and
-// its unit, a rate, the vendor and a note; the amount is quantity x rate and
-// the product's cost is the sum of its lines.
+// What one product costs to make, part by part: main fabric, dye, lining,
+// dupatta, laces, handwork, stitching and the rest. The fields are the client's
+// own cost sheet: per line a component, the material, a quantity and its unit,
+// a rate, the vendor and a note; the amount is quantity x rate.
 //
-// The amount is worked out here, not taken from the form, so the total can
-// never disagree with the lines it is made of.
+// Three costings per product:
+//   • tentative - the sum of the lines, worked out here, never typed, so it can
+//     never disagree with the lines it is made of;
+//   • vendor - what the vendor quoted, typed;
+//   • final - the cost decided on, typed (often neither of the other two).
+//
+// One list per brand: Mulmul (the original) and Bunai. Each is its own page
+// that can be handed to a person on its own, so the brand decides which page
+// grant a request needs.
 //
 // A product is saved whole: its lines are replaced on every save, the way the
 // sheet is edited, rather than merged one by one.
@@ -19,7 +25,24 @@ const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 
 const router = express.Router();
-const page = requirePage('mulmulcost');
+
+const BRAND_PAGE = { mulmul: 'mulmulcost', bunai: 'bunaicost' };
+const BRAND_NAME = { mulmul: 'Mulmul', bunai: 'Bunai' };
+const brandOf = (v) => (v === 'bunai' ? 'bunai' : 'mulmul');
+// The page grant for the brand this request is about: named in the query or
+// the body, or - for one product - the brand that product was saved under.
+const brandPage = (pick) => (req, res, next) => {
+  Promise.resolve(pick(req)).then((b) => {
+    req.costBrand = b;
+    requirePage(BRAND_PAGE[b])(req, res, next);
+  }).catch(next);
+};
+const byQuery = brandPage((req) => brandOf(req.query.brand));
+const byBody = brandPage((req) => brandOf((req.body || {}).brand));
+const byRow = brandPage(async (req) => {
+  const r = await db.one('SELECT brand FROM mulmul_costs WHERE id = ?', [parseInt(req.params.id, 10)]);
+  return brandOf(r && r.brand);
+});
 
 // The sheet's dropdown, plus the three its own sample rows used that the
 // dropdown lacked (Dye, Dupatta Dye, Pikow).
@@ -42,6 +65,9 @@ const num = (v) => {
 function fromBody(b) {
   const sku = clip(b.sku, 120);
   if (!sku) throw httpError(400, 'SKU is required.');
+  const vendorCost = num(b.vendor_cost), finalCost = num(b.final_cost);
+  if (Number.isNaN(vendorCost)) throw httpError(400, 'The vendor costing is not a number.');
+  if (Number.isNaN(finalCost)) throw httpError(400, 'The final costing is not a number.');
   const lines = [];
   (Array.isArray(b.lines) ? b.lines : []).forEach((l, i) => {
     const material = clip(l.material, 255), vendor = clip(l.vendor, 255), notes = clip(l.notes, 1000);
@@ -70,7 +96,7 @@ function fromBody(b) {
     if (seen.has(key)) throw httpError(400, l.component + ' is on two lines. Put both on one line, or give the second a different name.');
     seen.add(key);
   }
-  return { sku, category: clip(b.category, 120), lines };
+  return { sku, category: clip(b.category, 120), vendor_cost: vendorCost, final_cost: finalCost, lines };
 }
 
 async function writeLines(costId, lines) {
@@ -81,37 +107,48 @@ async function writeLines(costId, lines) {
     [lines.map((l, i) => [costId, i + 1, l.component, l.material, l.qty, l.uom, l.rate, l.amount, l.vendor, l.notes])]);
 }
 
-const IST = (col) => `DATE_FORMAT(${col} + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p')`;
+// SKUs are unique across both lists, so a clash names the list it is on.
+async function skuTaken(sku, exceptId) {
+  const r = await db.one('SELECT id, brand FROM mulmul_costs WHERE LOWER(sku) = LOWER(?) AND id <> ?', [sku, exceptId || 0]);
+  return r ? 'SKU ' + sku + ' is already on the ' + BRAND_NAME[brandOf(r.brand)] + ' Product Cost list. Edit that one instead.' : null;
+}
 
-router.get('/mulmul-costs', requireAuth, page, asyncRoute(async (req, res) => {
+const IST = (col) => `DATE_FORMAT(${col} + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p')`;
+const money = (v) => (v == null ? null : Number(v));
+
+router.get('/mulmul-costs', requireAuth, byQuery, asyncRoute(async (req, res) => {
   const q = clip(req.query.q, 120);
   const like = '%' + q + '%';
   const rows = await db.rows(
-    `SELECT c.id, c.sku, c.category, ${IST('c.updated_at')} AS updated, c.updated_by_name,
+    `SELECT c.id, c.sku, c.category, c.vendor_cost, c.final_cost, ${IST('c.updated_at')} AS updated, c.updated_by_name,
             COUNT(l.id) AS line_count, ROUND(SUM(l.amount), 2) AS total,   -- not "lines": a reserved word in MySQL
             SUM(l.amount IS NULL) AS unpriced
        FROM mulmul_costs c
        LEFT JOIN mulmul_cost_lines l ON l.cost_id = c.id
-      ${q ? `WHERE c.sku LIKE ? OR c.category LIKE ?
+      WHERE c.brand = ?
+      ${q ? `AND (c.sku LIKE ? OR c.category LIKE ?
                 OR EXISTS (SELECT 1 FROM mulmul_cost_lines x WHERE x.cost_id = c.id
-                            AND (x.material LIKE ? OR x.vendor LIKE ? OR x.component LIKE ?))` : ''}
+                            AND (x.material LIKE ? OR x.vendor LIKE ? OR x.component LIKE ?)))` : ''}
       GROUP BY c.id
       ORDER BY c.updated_at DESC, c.id DESC
-      LIMIT 1000`, q ? [like, like, like, like, like] : []);
+      LIMIT 1000`, q ? [req.costBrand, like, like, like, like, like] : [req.costBrand]);
   res.json({
-    components: COMPONENTS, uoms: UOMS,
-    rows: rows.map(({ line_count, ...r }) => ({ ...r, lines: Number(line_count), total: r.total == null ? null : Number(r.total), unpriced: Number(r.unpriced) || 0 })),
+    brand: req.costBrand, components: COMPONENTS, uoms: UOMS,
+    rows: rows.map(({ line_count, ...r }) => ({ ...r, lines: Number(line_count), total: money(r.total),
+      vendor_cost: money(r.vendor_cost), final_cost: money(r.final_cost), unpriced: Number(r.unpriced) || 0 })),
   });
 }));
 
-router.get('/mulmul-costs/:id', requireAuth, page, asyncRoute(async (req, res) => {
+router.get('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const c = await db.one(`SELECT id, sku, category, ${IST('updated_at')} AS updated, updated_by_name FROM mulmul_costs WHERE id = ?`, [id]);
+  const c = await db.one(`SELECT id, sku, category, brand, vendor_cost, final_cost, ${IST('updated_at')} AS updated, updated_by_name
+                            FROM mulmul_costs WHERE id = ?`, [id]);
   if (!c) throw httpError(404, 'That product is no longer on the list.');
   const lines = await db.rows(
     `SELECT component, material, qty, uom, rate, amount, vendor, notes
        FROM mulmul_cost_lines WHERE cost_id = ? ORDER BY position, id`, [id]);
-  res.json({ ...c, lines: lines.map(l => ({ ...l, qty: l.qty == null ? null : Number(l.qty), rate: l.rate == null ? null : Number(l.rate), amount: l.amount == null ? null : Number(l.amount) })) });
+  res.json({ ...c, vendor_cost: money(c.vendor_cost), final_cost: money(c.final_cost),
+    lines: lines.map(l => ({ ...l, qty: money(l.qty), rate: money(l.rate), amount: money(l.amount) })) });
 }));
 
 async function whoAmI(req) {
@@ -119,32 +156,33 @@ async function whoAmI(req) {
   return (me && me.name) || req.session.name || '';
 }
 
-router.post('/mulmul-costs', requireAuth, page, asyncRoute(async (req, res) => {
+router.post('/mulmul-costs', requireAuth, byBody, asyncRoute(async (req, res) => {
   const p = fromBody(req.body || {});
-  const dup = await db.one('SELECT id FROM mulmul_costs WHERE LOWER(sku) = LOWER(?)', [p.sku]);
-  if (dup) throw httpError(409, 'SKU ' + p.sku + ' is already on the list. Edit that one instead.');
+  const taken = await skuTaken(p.sku);
+  if (taken) throw httpError(409, taken);
   const name = await whoAmI(req);
   const [ins] = await db.query(
-    `INSERT INTO mulmul_costs (sku, category, created_by, updated_by_name, created_at, updated_at)
-     VALUES (?,?,?,?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`, [p.sku, p.category, req.session.userId, name]);
+    `INSERT INTO mulmul_costs (brand, sku, category, vendor_cost, final_cost, created_by, updated_by_name, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+    [req.costBrand, p.sku, p.category, p.vendor_cost, p.final_cost, req.session.userId, name]);
   await writeLines(ins.insertId, p.lines);
   res.json({ id: ins.insertId });
 }));
 
-router.put('/mulmul-costs/:id', requireAuth, page, asyncRoute(async (req, res) => {
+router.put('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!(await db.one('SELECT id FROM mulmul_costs WHERE id = ?', [id]))) throw httpError(404, 'That product is no longer on the list.');
   const p = fromBody(req.body || {});
-  const dup = await db.one('SELECT id FROM mulmul_costs WHERE LOWER(sku) = LOWER(?) AND id <> ?', [p.sku, id]);
-  if (dup) throw httpError(409, 'SKU ' + p.sku + ' is already on the list.');
+  const taken = await skuTaken(p.sku, id);
+  if (taken) throw httpError(409, taken);
   await db.query(
-    'UPDATE mulmul_costs SET sku=?, category=?, updated_by_name=?, updated_at=UTC_TIMESTAMP() WHERE id=?',
-    [p.sku, p.category, await whoAmI(req), id]);
+    'UPDATE mulmul_costs SET sku=?, category=?, vendor_cost=?, final_cost=?, updated_by_name=?, updated_at=UTC_TIMESTAMP() WHERE id=?',
+    [p.sku, p.category, p.vendor_cost, p.final_cost, await whoAmI(req), id]);
   await writeLines(id, p.lines);
   res.json({ success: true });
 }));
 
-router.delete('/mulmul-costs/:id', requireAuth, page, asyncRoute(async (req, res) => {
+router.delete('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   await db.query('DELETE FROM mulmul_cost_lines WHERE cost_id = ?', [id]);
   await db.query('DELETE FROM mulmul_costs WHERE id = ?', [id]);

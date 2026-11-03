@@ -30,7 +30,7 @@ const router = express.Router();
 // sits under the 4.5 MB request cap a Vercel function enforces regardless.
 const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
 
-const STATUSES = ['Production', 'Outstanding'];
+const STATUSES = ['Production', 'Outstanding', 'Live'];
 
 const txt = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
 // Blank stays blank. Number('') is 0, which is how an empty costing column
@@ -64,12 +64,13 @@ function body(req) {
     final_costing: money(b.final_costing),
     price_website: money(b.price_website),
     price_myntra: money(b.price_myntra),
+    price_wholesale: money(b.price_wholesale),
   };
 }
 
 const COLS = ['style_id', 'image_url', 'notes', 'kurta_fabric', 'pant_fabric',
   'dupatta_fabric', 'fabric_remarks', 'has_lining', 'lining_fabric', 'status',
-  'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra'];
+  'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra', 'price_wholesale'];
 
 // ── The Google Sheet half ─────────────────────────────
 // Every style lands in two places, here and the client's sheet, on the same
@@ -214,6 +215,7 @@ router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (re
       all: counts.reduce((a, c) => a + Number(c.n), 0),
       production: by.Production || 0,
       outstanding: by.Outstanding || 0,
+      live: by.Live || 0,
     },
   });
 }));

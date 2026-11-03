@@ -300,7 +300,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',bunaicost:'Bunai Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -352,7 +352,7 @@ const PAGE_GRANTS = [
   { key: 'sales', label: 'Sales' }, { key: 'returns', label: 'Returns' },
   { key: 'shipments', label: 'Shipments' }, { key: 'vendors', label: 'Vendor Name' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
-  { key: 'samples', label: 'Sampling' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' },
+  { key: 'samples', label: 'Sampling' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' }, { key: 'bunaicost', label: 'Bunai Product Cost' },
   { key: 'contentcal', label: 'Content Calendar' },
   { key: 'ims', label: 'IMS' },
   { key: 'mis', label: 'MIS Report' }, { key: 'fms', label: 'FMS Admin' },
@@ -368,10 +368,13 @@ function hasPage(key) {
   return !!ME && (ME.role === 'admin' || (Array.isArray(ME.pages) && ME.pages.includes(key)));
 }
 
+// The page element a page key shows. Bunai Product Cost is Mulmul's page, for the other brand.
+const pageDom = (page) => (page === 'bunaicost' ? 'mulmulcost' : page);
+
 // A hash can be typed or bookmarked, so never trust it — the page must exist
 // and the signed-in role must be allowed to open it.
 function canOpenPage(page) {
-  if (!page || !document.getElementById('page-' + page)) return false;
+  if (!page || !document.getElementById('page-' + pageDom(page))) return false;
   if (page === 'mis') return !!ME && (ME.role === 'hod' || hasPage('mis'));
   if (PAGE_GRANT_KEYS.includes(page)) return hasPage(page);
   if (page === 'hr') return ME && ME.role === 'admin';
@@ -411,7 +414,7 @@ function navigate(page, el, fromHash) {
   if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.getElementById('page-'+page).classList.add('active');
+  document.getElementById('page-'+pageDom(page)).classList.add('active');
   if (el) el.classList.add('active');
   document.getElementById('topbarTitle').textContent = pageTitles[page] || page;
   // Auto-close mobile drawer after navigation
@@ -441,7 +444,7 @@ function navigate(page, el, fromHash) {
   if (page==='vendors') loadVendors();
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
-  if (page==='mulmulcost') loadMulmulCosts();
+  if (page==='mulmulcost' || page==='bunaicost') { MC_BRAND = page==='bunaicost' ? 'bunai' : 'mulmul'; loadMulmulCosts(); }
   if (page==='contentcal') loadContentCal();
   if (page==='warehouse') loadWarehouse();
   if (page==='scot') loadScot();
@@ -9940,6 +9943,7 @@ async function vbView(idx, focusCall) {
     <div style="font-size:14px;white-space:pre-line">${val || '—'}</div></div>`;
   const sec = (t) => `<div style="margin:16px 0 6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--brand-deep)">${t}</div>`;
   const tel = vbTel(v.phone);
+  VB_CUR = v;
   document.getElementById('vbViewTitle').textContent = v.vendor_name;
   document.getElementById('vbViewBody').innerHTML =
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">
@@ -9947,9 +9951,10 @@ async function vbView(idx, focusCall) {
       ${row('Phone', tel ? `<a href="tel:${tel}" style="color:var(--brand-deep);font-weight:600">${dtEscape(v.phone)}</a>` : '')}
       ${row('Styles qty', String(v.styles.length))}</div>`
     + row('Company address', dtEscape(v.address))
-    + sec('Styles · ' + v.styles.length)
+    + sec('Styles · ' + v.styles.length + (v.styles.length ? ' <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--faint)">· click a style to see what was discussed about it</span>' : ''))
     + (v.styles.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${v.styles.map((s, k) =>
-        `<span style="background:var(--muted);border-radius:7px;padding:4px 10px;font-size:13px"><span style="color:var(--faint)">${k + 1}.</span> ${dtEscape(s || '—')}</span>`).join('')}</div>`
+        `<button type="button" class="vb-style" id="vbStyleChip${k}" onclick="vbStyleShow(${k})"><span style="color:var(--faint)">${k + 1}.</span> ${dtEscape(vbStyleName(v, k))}<span class="vb-style-n"></span></button>`).join('')}</div>
+        <div id="vbStyleHist"></div>`
       : '<div style="color:var(--faint);font-size:13px">No styles added.</div>')
     + sec('📞 Calls')
     + `<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--card)">
@@ -9960,6 +9965,10 @@ async function vbView(idx, focusCall) {
           <div class="form-group"><label>Next call date</label><input type="date" id="vbCallNext"/></div>
         </div>
         <div class="form-group"><label>What was said</label><textarea id="vbCallNotes" rows="2" placeholder="Rates, delivery, samples, follow-up…"></textarea></div>
+        ${v.styles.length ? `<div class="form-group"><label>Styles discussed - S.No.</label>
+          <input type="text" id="vbCallSnos" placeholder="e.g. 1, 2, 3" oninput="vbSnosTyped()"/>
+          <div id="vbCallPick" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px"></div>
+          <div id="vbCallStyleNotes"></div></div>` : ''}
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-outline btn-sm" id="vbCallCancel" style="display:none" onclick="vbCallReset()">Cancel edit</button>
           <button class="btn btn-primary btn-sm" onclick="vbCallSave(${v.id}, this)">Save call</button>
@@ -9973,12 +9982,64 @@ async function vbView(idx, focusCall) {
 }
 
 let VB_CALLS = [];
+let VB_CUR = null;
+// Styles picked on the call being written: style index -> what was said about it.
+const VB_PICK = new Map();
+const vbStyleName = (v, k) => (v.styles[k] || '').trim() || 'Style ' + (k + 1);
+
+function vbPickDraw() {
+  const pick = document.getElementById('vbCallPick');
+  if (!pick || !VB_CUR) return;
+  pick.innerHTML = VB_CUR.styles.map((s, k) => `<button type="button" class="vb-style${VB_PICK.has(k) ? ' on' : ''}" onclick="vbPickToggle(${k})">`
+    + `<span style="color:var(--faint)">${k + 1}.</span> ${dtEscape(vbStyleName(VB_CUR, k))}</button>`).join('');
+  const keys = [...VB_PICK.keys()].sort((a, b) => a - b);
+  document.getElementById('vbCallStyleNotes').innerHTML = keys.map(k => `<div style="margin-top:8px">
+      <div style="font-size:12px;font-weight:700">${k + 1}. ${dtEscape(vbStyleName(VB_CUR, k))}</div>
+      <textarea rows="2" style="width:100%" placeholder="What was said about this style" oninput="VB_PICK.set(${k}, this.value)">${dtEscape(VB_PICK.get(k) || '')}</textarea></div>`).join('');
+  const sn = document.getElementById('vbCallSnos');
+  if (sn && document.activeElement !== sn) sn.value = keys.map(k => k + 1).join(', ');
+}
+function vbPickToggle(k) {
+  if (VB_PICK.has(k)) VB_PICK.delete(k); else VB_PICK.set(k, '');
+  vbPickDraw();
+}
+// "1, 2, 3" typed in the S.No. box picks those styles; notes already written stay.
+function vbSnosTyped() {
+  const n = VB_CUR ? VB_CUR.styles.length : 0;
+  const want = new Set(String(document.getElementById('vbCallSnos').value).split(/[^0-9]+/)
+    .map(x => parseInt(x, 10) - 1).filter(k => k >= 0 && k < n));
+  [...VB_PICK.keys()].forEach(k => { if (!want.has(k)) VB_PICK.delete(k); });
+  want.forEach(k => { if (!VB_PICK.has(k)) VB_PICK.set(k, ''); });
+  vbPickDraw();
+}
+
+// Every call that said something about this style, newest first.
+function vbStyleShow(k) {
+  const host = document.getElementById('vbStyleHist');
+  if (!host || !VB_CUR) return;
+  const chip = document.getElementById('vbStyleChip' + k);
+  const open = chip && chip.classList.contains('on');
+  document.querySelectorAll('[id^="vbStyleChip"]').forEach(c => c.classList.remove('on'));
+  if (open) { host.innerHTML = ''; return; }
+  if (chip) chip.classList.add('on');
+  const name = vbStyleName(VB_CUR, k);
+  const hits = VB_CALLS.map(c => ({ c, s: (c.style_notes || []).find(x => x.style === name) })).filter(x => x.s);
+  host.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;background:var(--card)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:4px">${k + 1}. ${dtEscape(name)} · ${hits.length} call${hits.length === 1 ? '' : 's'}</div>
+    ${hits.length ? hits.map(({ c, s }) => `<div style="border-top:1px solid var(--border);padding:6px 0">
+        <b style="font-size:12.5px">${vbDate(c.call_date)}</b> <span style="font-size:11.5px;color:var(--faint)">by ${dtEscape(c.by_name || '—')}</span>
+        <div style="font-size:13.5px;white-space:pre-line">${dtEscape(s.note || '—')}</div></div>`).join('')
+      : '<div style="font-size:13px;color:var(--faint)">Not discussed on any call yet.</div>'}</div>`;
+}
+
 function vbCallReset() {
   document.getElementById('vbCallId').value = '';
   document.getElementById('vbCallDate').value = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   document.getElementById('vbCallNext').value = '';
   document.getElementById('vbCallNotes').value = '';
   document.getElementById('vbCallCancel').style.display = 'none';
+  VB_PICK.clear();
+  vbPickDraw();
 }
 
 async function vbLoadCalls(vendorId) {
@@ -9994,9 +10055,17 @@ async function vbLoadCalls(vendorId) {
         <a href="#" style="font-size:12px" onclick="vbCallEdit(${k});return false">Edit</a>
         <a href="#" style="font-size:12px;color:#dc2626" onclick="vbCallDelete(${c.id}, ${vendorId});return false">Delete</a>
       </div>
-      <div style="font-size:13.5px;white-space:pre-line;margin-top:3px">${dtEscape(c.notes)}</div>
+      ${c.notes ? `<div style="font-size:13.5px;white-space:pre-line;margin-top:3px">${dtEscape(c.notes)}</div>` : ''}
+      ${(c.style_notes || []).map(s => `<div style="font-size:13px;margin-top:3px;padding-left:10px;border-left:3px solid var(--brand-tint)">
+        <b>${dtEscape(s.style)}</b>${s.note ? ' - ' + dtEscape(s.note) : ''}</div>`).join('')}
       ${c.next_call_date ? `<div style="font-size:12px;color:var(--brand-deep);margin-top:3px">Next call: ${vbDate(c.next_call_date)}</div>` : ''}
     </div>`).join('') : '<div style="color:var(--faint);font-size:13px">No calls yet.</div>';
+  // How many calls mention each style, on its chip.
+  if (VB_CUR) VB_CUR.styles.forEach((s, k) => {
+    const chip = document.getElementById('vbStyleChip' + k);
+    const n = r.filter(c => (c.style_notes || []).some(x => x.style === vbStyleName(VB_CUR, k))).length;
+    if (chip) chip.querySelector('.vb-style-n').textContent = n ? ' · ' + n : '';
+  });
 }
 
 function vbCallEdit(k) {
@@ -10006,6 +10075,12 @@ function vbCallEdit(k) {
   document.getElementById('vbCallNext').value = c.next_call_date || '';
   document.getElementById('vbCallNotes').value = c.notes || '';
   document.getElementById('vbCallCancel').style.display = '';
+  VB_PICK.clear();
+  (c.style_notes || []).forEach(s => {
+    const k = VB_CUR ? VB_CUR.styles.findIndex((x, i) => vbStyleName(VB_CUR, i) === s.style) : -1;
+    if (k >= 0) VB_PICK.set(k, s.note || '');
+  });
+  vbPickDraw();
   document.getElementById('vbCallNotes').focus();
 }
 
@@ -10013,8 +10088,9 @@ async function vbCallSave(vendorId, btn) {
   const id = document.getElementById('vbCallId').value;
   const body = { call_date: document.getElementById('vbCallDate').value,
     next_call_date: document.getElementById('vbCallNext').value,
-    notes: document.getElementById('vbCallNotes').value.trim() };
-  if (!body.notes) return showToast('⚠️ Write what was said on the call');
+    notes: document.getElementById('vbCallNotes').value.trim(),
+    style_notes: [...VB_PICK.keys()].sort((a, b) => a - b).map(k => ({ style: vbStyleName(VB_CUR, k), note: (VB_PICK.get(k) || '').trim() })) };
+  if (!body.notes && !body.style_notes.some(s => s.note)) return showToast('⚠️ Write what was said on the call');
   btn.disabled = true;
   const r = await api(id ? '/api/vendors/calls/' + id : '/api/vendors/' + vendorId + '/calls', id ? 'PUT' : 'POST', body);
   btn.disabled = false;
@@ -11632,6 +11708,7 @@ const sampleMoney = v => (v === null || v === undefined || v === ''
 // amount out again when it saves, so the list can never disagree with it.
 // ══════════════════════════════════════════════════════
 let MC = { components: [], uoms: [], rows: [] };
+let MC_BRAND = 'mulmul';
 let _mcTimer = null;
 function mcSearchDebounced() { clearTimeout(_mcTimer); _mcTimer = setTimeout(loadMulmulCosts, 300); }
 const mcInr = (v) => (v == null || v === '' ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }));
@@ -11648,25 +11725,28 @@ async function loadMulmulCosts() {
   if (!body) return;
   const q = (document.getElementById('mcSearch').value || '').trim();
   let d;
-  try { d = await api('/api/mulmul-costs?q=' + encodeURIComponent(q)); }
+  try { d = await api('/api/mulmul-costs?brand=' + MC_BRAND + '&q=' + encodeURIComponent(q)); }
   catch (e) { d = { error: e.message || 'error' }; }
-  if (d.error) { body.innerHTML = '<tr><td colspan="6" class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
+  if (d.error) { body.innerHTML = '<tr><td colspan="8" class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
   MC.components = d.components || []; MC.uoms = d.uoms || []; MC.rows = d.rows || [];
   document.getElementById('mcNote').textContent = MC.rows.length ? MC.rows.length + ' product' + (MC.rows.length === 1 ? '' : 's') : '';
   const cats = [...new Set(MC.rows.map(r => r.category).filter(Boolean).concat(['Kurta Set']))];
   document.getElementById('mcCategoryList').innerHTML = cats.map(c => '<option value="' + dtEscape(c) + '">').join('');
   if (!MC.rows.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">' + (q ? 'No product matches that.' : 'No products yet — use <b>+ Add product</b>.') + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">' + (q ? 'No product matches that.' : 'No products yet — use <b>+ Add product</b>.') + '</td></tr>';
     return;
   }
-  body.innerHTML = MC.rows.map(r => '<tr>'
-    + '<td style="font-weight:600"><a href="#" onclick="mcOpen(' + r.id + ');return false" style="color:var(--foreground);text-decoration:none">' + dtEscape(r.sku) + '</a></td>'
+  // The whole row opens the product; the buttons do their own thing.
+  body.innerHTML = MC.rows.map(r => '<tr onclick="mcOpen(' + r.id + ')" style="cursor:pointer" title="Click to see this product\'s cost">'
+    + '<td style="font-weight:600">' + dtEscape(r.sku) + '</td>'
     + '<td>' + dtEscape(r.category || '—') + '</td>'
     + '<td style="text-align:right">' + r.lines
     + (r.unpriced ? '<div style="font-size:11px;color:#b45309">' + r.unpriced + ' not priced</div>' : '') + '</td>'
     + '<td style="text-align:right;font-weight:700">' + mcInr(r.total) + '</td>'
+    + '<td style="text-align:right">' + mcInr(r.vendor_cost) + '</td>'
+    + '<td style="text-align:right;font-weight:700;color:var(--brand-deep)">' + mcInr(r.final_cost) + '</td>'
     + '<td style="font-size:12.5px;color:var(--muted-foreground)">' + dtEscape(r.updated || '') + (r.updated_by_name ? '<div style="font-size:11px">by ' + dtEscape(r.updated_by_name) + '</div>' : '') + '</td>'
-    + '<td style="white-space:nowrap">'
+    + '<td style="white-space:nowrap" onclick="event.stopPropagation()">'
     + '<button class="btn btn-sm" onclick="mcOpen(' + r.id + ')">Edit</button> '
     + '<button class="btn btn-sm btn-outline" onclick="mcOpen(' + r.id + ', true)" title="Start a new product from this one">Copy</button> '
     + '<button class="btn btn-sm btn-outline" onclick="mcDelete(' + r.id + ')">Delete</button>'
@@ -11710,6 +11790,7 @@ function mcRecalc() {
     if (a != null) { total += a; any = true; }
   });
   document.getElementById('mcTotal').textContent = any ? mcInr(Math.round(total * 100) / 100) : '—';
+  document.getElementById('mcTentative').value = any ? mcInr(Math.round(total * 100) / 100) : '';
 }
 
 function mcAddLine(l) {
@@ -11727,7 +11808,11 @@ async function mcOpen(id, copy) {
     p = await api('/api/mulmul-costs/' + id);
     if (p.error) return showToast('⚠️ ' + p.error, 'error');
   }
-  document.getElementById('mcTitle').textContent = !p ? 'Add product cost' : copy ? 'New product, copied from ' + p.sku : 'Edit ' + p.sku;
+  const brand = MC_BRAND === 'bunai' ? 'Bunai' : 'Mulmul';
+  document.getElementById('mcTitle').textContent = !p ? 'Add ' + brand + ' product cost' : copy ? 'New product, copied from ' + p.sku : p.sku + ' · ' + brand + ' product cost';
+  document.getElementById('mcSku').placeholder = MC_BRAND === 'bunai' ? 'e.g. BUNA-2972' : 'e.g. MUL-1001';
+  document.getElementById('mcVendorCost').value = p && p.vendor_cost != null ? p.vendor_cost : '';
+  document.getElementById('mcFinalCost').value = p && p.final_cost != null ? p.final_cost : '';
   document.getElementById('mcEditId').value = p && !copy ? p.id : '';
   document.getElementById('mcSku').value = p && !copy ? p.sku : '';
   document.getElementById('mcCategory').value = p ? (p.category || '') : '';
@@ -11760,7 +11845,8 @@ async function mcSave(btn) {
     vendor: tr.querySelector('.mc-ven').value.trim(),
     notes: tr.querySelector('.mc-note').value.trim(),
   }));
-  const body = { sku: document.getElementById('mcSku').value.trim(), category: document.getElementById('mcCategory').value.trim(), lines };
+  const body = { brand: MC_BRAND, sku: document.getElementById('mcSku').value.trim(), category: document.getElementById('mcCategory').value.trim(),
+    vendor_cost: document.getElementById('mcVendorCost').value.trim(), final_cost: document.getElementById('mcFinalCost').value.trim(), lines };
   if (!body.sku) { err.textContent = 'SKU is required.'; err.style.display = 'block'; return; }
   const done = hrmBusy(btn, 'Saving…');
   try {
@@ -12086,7 +12172,7 @@ async function loadSamples() {
   try {
     d = await api('/api/samples?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="12" class="empty">Could not load styles — '
+    body.innerHTML = '<tr><td colspan="13" class="empty">Could not load styles — '
       + dtEscape(e.message || 'error') + '</td></tr>';
     return;
   }
@@ -12102,11 +12188,12 @@ async function loadSamples() {
       + '<span class="lv-tab-badge">' + num(count) + '</span></div>';
     tabs.innerHTML = tab('', 'All styles', d.counts.all)
       + tab('Production', 'Production', d.counts.production)
-      + tab('Outstanding', 'Outstanding', d.counts.outstanding);
+      + tab('Outstanding', 'Outstanding', d.counts.outstanding)
+      + tab('Live', 'Live', d.counts.live);
   }
 
   if (!_sampleRows.length) {
-    body.innerHTML = '<tr><td colspan="12" class="empty">'
+    body.innerHTML = '<tr><td colspan="13" class="empty">'
       + (q || status ? 'No styles match that.' : 'No sample styles yet — add the first one.')
       + '</td></tr>';
     return;
@@ -12114,7 +12201,7 @@ async function loadSamples() {
 
   body.innerHTML = _sampleRows.map(r => {
     const id = r.image_url
-      ? '<a href="' + dtEscape(r.image_url) + '" target="_blank" rel="noopener"'
+      ? '<a href="' + dtEscape(r.image_url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()"'
         + ' title="Open the sample photo">' + dtEscape(r.style_id) + ' ↗</a>'
       : dtEscape(r.style_id);
     const lining = r.has_lining === 'Yes'
@@ -12122,9 +12209,12 @@ async function loadSamples() {
       : dtEscape(r.has_lining || '—');
     const badge = r.status === 'Production'
       ? '<span class="status-badge completed">Production</span>'
+      : r.status === 'Live'
+      ? '<span class="status-badge" style="background:#dbeafe;color:#1d4ed8">Live</span>'
       : '<span class="status-badge revised">Outstanding</span>';
     const num = v => '<td style="text-align:right">' + sampleMoney(v) + '</td>';
-    return '<tr>'
+    // The whole row opens the style; the photo link and buttons do their own thing.
+    return '<tr onclick="sampleOpen(' + r.id + ')" style="cursor:pointer" title="Click to see this style">'
       + '<td style="font-weight:600;white-space:nowrap">' + id + '</td>'
       + '<td>' + dtEscape(r.kurta_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.pant_fabric || '—') + '</td>'
@@ -12132,8 +12222,8 @@ async function loadSamples() {
       + '<td>' + lining + '</td>'
       + '<td>' + badge + '</td>'
       + num(r.costing_us) + num(r.costing_vendor) + num(r.final_costing)
-      + num(r.price_website) + num(r.price_myntra)
-      + '<td style="white-space:nowrap">'
+      + num(r.price_website) + num(r.price_myntra) + num(r.price_wholesale)
+      + '<td style="white-space:nowrap" onclick="event.stopPropagation()">'
       + '<button class="btn btn-sm" onclick="sampleOpen(' + r.id + ')">Edit</button> '
       + '<button class="btn btn-sm btn-outline" onclick="sampleDelete(' + r.id + ')">Delete</button>'
       + '</td></tr>';
@@ -12171,6 +12261,7 @@ function sampleOpen(id) {
   set('sampleCostFinal', r ? r.final_costing : '');
   set('samplePriceWeb', r ? r.price_website : '');
   set('samplePriceMyntra', r ? r.price_myntra : '');
+  set('samplePriceWholesale', r ? r.price_wholesale : '');
   sampleLiningChanged();
   document.getElementById('sampleModal').classList.add('open');
 }
@@ -12294,6 +12385,7 @@ async function saveSample(btn) {
     costing_us: val('sampleCostUs'), costing_vendor: val('sampleCostVendor'),
     final_costing: val('sampleCostFinal'),
     price_website: val('samplePriceWeb'), price_myntra: val('samplePriceMyntra'),
+    price_wholesale: val('samplePriceWholesale'),
   };
 
   btn.disabled = true;

@@ -109,10 +109,6 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       <span class="nav-label-text">Team Assets</span>
     </div>
-    <div class="nav-item" id="nav-b2b" onclick="navigate('b2b',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7V5a1 1 0 011-1h12a1 1 0 011 1v2M4 7l1 12a1 1 0 001 1h12a1 1 0 001-1l1-12M9 11v5M15 11v5"/></svg>
-      <span class="nav-label-text">Bunai B2B</span>
-    </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
       <span class="nav-label-text">Leave Tracker</span>
@@ -145,6 +141,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
       <span class="nav-label-text">Sales</span>
     </div>
+    <div class="nav-item" id="nav-b2b" onclick="navigate('b2b',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7V5a1 1 0 011-1h12a1 1 0 011 1v2M4 7l1 12a1 1 0 001 1h12a1 1 0 001-1l1-12M9 11v5M15 11v5"/></svg>
+      <span class="nav-label-text">Bunai B2B</span>
+    </div>
     <div class="nav-item" id="nav-returns" style="display:none" onclick="navigate('returns',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
       <span class="nav-label-text">Returns</span>
@@ -168,6 +168,10 @@
     <div class="nav-item" id="nav-mulmulcost" style="display:none" onclick="navigate('mulmulcost',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-1m6-9a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5a2 2 0 012-2h2a2 2 0 012 2v0a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
       <span class="nav-label-text">Mulmul Product Cost</span>
+    </div>
+    <div class="nav-item" id="nav-bunaicost" style="display:none" onclick="navigate('bunaicost',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-1m6-9a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5a2 2 0 012-2h2a2 2 0 012 2v0a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      <span class="nav-label-text">Bunai Product Cost</span>
     </div>
     <div class="nav-item" id="nav-shipments" style="display:none" onclick="navigate('shipments',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 5h11v12H3zM14 9h3l3 3v5h-6z"/></svg>
@@ -798,10 +802,12 @@
         <thead><tr>
           <th>SKU</th><th>Category</th>
           <th style="text-align:right">Cost lines</th>
-          <th style="text-align:right">Total cost (&#8377;)</th>
+          <th style="text-align:right">Tentative costing (&#8377;)</th>
+          <th style="text-align:right">Vendor costing (&#8377;)</th>
+          <th style="text-align:right">Final costing (&#8377;)</th>
           <th>Last updated</th><th></th>
         </tr></thead>
-        <tbody id="mcBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        <tbody id="mcBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -842,22 +848,23 @@
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Fabric</th>
             <th colspan="2"></th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Costing (&#8377;)</th>
-            <th colspan="2" style="text-align:center;border-bottom:1px solid var(--border)">Pricing (&#8377;)</th>
+            <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Pricing (&#8377;)</th>
             <th></th>
           </tr>
           <tr>
             <th>Style ID</th>
             <th>Kurta</th><th>Pant</th><th>Dupatta</th>
             <th>Lining</th><th>Status</th>
-            <th style="text-align:right">Us</th>
+            <th style="text-align:right">Designer</th>
             <th style="text-align:right">Vendor</th>
             <th style="text-align:right">Final</th>
             <th style="text-align:right">Website</th>
             <th style="text-align:right">Myntra</th>
+            <th style="text-align:right">Wholesale</th>
             <th></th>
           </tr>
         </thead>
-        <tbody id="sampleBody"><tr><td colspan="12" class="empty">Loading…</td></tr></tbody>
+        <tbody id="sampleBody"><tr><td colspan="13" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1690,6 +1697,7 @@
         <select id="sampleStatus">
           <option value="Outstanding">Outstanding</option>
           <option value="Production">Production</option>
+          <option value="Live">Live</option>
         </select></div>
     </div>
     <div class="form-row">
@@ -1739,7 +1747,7 @@
     <div style="margin:14px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
       text-transform:uppercase;color:var(--muted-foreground)">Costing &amp; pricing (₹)</div>
     <div class="form-row">
-      <div class="form-group"><label>Costing by us</label>
+      <div class="form-group"><label>Costing by designer</label>
         <input type="text" id="sampleCostUs" inputmode="decimal"/></div>
       <div class="form-group"><label>Costing by vendor</label>
         <input type="text" id="sampleCostVendor" inputmode="decimal"/></div>
@@ -1751,6 +1759,8 @@
         <input type="text" id="samplePriceWeb" inputmode="decimal"/></div>
       <div class="form-group"><label>Myntra pricing</label>
         <input type="text" id="samplePriceMyntra" inputmode="decimal"/></div>
+      <div class="form-group"><label>Wholesale pricing</label>
+        <input type="text" id="samplePriceWholesale" inputmode="decimal"/></div>
     </div>
 
     <div class="modal-footer" style="justify-content:space-between">
@@ -1968,6 +1978,12 @@
   </div>
 </div>
 
+<style>
+  .vb-style { background: var(--muted); border: 1px solid transparent; border-radius: 7px; padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--foreground); }
+  .vb-style:hover { border-color: var(--brand-mid); }
+  .vb-style.on { background: var(--brand-tint); border-color: var(--brand-deep); font-weight: 600; }
+  .vb-style-n { color: var(--brand-deep); font-weight: 700; }
+</style>
 <div class="modal-overlay" id="vbViewModal">
   <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="vbViewTitle">Vendor</h3>
@@ -2075,13 +2091,22 @@
         </tr></thead>
         <tbody id="mcLines"></tbody>
         <tfoot><tr>
-          <td colspan="5" style="text-align:right;font-weight:700">Total cost</td>
+          <td colspan="5" style="text-align:right;font-weight:700">Tentative costing</td>
           <td id="mcTotal" style="text-align:right;font-weight:800;font-size:15px">—</td>
           <td colspan="3"></td>
         </tr></tfoot>
       </table>
     </div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="mcAddLine()">+ Add component</button>
+    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px">
+      <div class="form-group"><label>Tentative costing (&#8377;)</label>
+        <input type="text" id="mcTentative" readonly style="background:#f1f5f9;font-weight:700"/>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:4px">The sum of the lines above.</div></div>
+      <div class="form-group"><label>Vendor costing (&#8377;)</label>
+        <input type="text" id="mcVendorCost" inputmode="decimal" placeholder="What the vendor quoted"/></div>
+      <div class="form-group"><label>Final costing (&#8377;)</label>
+        <input type="text" id="mcFinalCost" inputmode="decimal" placeholder="The cost decided on"/></div>
+    </div>
     <div id="mcMeta" style="font-size:11.5px;color:var(--faint);margin-top:10px"></div>
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-outline" onclick="closeModal('mcModal')">Cancel</button>
