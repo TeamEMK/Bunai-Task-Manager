@@ -804,7 +804,7 @@
         <thead><tr>
           <th>SKU</th><th>Category</th>
           <th style="text-align:right">Cost lines</th>
-          <th style="text-align:right">Tentative costing (&#8377;)</th>
+          <th style="text-align:right">Internal costing (&#8377;)</th>
           <th style="text-align:right">Vendor costing (&#8377;)</th>
           <th style="text-align:right">Final costing (&#8377;)</th>
           <th>Last updated</th><th></th>
@@ -857,7 +857,7 @@
             <th>Style ID</th>
             <th>Kurta</th><th>Pant</th><th>Dupatta</th>
             <th>Lining</th><th>Status</th>
-            <th style="text-align:right">Designer</th>
+            <th style="text-align:right">Internal</th>
             <th style="text-align:right">Vendor</th>
             <th style="text-align:right">Final</th>
             <th style="text-align:right">Website</th>
@@ -1749,7 +1749,7 @@
     <div style="margin:14px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
       text-transform:uppercase;color:var(--muted-foreground)">Costing &amp; pricing (₹)</div>
     <div class="form-row">
-      <div class="form-group"><label>Costing by designer</label>
+      <div class="form-group"><label>Internal costing</label>
         <input type="text" id="sampleCostUs" inputmode="decimal"/></div>
       <div class="form-group"><label>Costing by vendor</label>
         <input type="text" id="sampleCostVendor" inputmode="decimal"/></div>
@@ -2093,7 +2093,7 @@
         </tr></thead>
         <tbody id="mcLines"></tbody>
         <tfoot><tr>
-          <td colspan="5" style="text-align:right;font-weight:700">Tentative costing</td>
+          <td colspan="5" style="text-align:right;font-weight:700">Internal costing</td>
           <td id="mcTotal" style="text-align:right;font-weight:800;font-size:15px">—</td>
           <td colspan="3"></td>
         </tr></tfoot>
@@ -2101,7 +2101,7 @@
     </div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="mcAddLine()">+ Add component</button>
     <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px">
-      <div class="form-group"><label>Tentative costing (&#8377;)</label>
+      <div class="form-group"><label>Internal costing (&#8377;)</label>
         <input type="text" id="mcTentative" readonly style="background:#f1f5f9;font-weight:700"/>
         <div style="font-size:11.5px;color:var(--faint);margin-top:4px">The sum of the lines above.</div></div>
       <div class="form-group"><label>Vendor costing (&#8377;)</label>
