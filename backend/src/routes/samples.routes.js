@@ -30,7 +30,14 @@ const router = express.Router();
 // sits under the 4.5 MB request cap a Vercel function enforces regardless.
 const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
 
-const STATUSES = ['Production', 'Outstanding', 'Live'];
+// The stages a style moves through, in order. "Production" and "Outstanding"
+// were renamed on 5 Nov 2026; a form still sending the old name gets the new one.
+const STATUSES = ['Production Pending', 'In Production', 'Handover Pending', 'On Hold', 'Live'];
+const RENAMED = { Production: 'In Production', Outstanding: 'Production Pending' };
+const statusOf = (v) => {
+  const t = txt(v, 20);
+  return STATUSES.includes(t) ? t : RENAMED[t] || '';
+};
 
 const txt = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
 // Blank stays blank. Number('') is 0, which is how an empty costing column
@@ -44,7 +51,7 @@ const money = (v) => {
 
 function body(req) {
   const b = req.body || {};
-  const status = STATUSES.includes(txt(b.status, 20)) ? txt(b.status, 20) : 'Outstanding';
+  const status = statusOf(b.status) || 'Production Pending';
   const lining = ['Yes', 'No'].includes(txt(b.has_lining, 3)) ? txt(b.has_lining, 3) : '';
   return {
     style_id: txt(b.style_id, 120),
@@ -186,7 +193,7 @@ router.post('/samples/image', requireAuth, requirePage('samples'), (req, res, ne
 
 router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const q = txt(req.query.q, 120);
-  const status = STATUSES.includes(txt(req.query.status, 20)) ? txt(req.query.status, 20) : '';
+  const status = statusOf(req.query.status);
 
   const where = [];
   const args = [];
@@ -211,11 +218,10 @@ router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (re
   const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
   res.json({
     rows,
+    statuses: STATUSES,
     counts: {
       all: counts.reduce((a, c) => a + Number(c.n), 0),
-      production: by.Production || 0,
-      outstanding: by.Outstanding || 0,
-      live: by.Live || 0,
+      byStatus: Object.fromEntries(STATUSES.map(s => [s, by[s] || 0])),
     },
   });
 }));

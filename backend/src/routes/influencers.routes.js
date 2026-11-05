@@ -205,7 +205,12 @@ router.get('/influencers/meta', requireAuth, asyncRoute(async (req, res) => {
   const posted = await db.one(`SELECT COUNT(*) AS n FROM influencers WHERE post_date IS NOT NULL${only}`, arg);
   const awaiting = await db.one(
     `SELECT COUNT(*) AS n FROM influencers WHERE shipped_on IS NOT NULL AND received_on IS NULL${only}`, arg);
+  // One count per project, over everyone - the tabs the page is filtered FROM.
+  const per = await db.rows('SELECT project, COUNT(*) AS n FROM influencers GROUP BY project');
+  const byProject = Object.fromEntries(per.map(r => [r.project || '', Number(r.n) || 0]));
   res.json({
+    byProject,
+    all: per.reduce((a, r) => a + (Number(r.n) || 0), 0),
     types: TYPES,
     projects: PROJECTS,
     sheet: sheetConfigured(),

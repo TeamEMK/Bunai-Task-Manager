@@ -801,7 +801,7 @@
     </div>
     <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table class="table">
-        <thead><tr>
+        <thead id="mcHead"><tr>
           <th>SKU</th><th>Category</th>
           <th style="text-align:right">Cost lines</th>
           <th style="text-align:right">Internal costing (&#8377;)</th>
@@ -1499,18 +1499,23 @@
     </div>
   </div>
 
+  <!-- Long remarks and outfits stop at two lines, so every row stays one height;
+       the whole text is on hover and in Edit. -->
+  <style>
+    .inf-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+    .inf-clamp.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
+    .inf-more { font-size: 11.5px; font-weight: 600; color: var(--brand-deep); text-decoration: none; }
+    .inf-more:hover { text-decoration: underline; }
+    #infBody td { vertical-align: middle; }
+  </style>
   <div id="page-influencers" class="page">
+    <div class="lv-tabs" id="infProjectTabs"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
       <div style="position:relative;flex:1 1 260px;max-width:380px">
         <input type="text" id="infSearch" placeholder="🔍 Search name, email, phone, outfit…"
           oninput="infDebounced()" style="width:100%"/>
       </div>
-      <select id="infProjectFilter" onchange="loadInfluencers()" style="width:auto;min-width:150px">
-        <option value="">All projects</option>
-        <option value="Bunai">Bunai</option>
-        <option value="Mulmul">Mulmul</option>
-        <option value="Aaheli">Aaheli</option>
-      </select>
+      <input type="hidden" id="infProjectFilter" value=""/>
       <div style="flex:1"></div>
       <button class="btn btn-primary" onclick="openInfluencer()">+ Add Influencer</button>
     </div>
@@ -1697,8 +1702,10 @@
         <input type="text" id="sampleStyleId" placeholder="The style's own code"/></div>
       <div class="form-group"><label>Status</label>
         <select id="sampleStatus">
-          <option value="Outstanding">Outstanding</option>
-          <option value="Production">Production</option>
+          <option value="Production Pending">Production Pending</option>
+          <option value="In Production">In Production</option>
+          <option value="Handover Pending">Handover Pending</option>
+          <option value="On Hold">On Hold</option>
           <option value="Live">Live</option>
         </select></div>
     </div>
@@ -2066,12 +2073,14 @@
   </div>
 </div>
 
-<!-- Mulmul product cost: one product, one line per cost component. -->
+<!-- Product cost: one product, a line per cost component. Bunai's sheet has no
+     UOM, vendor or notes columns, so those hide on Bunai. -->
+<style>#mcModal.mc-bunai .mc-x{display:none} .mc-plus{color:var(--brand-deep);font-weight:800;text-decoration:none;font-size:16px}</style>
 <style>#mcLines input, #mcLines select{width:100%;padding:6px 8px;font-size:12.5px} #mcLines td{padding:6px 6px;vertical-align:middle}</style>
 <div class="modal-overlay" id="mcModal">
   <div class="modal" style="width:1180px;max-width:96vw;max-height:94vh;overflow:auto">
     <h3 id="mcTitle">Add product cost</h3>
-    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+    <div id="mcHint" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
       One line per cost component. Amount is Quantity × Rate; lines left empty are not saved.
     </div>
     <div class="alert error" id="mcErr" style="display:none"></div>
@@ -2086,21 +2095,53 @@
     <div style="overflow-x:auto">
       <table class="table" style="min-width:1080px">
         <thead><tr>
-          <th style="width:170px">Cost component</th><th>Material / particular</th>
-          <th style="width:90px;text-align:right">Quantity</th><th style="width:105px">UOM</th>
+          <th style="width:170px" id="mcThComp">Cost component</th><th id="mcThMat">Material / particular</th>
+          <th style="width:90px;text-align:right">Quantity</th><th style="width:105px" class="mc-x">UOM</th>
           <th style="width:100px;text-align:right">Rate (&#8377;)</th><th style="width:110px;text-align:right">Amount (&#8377;)</th>
-          <th style="width:160px">Vendor / source</th><th style="width:170px">Notes</th><th style="width:36px"></th>
+          <th style="width:160px" class="mc-x">Vendor / source</th><th style="width:170px" class="mc-x">Notes</th><th style="width:36px"></th>
         </tr></thead>
         <tbody id="mcLines"></tbody>
         <tfoot><tr>
-          <td colspan="5" style="text-align:right;font-weight:700">Internal costing</td>
+          <td colspan="5" id="mcTotalLabel" style="text-align:right;font-weight:700">Internal costing</td>
           <td id="mcTotal" style="text-align:right;font-weight:800;font-size:15px">—</td>
-          <td colspan="3"></td>
+          <td colspan="3" id="mcTotalTail"></td>
         </tr></tfoot>
       </table>
     </div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="mcAddLine()">+ Add component</button>
-    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px">
+    <!-- Bunai's sheet: from the total to a selling price, and the product photo. -->
+    <div id="mcBunSum" style="display:none;margin-top:14px">
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px">
+        <div class="form-group"><label>Total (&#8377;)</label>
+          <input type="text" id="mcBTotal" readonly style="background:#f1f5f9;font-weight:700"/></div>
+        <div class="form-group"><label>Overhead</label>
+          <div style="display:flex;gap:6px"><input type="text" id="mcOverhead" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
+            <select id="mcOverheadType" onchange="mcRecalc()" style="width:68px"><option value="amt">&#8377;</option><option value="pct">%</option></select></div>
+          <div id="mcOverheadAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
+        <div class="form-group"><label>Profit</label>
+          <div style="display:flex;gap:6px"><input type="text" id="mcProfit" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
+            <select id="mcProfitType" onchange="mcRecalc()" style="width:68px"><option value="amt">&#8377;</option><option value="pct">%</option></select></div>
+          <div id="mcProfitAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
+        <div class="form-group"><label>GST</label>
+          <div style="display:flex;gap:6px"><select id="mcGst" onchange="mcGstPicked()" style="flex:1">
+              <option value="5">5%</option><option value="18">18%</option><option value="custom">Custom</option></select>
+            <input type="text" id="mcGstCustom" inputmode="decimal" placeholder="%" oninput="mcRecalc()" style="display:none;width:80px"/></div>
+          <div id="mcGstAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
+        <div class="form-group"><label>Selling Price (&#8377;)</label>
+          <input type="text" id="mcSelling" readonly style="background:#f1f5f9;font-weight:800;color:var(--brand-deep)"/></div>
+        <div class="form-group"><label>Image</label>
+          <input type="hidden" id="mcImage"/>
+          <input type="file" id="mcPhotoFile" accept="image/*" style="display:none" onchange="mcPhotoPicked(this)"/>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" class="btn btn-outline btn-sm" id="mcPhotoBtn" onclick="document.getElementById('mcPhotoFile').click()">Upload photo</button>
+            <a id="mcPhotoView" href="#" target="_blank" rel="noopener" style="display:none;font-size:12.5px">View photo ↗</a>
+            <a id="mcPhotoClear" href="#" onclick="mcShowPhoto('');return false" style="display:none;font-size:12.5px;color:#b91c1c">Remove</a>
+          </div>
+          <div id="mcPhotoNote" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div>
+          <img id="mcPhotoImg" alt="" referrerpolicy="no-referrer" style="display:none;margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--border);border-radius:8px;object-fit:contain"/></div>
+      </div>
+    </div>
+    <div id="mcMulSum" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px">
       <div class="form-group"><label>Internal costing (&#8377;)</label>
         <input type="text" id="mcTentative" readonly style="background:#f1f5f9;font-weight:700"/>
         <div style="font-size:11.5px;color:var(--faint);margin-top:4px">The sum of the lines above.</div></div>

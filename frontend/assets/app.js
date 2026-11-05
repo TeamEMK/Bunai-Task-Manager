@@ -9208,6 +9208,11 @@ const infDate = (d) => {
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+function infPickProject(p) {
+  document.getElementById('infProjectFilter').value = p;
+  loadInfluencers();
+}
+
 async function loadInfluencers(){
   const body = document.getElementById('infBody');
   if (!body) return;
@@ -9237,6 +9242,14 @@ async function loadInfluencers(){
       </div>`;
     };
     const m = meta || {};
+    // A section per project: All, then each project with how many it has.
+    const tabs = document.getElementById('infProjectTabs');
+    if (tabs) {
+      const count = (n) => '<span class="lv-tab-badge">' + Number(n || 0).toLocaleString('en-IN') + '</span>';
+      tabs.innerHTML = [['', 'All projects', m.all], ...(m.projects || ['Bunai', 'Mulmul', 'Aaheli']).map(p => [p, p, (m.byProject || {})[p]])]
+        .map(([key, label, n]) => '<div class="lv-tab' + (pj === key ? ' active' : '') + '" onclick="infPickProject(\'' + key + '\')">'
+          + dtEscape(label) + count(n) + '</div>').join('');
+    }
     document.getElementById('infTiles').innerHTML =
       tile('Influencers', Number(m.total || 0), 'on the list') +
       tile('Awaiting delivery', Number(m.awaitingDelivery || 0), 'shipped, not confirmed', m.awaitingDelivery ? 'warn' : null) +
@@ -9268,20 +9281,37 @@ async function loadInfluencers(){
       </td>
       <td style="font-size:13px">${dtEscape(r.project || '—')}</td>
       <td style="font-size:13px">${dtEscape(r.collaboration_type || '—')}</td>
-      <td style="font-size:13px;max-width:200px">${dtEscape(r.outfit || '—')}</td>
+      <td style="font-size:13px;max-width:200px" title="${dtEscape(r.outfit || '')}"><div class="inf-clamp">${dtEscape(r.outfit || '—')}</div></td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.message_sent_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.shipped_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.received_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.post_date)}</td>
-      <td style="font-size:12.5px;max-width:220px;color:var(--muted-foreground)" title="${dtEscape(r.remark || '')}">${dtEscape(r.remark || '—')}</td>
+      <td style="font-size:12.5px;max-width:220px;color:var(--muted-foreground)" title="${dtEscape(r.remark || '')}"><div class="inf-clamp">${dtEscape(r.remark || '—')}</div></td>
       <td style="white-space:nowrap">
         <button class="action-btn" onclick="openInfluencer(${i})">Edit</button>
         <button class="action-btn delete" style="margin-left:6px" onclick="deleteInfluencer(${r.id})">Delete</button>
       </td>
     </tr>`).join('');
+    infMarkMore();
   } catch (e) {
     body.innerHTML = `<tr><td colspan="10" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
   }
+}
+
+// A remark or outfit cut off at two lines gets a "more" that opens it in place
+// and a "less" that closes it again. Text that fits gets nothing.
+function infMarkMore() {
+  document.querySelectorAll('#infBody .inf-clamp').forEach(el => {
+    if (el.scrollHeight <= el.clientHeight + 1) return;
+    const b = document.createElement('a');
+    b.href = '#'; b.className = 'inf-more'; b.textContent = 'more';
+    b.onclick = (e) => {
+      e.preventDefault();
+      const open = el.classList.toggle('open');
+      b.textContent = open ? 'less' : 'more';
+    };
+    el.after(b);
+  });
 }
 
 function openInfluencer(idx){
@@ -11712,39 +11742,66 @@ let MC_BRAND = 'mulmul';
 let _mcTimer = null;
 function mcSearchDebounced() { clearTimeout(_mcTimer); _mcTimer = setTimeout(loadMulmulCosts, 300); }
 const mcInr = (v) => (v == null || v === '' ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }));
-// Every component has a fixed line of its own, in the order of the client's
-// sheet - a dropdown on each line let the same one be picked twice. Only
-// "Other" repeats: "+ Add component" adds another Other line, named in the
-// Material column. Empty lines are not saved.
-const MC_FIXED = ['Main Fabric', 'Dye', 'Second Fabric', 'Lining', 'Dupatta Fabric', 'Dupatta Dye',
-  'Dupatta Making', 'Laces', 'Pikow', 'Handwork', 'Machine Embroidery', 'Stitching', 'Accessories',
-  'Packaging', 'Finishing'];
+// Every component has a fixed line of its own, in the order of the brand's
+// cost sheet - a dropdown on each line let the same one be picked twice.
+// Mulmul: one line each; "+ Add component" adds an Other line, named in the
+// first column. Bunai's sheet has several lines under one component (three
+// main fabrics, six laces), so "+" beside a component adds another line of it.
+// Empty lines are not saved.
+const MC_FIXED_BRAND = {
+  mulmul: ['Main Fabric', 'Dye', 'Second Fabric', 'Lining', 'Dupatta Fabric', 'Dupatta Dye',
+    'Dupatta Making', 'Laces', 'Pikow', 'Handwork', 'Machine Embroidery', 'Stitching', 'Accessories',
+    'Packaging', 'Finishing'],
+  bunai: ['Main Fabric', 'Second Fabric', 'Lining', 'Dupatta Fabric', 'Handwork', 'Machine Embroidery',
+    'Stitching', 'Dupatta Making', 'Laces', 'Material', 'Pikow', 'Miscellaneous', 'Finishing'],
+};
+const mcBunai = () => MC_BRAND === 'bunai';
+// A Drive link is a page, not a picture; Drive's thumbnail address for the same
+// file is one (the upload makes every photo readable by link). Drive refuses it
+// when the request names our page as its referrer, so every <img> using it
+// carries referrerpolicy="no-referrer".
+const mcThumb = (url, w) => {
+  const id = (String(url || '').match(/\/d\/([\w-]+)/) || String(url || '').match(/[?&]id=([\w-]+)/) || [])[1];
+  return id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w' + (w || 400) : '';
+};
+const mcFixed = () => MC_FIXED_BRAND[MC_BRAND] || MC_FIXED_BRAND.mulmul;
 
 async function loadMulmulCosts() {
   const body = document.getElementById('mcBody');
   if (!body) return;
+  const bun = mcBunai();
+  const cols = bun ? 7 : 8;
+  document.getElementById('mcHead').innerHTML = '<tr><th>SKU</th><th>Category</th><th style="text-align:right">Cost lines</th>'
+    + (bun ? '<th style="text-align:right">Total (&#8377;)</th><th style="text-align:right">Selling price (&#8377;)</th>'
+           : '<th style="text-align:right">Internal costing (&#8377;)</th><th style="text-align:right">Vendor costing (&#8377;)</th>'
+             + '<th style="text-align:right">Final costing (&#8377;)</th>')
+    + '<th>Last updated</th><th></th></tr>';
   const q = (document.getElementById('mcSearch').value || '').trim();
   let d;
   try { d = await api('/api/mulmul-costs?brand=' + MC_BRAND + '&q=' + encodeURIComponent(q)); }
   catch (e) { d = { error: e.message || 'error' }; }
-  if (d.error) { body.innerHTML = '<tr><td colspan="8" class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
+  if (d.error) { body.innerHTML = '<tr><td colspan="' + cols + '" class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
   MC.components = d.components || []; MC.uoms = d.uoms || []; MC.rows = d.rows || [];
   document.getElementById('mcNote').textContent = MC.rows.length ? MC.rows.length + ' product' + (MC.rows.length === 1 ? '' : 's') : '';
   const cats = [...new Set(MC.rows.map(r => r.category).filter(Boolean).concat(['Kurta Set']))];
   document.getElementById('mcCategoryList').innerHTML = cats.map(c => '<option value="' + dtEscape(c) + '">').join('');
   if (!MC.rows.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">' + (q ? 'No product matches that.' : 'No products yet — use <b>+ Add product</b>.') + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="' + cols + '" class="empty">' + (q ? 'No product matches that.' : 'No products yet — use <b>+ Add product</b>.') + '</td></tr>';
     return;
   }
   // The whole row opens the product; the buttons do their own thing.
   body.innerHTML = MC.rows.map(r => '<tr onclick="mcOpen(' + r.id + ')" style="cursor:pointer" title="Click to see this product\'s cost">'
-    + '<td style="font-weight:600">' + dtEscape(r.sku) + '</td>'
+    + '<td style="font-weight:600">' + (bun && mcThumb(r.image_url)
+      ? '<img src="' + mcThumb(r.image_url, 120) + '" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:36px;height:36px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px;border:1px solid var(--border)"/>' : '')
+    + dtEscape(r.sku) + '</td>'
     + '<td>' + dtEscape(r.category || '—') + '</td>'
     + '<td style="text-align:right">' + r.lines
     + (r.unpriced ? '<div style="font-size:11px;color:#b45309">' + r.unpriced + ' not priced</div>' : '') + '</td>'
     + '<td style="text-align:right;font-weight:700">' + mcInr(r.total) + '</td>'
-    + '<td style="text-align:right">' + mcInr(r.vendor_cost) + '</td>'
-    + '<td style="text-align:right;font-weight:700;color:var(--brand-deep)">' + mcInr(r.final_cost) + '</td>'
+    + (bun
+      ? '<td style="text-align:right;font-weight:700;color:var(--brand-deep)">' + mcInr(r.selling_price) + '</td>'
+      : '<td style="text-align:right">' + mcInr(r.vendor_cost) + '</td>'
+        + '<td style="text-align:right;font-weight:700;color:var(--brand-deep)">' + mcInr(r.final_cost) + '</td>')
     + '<td style="font-size:12.5px;color:var(--muted-foreground)">' + dtEscape(r.updated || '') + (r.updated_by_name ? '<div style="font-size:11px">by ' + dtEscape(r.updated_by_name) + '</div>' : '') + '</td>'
     + '<td style="white-space:nowrap" onclick="event.stopPropagation()">'
     + '<button class="btn btn-sm" onclick="mcOpen(' + r.id + ')">Edit</button> '
@@ -11753,49 +11810,139 @@ async function loadMulmulCosts() {
     + '</td></tr>').join('');
 }
 
-function mcLineHtml(l) {
+// extra: a second (third...) line under one of Bunai's components.
+function mcLineHtml(l, extra) {
   const opt = (list, cur) => list.map(v => '<option value="' + dtEscape(v) + '"' + (v === cur ? ' selected' : '') + '>' + dtEscape(v) + '</option>').join('');
   const val = (v) => (v == null ? '' : dtEscape(String(v)));
   const comp = l.component || 'Other';
   // Anything that is not one of the fixed components is an Other line: its name
   // is typed in the first column instead of being a label.
-  const other = !MC_FIXED.includes(comp);
+  const other = !mcFixed().includes(comp);
+  const remove = '<a href="#" onclick="this.closest(\'tr\').remove();mcRecalc();return false" title="Remove this line" style="color:#b91c1c;text-decoration:none">✕</a>';
   return '<tr class="mc-line">'
     + (other
       ? '<td><input type="text" class="mc-comp-name" maxlength="60" value="' + (comp === 'Other' ? '' : dtEscape(comp))
-        + '" placeholder="Other \u2014 type a name"/></td>'
+        + '" placeholder="Other — type a name"/></td>'
       : '<td><input type="hidden" class="mc-comp" value="' + dtEscape(comp) + '"/>'
-        + '<span style="font-weight:600;font-size:13px">' + dtEscape(comp) + '</span></td>')
+        + (extra ? '<span style="font-size:12px;color:var(--faint);padding-left:12px">↳ ' + dtEscape(comp) + '</span>'
+                 : '<span style="font-weight:600;font-size:13px">' + dtEscape(comp) + '</span>') + '</td>')
     + '<td><input type="text" class="mc-mat" value="' + val(l.material) + '" placeholder="'
-    + (comp === 'Main Fabric' ? 'e.g. Cotton satin' : '') + '"/></td>'
+    + (comp === 'Main Fabric' && !extra ? 'e.g. Cotton satin' : '') + '"/></td>'
     + '<td><input type="text" inputmode="decimal" class="mc-qty" value="' + val(l.qty) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
-    + '<td><select class="mc-uom"><option value="">—</option>' + opt(MC.uoms.length ? MC.uoms : ['piece', 'meters', 'kg', 'grams', 'roll', 'job', 'other'], l.uom || '') + '</select></td>'
+    + '<td class="mc-x"><select class="mc-uom"><option value="">—</option>' + opt(MC.uoms.length ? MC.uoms : ['piece', 'meters', 'kg', 'grams', 'roll', 'job', 'other'], l.uom || '') + '</select></td>'
     + '<td><input type="text" inputmode="decimal" class="mc-rate" value="' + val(l.rate) + '" style="text-align:right" oninput="mcRecalc()"/></td>'
     + '<td class="mc-amt" style="text-align:right;font-weight:600;white-space:nowrap">—</td>'
-    + '<td><input type="text" class="mc-ven" value="' + val(l.vendor) + '"/></td>'
-    + '<td><input type="text" class="mc-note" value="' + val(l.notes) + '"/></td>'
-    // A fixed line is left empty rather than removed; only an Other line goes.
-    + '<td>' + (other ? '<a href="#" onclick="this.closest(\'tr\').remove();mcRecalc();return false" title="Remove this line" style="color:#b91c1c;text-decoration:none">✕</a>' : '') + '</td>'
+    + '<td class="mc-x"><input type="text" class="mc-ven" value="' + val(l.vendor) + '"/></td>'
+    + '<td class="mc-x"><input type="text" class="mc-note" value="' + val(l.notes) + '"/></td>'
+    // A fixed line is left empty rather than removed; Other lines and Bunai's
+    // extra lines go. Bunai's fixed line has a "+" for another line of it.
+    + '<td style="white-space:nowrap">' + (other || extra ? remove
+      : mcBunai() ? '<a href="#" class="mc-plus" onclick="mcAddSame(this);return false" title="Another line of ' + dtEscape(comp) + '">+</a>' : '') + '</td>'
     + '</tr>';
 }
 
+// Another line of the same component, under its last one.
+function mcAddSame(a) {
+  let tr = a.closest('tr');
+  const comp = tr.querySelector('.mc-comp').value;
+  while (tr.nextElementSibling && tr.nextElementSibling.querySelector('.mc-comp')
+         && tr.nextElementSibling.querySelector('.mc-comp').value === comp
+         && !tr.nextElementSibling.querySelector('.mc-plus')) tr = tr.nextElementSibling;
+  tr.insertAdjacentHTML('afterend', mcLineHtml({ component: comp }, true));
+  tr.nextElementSibling.querySelector('.mc-mat').focus();
+}
+
 const mcNum = (v) => { const s = String(v || '').replace(/[^0-9.]/g, ''); return s === '' ? null : Number(s); };
+const mcR2 = (n) => Math.round(n * 100) / 100;
+
+function mcGstRate() {
+  const sel = document.getElementById('mcGst').value;
+  if (sel !== 'custom') return Number(sel);
+  const n = mcNum(document.getElementById('mcGstCustom').value);
+  return n == null ? 0 : Math.min(100, n);
+}
+function mcGstPicked() {
+  const custom = document.getElementById('mcGst').value === 'custom';
+  document.getElementById('mcGstCustom').style.display = custom ? '' : 'none';
+  if (custom) document.getElementById('mcGstCustom').focus();
+  mcRecalc();
+}
 
 function mcRecalc() {
   let total = 0, any = false;
   document.querySelectorAll('#mcLines .mc-line').forEach(tr => {
     const q = mcNum(tr.querySelector('.mc-qty').value), r = mcNum(tr.querySelector('.mc-rate').value);
-    const a = q != null && r != null ? Math.round(q * r * 100) / 100 : null;
+    const a = q != null && r != null ? mcR2(q * r) : null;
     tr.querySelector('.mc-amt').textContent = mcInr(a);
     if (a != null) { total += a; any = true; }
   });
-  document.getElementById('mcTotal').textContent = any ? mcInr(Math.round(total * 100) / 100) : '—';
-  document.getElementById('mcTentative').value = any ? mcInr(Math.round(total * 100) / 100) : '';
+  total = mcR2(total);
+  document.getElementById('mcTotal').textContent = any ? mcInr(total) : '—';
+  document.getElementById('mcTentative').value = any ? mcInr(total) : '';
+  // Bunai: total, overhead, profit, GST on all three, selling price.
+  if (mcBunai()) {
+    const part = (id) => {
+      const v = mcNum(document.getElementById(id).value);
+      const pct = document.getElementById(id + 'Type').value === 'pct';
+      const amt = v == null ? 0 : mcR2(pct ? total * v / 100 : v);
+      document.getElementById(id + 'Amt').textContent = v != null && pct ? '= ' + mcInr(amt) : '';
+      return amt;
+    };
+    const overhead = part('mcOverhead'), profit = part('mcProfit');
+    const rate = mcGstRate();
+    const gst = mcR2((total + overhead + profit) * rate / 100);
+    document.getElementById('mcGstAmt').textContent = any ? 'GST ' + rate + '% = ' + mcInr(gst) : '';
+    document.getElementById('mcBTotal').value = any ? mcInr(total) : '';
+    document.getElementById('mcSelling').value = any ? mcInr(mcR2(total + overhead + profit + gst)) : '';
+  }
 }
 
-function mcAddLine(l) {
-  document.getElementById('mcLines').insertAdjacentHTML('beforeend', mcLineHtml(l || { component: 'Other' }));
+function mcAddLine(l, extra) {
+  document.getElementById('mcLines').insertAdjacentHTML('beforeend', mcLineHtml(l || { component: 'Other' }, extra));
   mcRecalc();
+}
+
+function mcShowPhoto(url, localPreview) {
+  const img = document.getElementById('mcPhotoImg');
+  const src = localPreview || mcThumb(url);
+  img.style.display = src ? '' : 'none';
+  if (src) img.src = src; else img.removeAttribute('src');
+  document.getElementById('mcImage').value = url || '';
+  document.getElementById('mcPhotoFile').value = '';
+  const view = document.getElementById('mcPhotoView');
+  view.style.display = url ? '' : 'none';
+  if (url) view.href = url;
+  document.getElementById('mcPhotoClear').style.display = url ? '' : 'none';
+  document.getElementById('mcPhotoBtn').textContent = url ? 'Replace photo' : 'Upload photo';
+  document.getElementById('mcPhotoNote').textContent = url ? 'Photo attached' : 'No photo yet';
+}
+
+// The photo is shrunk in the browser (as sample photos are), then stored in Drive.
+async function mcPhotoPicked(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const err = document.getElementById('mcErr');
+  if (!/^image\//i.test(file.type || '')) { err.textContent = 'That file is not an image.'; err.style.display = 'block'; input.value = ''; return; }
+  const btn = document.getElementById('mcPhotoBtn');
+  btn.disabled = true;
+  document.getElementById('mcPhotoNote').textContent = 'Uploading…';
+  try {
+    const { blob, preview } = await sampleShrink(file);
+    const fd = new FormData();
+    fd.append('file', blob, (file.name || 'product').replace(/\.[^.]+$/, '') + '.jpg');
+    const headers = {};
+    const token = localStorage.getItem('authToken');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const up = await fetch('/api/mulmul-costs/image?brand=' + MC_BRAND, { method: 'POST', credentials: 'include', headers, body: fd });
+    let j = {};
+    try { j = await up.json(); } catch (_) { /* non-JSON error page */ }
+    if (!up.ok || j.error || !j.url) throw new Error(j.error || 'Upload failed (' + up.status + ').');
+    mcShowPhoto(j.url, preview);
+  } catch (e) {
+    err.textContent = 'Photo not uploaded — ' + e.message;
+    err.style.display = 'block';
+    mcShowPhoto(document.getElementById('mcImage').value);
+  } finally { btn.disabled = false; }
 }
 
 // id: edit that product. copy: start a new one from it, SKU left empty.
@@ -11808,20 +11955,47 @@ async function mcOpen(id, copy) {
     p = await api('/api/mulmul-costs/' + id);
     if (p.error) return showToast('⚠️ ' + p.error, 'error');
   }
-  const brand = MC_BRAND === 'bunai' ? 'Bunai' : 'Mulmul';
+  const bun = mcBunai();
+  const brand = bun ? 'Bunai' : 'Mulmul';
+  // Bunai's sheet: Particular / Fabric / Quantity / Rate / Amount, no UOM,
+  // vendor or notes; and a selling price under the total.
+  document.getElementById('mcModal').classList.toggle('mc-bunai', bun);
+  document.getElementById('mcThComp').textContent = bun ? 'Particular' : 'Cost component';
+  document.getElementById('mcThMat').textContent = bun ? 'Fabric' : 'Material / particular';
+  document.getElementById('mcTotalLabel').colSpan = bun ? 4 : 5;
+  document.getElementById('mcTotalLabel').textContent = bun ? 'Total' : 'Internal costing';
+  document.getElementById('mcTotalTail').colSpan = bun ? 1 : 3;
+  document.getElementById('mcHint').textContent = bun
+    ? 'Amount is Quantity × Rate. Use + beside a particular to add another line of it; lines left empty are not saved.'
+    : 'One line per cost component. Amount is Quantity × Rate; lines left empty are not saved.';
+  document.getElementById('mcBunSum').style.display = bun ? '' : 'none';
+  document.getElementById('mcMulSum').style.display = bun ? 'none' : 'grid';
   document.getElementById('mcTitle').textContent = !p ? 'Add ' + brand + ' product cost' : copy ? 'New product, copied from ' + p.sku : p.sku + ' · ' + brand + ' product cost';
-  document.getElementById('mcSku').placeholder = MC_BRAND === 'bunai' ? 'e.g. BUNA-2972' : 'e.g. MUL-1001';
+  document.getElementById('mcSku').placeholder = bun ? 'e.g. BUNA-2972' : 'e.g. MUL-1001';
   document.getElementById('mcVendorCost').value = p && p.vendor_cost != null ? p.vendor_cost : '';
   document.getElementById('mcFinalCost').value = p && p.final_cost != null ? p.final_cost : '';
+  document.getElementById('mcOverhead').value = p && p.overhead != null ? p.overhead : '';
+  document.getElementById('mcOverheadType').value = (p && p.overhead_type) || 'amt';
+  document.getElementById('mcProfit').value = p && p.profit != null ? p.profit : '';
+  document.getElementById('mcProfitType').value = (p && p.profit_type) || 'amt';
+  const rate = p && p.gst_rate != null ? Number(p.gst_rate) : 5;
+  const preset = rate === 5 || rate === 18;
+  document.getElementById('mcGst').value = preset ? String(rate) : 'custom';
+  document.getElementById('mcGstCustom').value = preset ? '' : String(rate);
+  document.getElementById('mcGstCustom').style.display = preset ? 'none' : '';
+  mcShowPhoto(p && !copy ? p.image_url : '');
   document.getElementById('mcEditId').value = p && !copy ? p.id : '';
   document.getElementById('mcSku').value = p && !copy ? p.sku : '';
   document.getElementById('mcCategory').value = p ? (p.category || '') : '';
   // The fixed lines always show, filled from the saved product where it has
-  // them; then its Other lines, or one empty Other line to start with.
+  // them - Bunai with every line it has under each - then its Other lines,
+  // or one empty Other line to start with.
   const saved = p ? p.lines.slice() : [];
-  MC_FIXED.forEach(c => {
-    const i = saved.findIndex(l => l.component === c);
-    mcAddLine(i >= 0 ? saved.splice(i, 1)[0] : { component: c });
+  mcFixed().forEach(c => {
+    const mine = saved.filter(l => l.component === c);
+    if (!bun) mine.splice(1);
+    mine.forEach(l => saved.splice(saved.indexOf(l), 1));
+    (mine.length ? mine : [{ component: c }]).forEach((l, k) => mcAddLine(l, k > 0));
   });
   // Whatever is left is Other lines, kept under the names they were saved with.
   const rest = saved;
@@ -11845,8 +12019,13 @@ async function mcSave(btn) {
     vendor: tr.querySelector('.mc-ven').value.trim(),
     notes: tr.querySelector('.mc-note').value.trim(),
   }));
-  const body = { brand: MC_BRAND, sku: document.getElementById('mcSku').value.trim(), category: document.getElementById('mcCategory').value.trim(),
-    vendor_cost: document.getElementById('mcVendorCost').value.trim(), final_cost: document.getElementById('mcFinalCost').value.trim(), lines };
+  const v = (id) => document.getElementById(id).value.trim();
+  const body = { brand: MC_BRAND, sku: v('mcSku'), category: v('mcCategory'),
+    vendor_cost: v('mcVendorCost'), final_cost: v('mcFinalCost'), lines };
+  if (mcBunai()) Object.assign(body, {
+    overhead: v('mcOverhead'), overhead_type: v('mcOverheadType'), profit: v('mcProfit'), profit_type: v('mcProfitType'),
+    gst_rate: mcGstRate(), image_url: v('mcImage'),
+  });
   if (!body.sku) { err.textContent = 'SKU is required.'; err.style.display = 'block'; return; }
   const done = hrmBusy(btn, 'Saving…');
   try {
@@ -12162,6 +12341,15 @@ async function ccDeleteMonth() {
   loadContentCal();
 }
 
+// One colour per stage, in the order a style moves through them.
+const SAMPLE_STATUS_STYLE = {
+  'Production Pending': 'background:#fef3c7;color:#92400e',
+  'In Production': 'background:#dcfce7;color:#166534',
+  'Handover Pending': 'background:#ede9fe;color:#5b21b6',
+  'On Hold': 'background:#fee2e2;color:#991b1b',
+  'Live': 'background:#dbeafe;color:#1d4ed8',
+};
+
 async function loadSamples() {
   const body = document.getElementById('sampleBody');
   if (!body) return;
@@ -12187,9 +12375,7 @@ async function loadSamples() {
       + ' onclick="samplePick(\'' + key + '\')">' + label
       + '<span class="lv-tab-badge">' + num(count) + '</span></div>';
     tabs.innerHTML = tab('', 'All styles', d.counts.all)
-      + tab('Production', 'Production', d.counts.production)
-      + tab('Outstanding', 'Outstanding', d.counts.outstanding)
-      + tab('Live', 'Live', d.counts.live);
+      + (d.statuses || []).map(s => tab(s, s, (d.counts.byStatus || {})[s])).join('');
   }
 
   if (!_sampleRows.length) {
@@ -12207,11 +12393,7 @@ async function loadSamples() {
     const lining = r.has_lining === 'Yes'
       ? 'Yes' + (r.lining_fabric ? ' · ' + dtEscape(r.lining_fabric) : '')
       : dtEscape(r.has_lining || '—');
-    const badge = r.status === 'Production'
-      ? '<span class="status-badge completed">Production</span>'
-      : r.status === 'Live'
-      ? '<span class="status-badge" style="background:#dbeafe;color:#1d4ed8">Live</span>'
-      : '<span class="status-badge revised">Outstanding</span>';
+    const badge = '<span class="status-badge" style="' + (SAMPLE_STATUS_STYLE[r.status] || '') + '">' + dtEscape(r.status || '—') + '</span>';
     const num = v => '<td style="text-align:right">' + sampleMoney(v) + '</td>';
     // The whole row opens the style; the photo link and buttons do their own thing.
     return '<tr onclick="sampleOpen(' + r.id + ')" style="cursor:pointer" title="Click to see this style">'
@@ -12246,7 +12428,7 @@ function sampleOpen(id) {
   const set = (el, v) => { document.getElementById(el).value = (v === null || v === undefined) ? '' : v; };
   set('sampleEditId', r ? r.id : '');
   set('sampleStyleId', r ? r.style_id : '');
-  set('sampleStatus', r ? r.status : 'Outstanding');
+  set('sampleStatus', r ? r.status : 'Production Pending');
   set('sampleImage', r ? r.image_url : '');
   sampleShowPhoto(r ? r.image_url : '');
   set('sampleNotes', r ? r.notes : '');

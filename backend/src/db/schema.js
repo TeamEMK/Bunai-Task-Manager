@@ -1242,6 +1242,13 @@ const COLUMNS = [
   ['mulmul_costs', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'mulmul' AFTER id`],
   ['mulmul_costs', 'vendor_cost', `DECIMAL(14,2) NULL AFTER category`],
   ['mulmul_costs', 'final_cost', `DECIMAL(14,2) NULL AFTER vendor_cost`],
+  // Bunai's sheet: overhead and profit (rupees or a percent), GST, the photo.
+  ['mulmul_costs', 'overhead', `DECIMAL(14,2) NULL AFTER final_cost`],
+  ['mulmul_costs', 'overhead_type', `VARCHAR(4) NOT NULL DEFAULT 'amt' AFTER overhead`],
+  ['mulmul_costs', 'profit', `DECIMAL(14,2) NULL AFTER overhead_type`],
+  ['mulmul_costs', 'profit_type', `VARCHAR(4) NOT NULL DEFAULT 'amt' AFTER profit`],
+  ['mulmul_costs', 'gst_rate', `DECIMAL(5,2) NULL AFTER profit_type`],
+  ['mulmul_costs', 'image_url', `VARCHAR(1000) NOT NULL DEFAULT '' AFTER gst_rate`],
   // Sample styles: a wholesale price beside website and Myntra. App only - the
   // client's sheet keeps its sixteen columns.
   ['sample_styles', 'price_wholesale', `DECIMAL(12,2) DEFAULT NULL AFTER price_myntra`],
@@ -1592,6 +1599,9 @@ const WIDENINGS = [
 ];
 
 const BACKFILLS = [
+  // Sample style statuses renamed on 5 Nov 2026. Both match nothing once run.
+  [`UPDATE sample_styles SET status = 'In Production' WHERE status = 'Production'`, 'sample status Production -> In Production'],
+  [`UPDATE sample_styles SET status = 'Production Pending' WHERE status = 'Outstanding'`, 'sample status Outstanding -> Production Pending'],
   [`UPDATE users SET user_role=role WHERE user_role IS NULL`, 'backfill user_role from role'],
   // Older rows stored the approver inside assigned_by — recover it where approval was required.
   [`UPDATE delegation_tasks SET approver_id=assigned_by WHERE approval='yes' AND approver_id IS NULL`, 'backfill approver_id'],
