@@ -54,6 +54,10 @@ const page = (file) => (req, res, next) => {
 };
 app.get('/', page('index.html'));
 app.get('/app', page('app.html'));
+// Every page of the app has its own address, /app/<page>; they are all the one
+// app shell, which opens the page itself (and checks it may). One lowercase
+// segment only, so /api, static files and every other route never land here.
+app.get(/^\/app\/[a-z0-9-]+\/?$/, page('app.html'));
 
 app.use(errorHandler);
 

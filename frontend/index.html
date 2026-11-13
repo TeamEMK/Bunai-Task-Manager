@@ -297,7 +297,7 @@
   <!-- Logo -->
   <div class="logo-section">
     <div class="logo-img-wrap">
-      <img src="bunai-logo.png" alt="Bunai Logo"
+      <img src="/bunai-logo.png" alt="Bunai Logo"
            onerror="this.style.display='none';document.getElementById('fallbackLogo').style.display='flex'"/>
       <!-- Fallback if image not found -->
       <div id="fallbackLogo" class="logo-fallback">Bunai</div>
@@ -374,11 +374,19 @@ function togglePassword(ev){
   }
 }
 
-// Already signed in — go straight to /app
+// Where to go once signed in: the app page that sent them here (?next=), but
+// only ever one of our own /app pages - never another site ("//x", "https://")
+// or any other path. Anything else is plain /app.
+function afterLogin() {
+  const next = new URLSearchParams(location.search).get('next') || '';
+  return /^\/app(\/[a-z0-9-]+)?\/?(\?[^#\\]*)?$/.test(next) ? next : '/app';
+}
+
+// Already signed in — go straight to the app
 (async function checkExistingSession() {
   try {
     const r = await fetch('/api/me', { credentials: 'include' });
-    if (r.ok) { window.location.replace('/app'); }
+    if (r.ok) { window.location.replace(afterLogin()); }
   } catch(e) {}
 })();
 
@@ -394,7 +402,7 @@ async function login(){
     if(!r.ok){err.textContent=d.error||'Login failed';err.style.display='block';return;}
     // Also keep the token in localStorage as a fallback (in case cookies are blocked)
     if(d.token) localStorage.setItem('authToken', d.token);
-    window.location.replace('/app');
+    window.location.replace(afterLogin());
   }catch(e){err.textContent='Server error. Try again.';err.style.display='block';}
 }
 </script>

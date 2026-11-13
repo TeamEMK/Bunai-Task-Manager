@@ -139,11 +139,11 @@ async function init() {
     const r = await fetch('/api/me', { credentials: 'include', headers });
     if (!r.ok) {
       localStorage.removeItem('authToken');
-      window.location.replace('/');
+      window.location.replace(loginUrl());
       return;
     }
     ME = await r.json();
-    if (!ME || !ME.id) { window.location.replace('/'); return; }
+    if (!ME || !ME.id) { window.location.replace(loginUrl()); return; }
     const initials = ME.name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
     document.getElementById('sidebarName').textContent = ME.name;
     const roleLabel = ME.role==='admin' ? '👑 Admin' : ME.role==='hod' ? '🏢 HOD' : ME.role==='pc' ? '🖥️ PC' : '👤 Employee';
@@ -227,12 +227,12 @@ async function init() {
     hideEmptyNavSections();   // drop group headers whose items are all role-hidden
     // Restore whatever page the URL points at instead of always opening the
     // dashboard. Runs after the role checks above, so nav visibility is settled.
-    openFromHash();
+    openFromLocation();
     // Just the one: loadApprovalBadge ends by refreshing the transfer badge
     // too, so asking for both fetched the transfer count twice every time.
     loadApprovalBadge();
     startBadgePolling();
-  } catch(e) { console.error('Init error:', e); window.location.replace('/'); }
+  } catch(e) { console.error('Init error:', e); window.location.replace(loginUrl()); }
 }
 
 // Set avatar in sidebar + profile page
@@ -317,11 +317,48 @@ function closeSidebar() {
 }
 
 // ══════════════════════════════════════════════════════
-// DEEP LINKS — the current page lives in location.hash
-// This is a single page, so a refresh used to drop you back on the dashboard
-// no matter where you were. Mirroring the page into the hash fixes that, and
-// browser back/forward and bookmarking start working for free.
+// DEEP LINKS — every page has a path of its own
+// /app is the dashboard and /app/<page> every other page, so a refresh, a
+// bookmark, a shared link and back/forward all land where they should. Links
+// from before (/app#page, /app?page=x) still open their page and are rewritten
+// to the path. pagePath() builds a page's URL and pageFromLocation() reads it
+// back; nothing else builds or parses these URLs.
 // ══════════════════════════════════════════════════════
+const PAGE_NAME_RE = /^[a-z0-9-]+$/;
+
+function pagePath(page) {
+  return !page || page === 'dashboard' ? '/app' : '/app/' + page;
+}
+
+// The page the address names. An old #page or ?page= link that names a real
+// page wins - it is what was just typed or followed, and a hash typed onto
+// /app/stock fires popstate before hashchange - then /app/<page>, else the
+// dashboard. Any other #fragment is not a page and is ignored.
+const isPageName = (v) => !!v && PAGE_NAME_RE.test(v) && !!document.getElementById('page-' + pageDom(v));
+function pageFromLocation() {
+  const h = (location.hash || '').replace(/^#/, '');
+  if (isPageName(h)) return h;
+  const q = new URLSearchParams(location.search).get('page');
+  if (isPageName(q)) return q;
+  const m = /^\/app\/([a-z0-9-]+)\/?$/.exec(location.pathname);
+  if (m) return m[1];
+  return 'dashboard';
+}
+
+// A page's full URL: its path plus whatever other query parameters the address
+// already carries, minus the old ?page= and #page.
+function urlForPage(page) {
+  const q = new URLSearchParams(location.search);
+  q.delete('page');
+  const s = q.toString();
+  return pagePath(page) + (s ? '?' + s : '');
+}
+
+// Signed out: to the login page, which brings them back to this page after.
+function loginUrl() {
+  const back = urlForPage(pageFromLocation());
+  return back === '/app' ? '/' : '/?next=' + encodeURIComponent(back);
+}
 function navElFor(page) {
   return document.querySelector(`.nav-item[onclick*="navigate('${page}'"]`);
 }
@@ -371,8 +408,8 @@ function hasPage(key) {
 // The page element a page key shows. Bunai Product Cost is Mulmul's page, for the other brand.
 const pageDom = (page) => (page === 'bunaicost' ? 'mulmulcost' : page);
 
-// A hash can be typed or bookmarked, so never trust it — the page must exist
-// and the signed-in role must be allowed to open it.
+// An address can be typed or bookmarked, so never trust it — the page must
+// exist and the signed-in role must be allowed to open it.
 function canOpenPage(page) {
   if (!page || !document.getElementById('page-' + pageDom(page))) return false;
   if (page === 'mis') return !!ME && (ME.role === 'hod' || hasPage('mis'));
@@ -382,23 +419,33 @@ function canOpenPage(page) {
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
 }
 
-function openFromHash() {
-  const page = (location.hash || '').replace(/^#/, '');
-  const target = canOpenPage(page) ? page : 'dashboard';
+// Opens the page the address names - on load, on back/forward, and for an old
+// #page link pasted in while the app is open. A page this person cannot open
+// falls back to the dashboard, as clicking would. The address is then put
+// right in place (old link rewritten, refused page shown as /app) without
+// adding a history step.
+function openFromLocation(asked) {
+  const want = asked || pageFromLocation();
+  const target = canOpenPage(want) ? want : 'dashboard';
+  const url = urlForPage(target);
+  if (location.pathname + location.search + location.hash !== url) history.replaceState(null, '', url);
   navigate(target, navElFor(target), true);
 }
 
-window.addEventListener('hashchange', openFromHash);
+window.addEventListener('popstate', () => openFromLocation());
+// An old #page link while the app is open. Only a real page's name counts; an
+// empty "#" or any other fragment is left alone.
+window.addEventListener('hashchange', () => {
+  const h = (location.hash || '').replace(/^#/, '');
+  if (isPageName(h)) openFromLocation(h);
+});
 
-// The page navigate() last opened. Setting location.hash below fires a
-// hashchange, which calls navigate() a second time for the page it has just
-// opened - so without this, one sidebar click loaded every page twice and asked
-// the server for everything twice. Going back or forward still lands on a
-// different page, so it still gets through.
+// The page navigate() last opened, so that an address change it caused itself,
+// or a back/forward step to the page already showing, does not load it twice.
 let _navCurrent = null;
 
-function navigate(page, el, fromHash) {
-  if (fromHash && page === _navCurrent) return;
+function navigate(page, el, fromHistory) {
+  if (fromHistory && page === _navCurrent) return;
   // MIS page — admin and HOD (App Role) only
   if (page === 'mis' && ME.role !== 'hod' && !hasPage('mis')) return;
   // HR page — admin only
@@ -408,10 +455,10 @@ function navigate(page, el, fromHash) {
   // page asking only "is this an Admin", which left a granted page in the menu
   // that refused to open.
   if (PAGE_GRANT_KEYS.includes(page) && !hasPage(page)) return;
-  // Record where we are. Skipped when the hash is what triggered this call,
-  // and skipped when unchanged — otherwise the hashchange handler would loop.
+  // Record where we are: a new history step only when the page actually
+  // changes, never when back/forward (or the address) is what opened it.
   _navCurrent = page;
-  if (!fromHash && location.hash.replace(/^#/, '') !== page) location.hash = page;
+  if (!fromHistory && location.pathname !== pagePath(page)) history.pushState(null, '', urlForPage(page));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+pageDom(page)).classList.add('active');
@@ -4986,7 +5033,7 @@ async function api(url,method='GET',body=null) {
   const r=await fetch(url,opts);
   if (r.status===401) {
     localStorage.removeItem('authToken');
-    window.location.replace('/');
+    window.location.replace(loginUrl());
     return {};
   }
   try {
