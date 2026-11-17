@@ -9519,18 +9519,10 @@ async function loadInfluencers(){
       tile('Awaiting delivery', Number(m.awaitingDelivery || 0), 'shipped, not confirmed', m.awaitingDelivery ? 'warn' : null) +
       tile('Posted', Number(m.posted || 0), 'post is live');
 
-    // The sheet is half the point of this page, so its absence is said out
-    // loud rather than left for somebody to notice a week later.
+    // The influencer list lives in the app's database; a Google Sheet copy is
+    // optional and the team does not use one, so no sheet is not a warning.
     const note = document.getElementById('infNote');
-    if (note) {
-      if (m.sheet === false) {
-        note.innerHTML = `⚠ Nothing is being written to a Google Sheet yet — records are saved here only. `
-          + `Share the sheet with <b>${dtEscape(m.serviceAccount || 'the service account')}</b> as an Editor `
-          + `and set INFLUENCER_SHEET_ID, and every row will go to both.`;
-        note.style.cssText = 'display:block;font-size:12.5px;margin:0 2px 14px;padding:10px 14px;'
-          + 'border-radius:9px;background:#fef9c3;border:1px solid #fde68a;color:#92400e';
-      } else note.style.display = 'none';
-    }
+    if (note) note.style.display = 'none';
 
     if (!INF_ROWS.length) {
       body.innerHTML = `<tr><td colspan="11" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
@@ -9637,8 +9629,10 @@ async function saveInfluencer(btn){
       // because otherwise the outfit typed here would never be seen there.
       showToast('⚠️ Saved — but the sheet has no ' + r.sheetMissing.join(' / ') + ' column yet', 'error', 9000);
     } else if (r.sheet) showToast('✅ Saved — and written to the sheet');
-    else showToast('⚠️ Saved here, but not to the sheet — ' + (r.sheetError || 'no sheet configured'),
-      'error', 9000);
+    // No sheet set up is the normal case: saved in the app is all there is.
+    // Only a sheet that is set up and refused the row is worth a warning.
+    else if (!r.sheetError || /no sheet configured/i.test(r.sheetError)) showToast('✅ Saved');
+    else showToast('⚠️ Saved here, but not to the sheet — ' + r.sheetError, 'error', 9000);
     loadInfluencers();
   } finally { done(); }
 }
