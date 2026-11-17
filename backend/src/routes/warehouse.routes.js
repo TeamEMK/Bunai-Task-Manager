@@ -21,6 +21,7 @@
 // ══════════════════════════════════════════════════════
 const express = require('express');
 const { db } = require('../db/pool');
+const brands = require('../services/brands');
 const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute } = require('../middleware/errors');
 
@@ -28,10 +29,18 @@ const router = express.Router();
 
 // Surat is MYNTRA_GUJRAT in Unicommerce. The code is the Myntra channel it was
 // set up for, not the place, so it is translated here rather than shown raw.
+// "warehouse" in the label: the bunai warehouse holds every brand, and "Bunai"
+// alone was read as the Bunai brand.
 const WAREHOUSES = {
-  bunai: { code: 'bunai', label: 'Bunai' },
-  surat: { code: 'MYNTRA_GUJRAT', label: 'Surat' },
+  bunai: { code: 'bunai', label: 'Bunai warehouse' },
+  surat: { code: 'MYNTRA_GUJRAT', label: 'Surat warehouse' },
 };
+// The page opens on the Bunai warehouse: Surat's stock was taken out of
+// Unicommerce in November 2026, so it opened on an empty page.
+const DEFAULT_WH = 'bunai';
+
+// One brand's SKUs (by prefix), or every SKU when none is chosen.
+const brandAnd = (brand, col) => (brand ? ' AND ' + brands.sql(brand, col) : '');
 
 // Everything Unicommerce timestamps is UTC; every date this site shows is IST.
 const IST = '+ INTERVAL 330 MINUTE';
@@ -62,9 +71,10 @@ function window(req, col) {
 }
 
 router.get('/warehouse', requireAuth, requirePage('warehouse'), asyncRoute(async (req, res) => {
-  const key = String(req.query.facility || 'surat').toLowerCase();
-  const wh = WAREHOUSES[key] || WAREHOUSES.surat;
+  const key = WAREHOUSES[String(req.query.facility || '').toLowerCase()] ? String(req.query.facility).toLowerCase() : DEFAULT_WH;
+  const wh = WAREHOUSES[key];
   const code = wh.code;
+  const brand = brands.pick(req.query.brand);
 
   const o = window(req, 'o.order_date');
   const r = window(req, 'rr.return_date');
@@ -109,14 +119,25 @@ router.get('/warehouse', requireAuth, requirePage('warehouse'), asyncRoute(async
   rto.forEach((x) => put(x.sku, 'rto', x.units));
   ret.forEach((x) => put(x.sku, 'returned', x.units));
 
+  // The brand sections: stock of each brand in this warehouse, before the
+  // brand filter below.
+  const brandStock = { all: 0 };
+  stock.forEach((x) => {
+    const q = Number(x.qty) || 0, b = brands.of(x.sku);
+    brandStock[b] = (brandStock[b] || 0) + q;
+    brandStock.all += q;
+  });
+
   // Busiest first, then whatever is left sitting in stock. A SKU that neither
   // moved nor is stocked is noise.
   const list = [...rows.values()]
     .filter((x) => x.stock || x.shipped || x.rto || x.returned)
+    .filter((x) => !brand || brands.of(x.sku) === brand)
     .sort((a, b) => (b.shipped - a.shipped) || (b.stock - a.stock));
 
   res.json({
     facility: { key, code, label: wh.label },
+    brand, brandStock,
     period: o.label,
     totals: {
       skus: list.length,
@@ -135,6 +156,7 @@ router.get('/warehouse/compare', requireAuth, requirePage('warehouse'), asyncRou
   const o = window(req, 'o.order_date');
   const r = window(req, 'rr.return_date');
   const out = [];
+  const brand = brands.pick(req.query.brand);
 
   for (const key of Object.keys(WAREHOUSES)) {
     const code = WAREHOUSES[key].code;
@@ -144,17 +166,17 @@ router.get('/warehouse/compare', requireAuth, requirePage('warehouse'), asyncRou
       // the table below it — 2,365 against 2,003 for the same warehouse.
       db.one(`SELECT COUNT(DISTINCT CASE WHEN inventory > 0 THEN sku END) skus,
                      SUM(inventory) qty
-                FROM uni_inventory WHERE facility = ?`, [code]),
+                FROM uni_inventory WHERE facility = ?${brandAnd(brand, 'sku')}`, [code]),
       db.one(`SELECT COUNT(*) units FROM uni_order_items i
                 JOIN uni_orders o ON o.code = i.order_code
                WHERE i.facility = ? AND i.status IN ('DISPATCHED','DELIVERED','SHIPPED','COMPLETE')
-                 ${o.sql}`, [code, ...o.args]),
+                 ${brandAnd(brand, 'i.sku')} ${o.sql}`, [code, ...o.args]),
       db.one(`SELECT COUNT(*) units FROM uni_return_items ri
                 JOIN uni_returns rr ON rr.code = ri.return_code
-               WHERE rr.facility = ? AND rr.return_type = 'RTO' ${r.sql}`, [code, ...r.args]),
+               WHERE rr.facility = ? AND rr.return_type = 'RTO'${brandAnd(brand, 'ri.sku')} ${r.sql}`, [code, ...r.args]),
       db.one(`SELECT COUNT(*) units FROM uni_return_items ri
                 JOIN uni_returns rr ON rr.code = ri.return_code
-               WHERE rr.facility = ? AND COALESCE(rr.return_type,'') <> 'RTO' ${r.sql}`,
+               WHERE rr.facility = ? AND COALESCE(rr.return_type,'') <> 'RTO'${brandAnd(brand, 'ri.sku')} ${r.sql}`,
              [code, ...r.args]),
     ]);
     out.push({

@@ -43,6 +43,11 @@ const LAST_COL = 'R';                       // Remarks — 1 + COLUMNS.length ==
 const PROBE_COL = 'B';
 
 const PAYMENT_STATUSES = ['Pending', 'Partial', 'Paid'];
+// Bunai B2B and Bunai B2B Exports are one page over two books. Every order and
+// party is in one of them; everything from before exports is domestic. Export
+// orders are kept in the app only - the client's sheet is the domestic book.
+const bookOf = (v) => (v === 'export' ? 'export' : 'domestic');
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'AUD', 'CAD', 'SGD', 'JPY', 'CHF'];
 const ORDER_STATUSES = ['New', 'Processing', 'Dispatched', 'Delivered', 'Cancelled'];
 // A cancelled order is not revenue. The Sales page has always taken this line
 // with the online orders; the B2B roll-up beside it takes the same one.
@@ -167,6 +172,7 @@ function fromBody(b, lines = []) {
     delivery_date: dateOrNull(b.delivery_date),
     order_status: ORDER_STATUSES.includes(clean(b.order_status)) ? clean(b.order_status) : '',
     remarks: clean(b.remarks, 1000),
+    currency: CURRENCIES.includes(b.currency) ? b.currency : 'INR',
   };
 }
 
@@ -227,8 +233,8 @@ router.get('/b2b', requireAuth, asyncRoute(async (req, res) => {
   const q = clean(req.query.q, 120);
   const orderStatus = ORDER_STATUSES.includes(req.query.order_status) ? req.query.order_status : '';
   const paymentStatus = PAYMENT_STATUSES.includes(req.query.payment_status) ? req.query.payment_status : '';
-  const where = [];
-  const args = [];
+  const where = ['b.book = ?'];
+  const args = [bookOf(req.query.book)];
   if (q) {
     where.push(`(b.party_name LIKE ? OR b.contact_person LIKE ? OR b.owner_name LIKE ?
                  OR b.email LIKE ? OR b.email2 LIKE ? OR b.phone LIKE ? OR b.whatsapp LIKE ?
@@ -272,7 +278,8 @@ router.get('/b2b/skus', requireAuth, asyncRoute(async (req, res) => {
 
 // What the page needs to know without asking five times.
 router.get('/b2b/meta', requireAuth, asyncRoute(async (req, res) => {
-  const [totals, byOrder, byPayment] = await Promise.all([
+  const book = bookOf(req.query.book);
+  const [totals, byOrder, byPayment, byCurrency] = await Promise.all([
     db.one(
       `SELECT COUNT(*) orders,
               SUM(CASE WHEN ${LIVE} THEN 1 ELSE 0 END) live_orders,
@@ -280,16 +287,27 @@ router.get('/b2b/meta', requireAuth, asyncRoute(async (req, res) => {
               ROUND(SUM(CASE WHEN ${LIVE} THEN COALESCE(amount_received,0) ELSE 0 END)) received,
               ROUND(SUM(CASE WHEN ${LIVE} THEN COALESCE(balance_amount,0) ELSE 0 END)) outstanding,
               SUM(CASE WHEN ${LIVE} THEN COALESCE(pieces,0) ELSE 0 END) pieces
-         FROM b2b_orders`),
+         FROM b2b_orders WHERE book = ?`, [book]),
     db.rows(`SELECT COALESCE(NULLIF(order_status,''),'—') s, COUNT(*) n
-               FROM b2b_orders GROUP BY s`),
+               FROM b2b_orders WHERE book = ? GROUP BY s`, [book]),
     db.rows(`SELECT COALESCE(NULLIF(payment_status,''),'—') s, COUNT(*) n
-               FROM b2b_orders GROUP BY s`),
+               FROM b2b_orders WHERE book = ? GROUP BY s`, [book]),
+    // Money in different currencies does not add up, so exports are totalled
+    // per currency.
+    db.rows(`SELECT currency,
+                    ROUND(SUM(COALESCE(total_order_value,0)), 2) revenue,
+                    ROUND(SUM(COALESCE(amount_received,0)), 2) received,
+                    ROUND(SUM(COALESCE(balance_amount,0)), 2) outstanding
+               FROM b2b_orders WHERE book = ? AND ${LIVE} GROUP BY currency ORDER BY revenue DESC`, [book]),
   ]);
   res.json({
+    book, currencies: CURRENCIES,
+    byCurrency: byCurrency.map(r => ({ currency: r.currency, revenue: Number(r.revenue) || 0,
+      received: Number(r.received) || 0, outstanding: Number(r.outstanding) || 0 })),
     paymentStatuses: PAYMENT_STATUSES,
     orderStatuses: ORDER_STATUSES,
-    sheet: sheetConfigured(),
+    // Exports never go to the sheet, so there is nothing to warn about there.
+    sheet: book === 'export' ? null : sheetConfigured(),
     // Worth saying out loud on the page: without this the team fills the app
     // and quietly wonders why the client's sheet is empty.
     serviceAccount: sheetConfigured() ? null : google.serviceAccountEmail(),
@@ -308,6 +326,8 @@ router.post('/b2b', requireAuth, asyncRoute(async (req, res) => {
   const lines = linesFromBody((req.body || {}).lines);
   const d = fromBody(req.body || {}, lines);
   if (!d.party_name) return res.status(400).json({ error: 'The party name is required' });
+  d.book = bookOf((req.body || {}).book);
+  if (d.book === 'domestic') d.currency = 'INR';
 
   const cols = Object.keys(d);
   const [ins] = await db.query(
@@ -317,6 +337,7 @@ router.post('/b2b', requireAuth, asyncRoute(async (req, res) => {
   const id = ins.insertId;
   await saveLines(id, lines);
 
+  if (d.book === 'export') return res.json({ id, sheet: null });
   const sheet = await writeRow(null, d);
   if (sheet.ok) await db.query('UPDATE b2b_orders SET sheet_row=? WHERE id=?', [sheet.row, id]);
 
@@ -331,12 +352,15 @@ router.put('/b2b/:id', requireAuth, asyncRoute(async (req, res) => {
   const lines = linesFromBody((req.body || {}).lines);
   const d = fromBody(req.body || {}, lines);
   if (!d.party_name) return res.status(400).json({ error: 'The party name is required' });
+  // An order stays in the book it was made in; a domestic one stays in rupees.
+  if (bookOf(existing.book) === 'domestic') d.currency = 'INR';
 
   await db.query(
     `UPDATE b2b_orders SET ${Object.keys(d).map(k => `${k}=?`).join(', ')} WHERE id=?`,
     [...Object.values(d), id]);
   await saveLines(id, lines);
 
+  if (bookOf(existing.book) === 'export') return res.json({ success: true, sheet: null });
   // Its own line if it has one; a new line at the bottom if the sheet was not
   // configured when the order was first saved.
   const sheet = await writeRow(existing.sheet_row || null, d);
@@ -392,6 +416,7 @@ const PARTY_COLS = ['party_name', 'contact_person', 'owner_name', 'email', 'phon
 router.get('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   const q = partyTxt(req.query.q, 120);
   const like = '%' + q + '%';
+  const book = bookOf(req.query.book);
 
   // Customers come out of the order book, because that is what makes one.
   // b2b_parties is joined for the contact details, which an order may not
@@ -408,22 +433,23 @@ router.get('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, res
             ROUND(SUM(COALESCE(o.amount_received,0))) received,
             ROUND(SUM(COALESCE(o.balance_amount,0))) balance,
             SUM(COALESCE(o.pieces,0)) pieces,
-            MAX(o.order_date) last_order
+            MAX(o.order_date) last_order,
+            GROUP_CONCAT(DISTINCT o.currency) currencies
        FROM b2b_orders o
        LEFT JOIN b2b_parties p ON p.party_name = o.party_name
-      WHERE o.party_name <> ''
+      WHERE o.party_name <> '' AND o.book = ?
         ${q ? 'AND (o.party_name LIKE ? OR o.contact_person LIKE ? OR o.city LIKE ?)' : ''}
       GROUP BY o.party_name
-      ORDER BY value DESC`, q ? [like, like, like] : []);
+      ORDER BY value DESC`, q ? [book, like, like, like] : [book]);
 
   // Prospects are the ones the order book has never heard of.
   const prospects = await db.rows(
     `SELECT p.id party_id, p.party_name, p.contact_person, p.owner_name, p.email, p.phone,
             p.whatsapp, p.address, p.city, p.state, p.pincode, p.notes, p.created_at
        FROM b2b_parties p
-      WHERE NOT EXISTS (SELECT 1 FROM b2b_orders o WHERE o.party_name = p.party_name)
+      WHERE p.book = ? AND NOT EXISTS (SELECT 1 FROM b2b_orders o WHERE o.party_name = p.party_name)
         ${q ? 'AND (p.party_name LIKE ? OR p.contact_person LIKE ? OR p.city LIKE ?)' : ''}
-      ORDER BY p.created_at DESC`, q ? [like, like, like] : []);
+      ORDER BY p.created_at DESC`, q ? [book, like, like, like] : [book]);
 
   res.json({
     customers, prospects,
@@ -439,9 +465,9 @@ router.post('/b2b/parties', requireAuth, requireAdmin, asyncRoute(async (req, re
   if (dup) throw httpError(409, `"${v.party_name}" is already on the list`);
 
   const [r] = await db.query(
-    `INSERT INTO b2b_parties (${PARTY_COLS.join(', ')}, created_by)
-     VALUES (${PARTY_COLS.map(() => '?').join(', ')}, ?)`,
-    [...PARTY_COLS.map(c => v[c]), req.user?.userId || null]);
+    `INSERT INTO b2b_parties (${PARTY_COLS.join(', ')}, book, created_by)
+     VALUES (${PARTY_COLS.map(() => '?').join(', ')}, ?, ?)`,
+    [...PARTY_COLS.map(c => v[c]), bookOf((req.body || {}).book), req.user?.userId || null]);
   res.json({ ok: true, id: r.insertId });
 }));
 

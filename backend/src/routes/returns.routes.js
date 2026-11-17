@@ -81,6 +81,70 @@ router.get('/returns', requireAuth, requirePage('returns'), async (req, res) => 
   }
 });
 
+// Column filters on the list, as on SCOT: a ▾ on every heading, applied here
+// so they cover every return, not just the page on screen. Only these columns
+// can be filtered or sorted, so nothing from the request reaches the SQL but
+// its values.
+const LIST_COLS = {
+  return_no: { col: 'return_no', type: 'text' },
+  return_type: { col: 'return_type', type: 'list' },
+  order: { col: 'eretail_order_no', type: 'text' },
+  return_date: { col: 'return_date', type: 'date' },
+  channel: { col: 'channel_name', type: 'list' },
+  customer: { col: 'customer_name', type: 'text' },
+  city: { col: 'customer_city', type: 'list' },
+  status: { col: 'status', type: 'list' },
+  amount: { col: 'return_amount', type: 'range' },
+};
+const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+function columnFilters(raw, where, args) {
+  let f = {};
+  try { f = JSON.parse(raw || '{}') || {}; } catch (_) { f = {}; }
+  for (const [key, v] of Object.entries(f)) {
+    const c = LIST_COLS[key];
+    if (!c || v == null) continue;
+    if (c.type === 'text' && typeof v.text === 'string' && v.text.trim()) {
+      where.push(`${c.col} LIKE ?`); args.push('%' + v.text.trim().slice(0, 100) + '%');
+    } else if (c.type === 'list' && Array.isArray(v.values) && v.values.length) {
+      const vals = v.values.slice(0, 200).map(x => String(x));
+      const blank = vals.includes('');
+      const rest = vals.filter(x => x !== '');
+      const parts = [];
+      if (rest.length) { parts.push(`${c.col} IN (${rest.map(() => '?').join(',')})`); args.push(...rest); }
+      if (blank) parts.push(`(${c.col} IS NULL OR ${c.col} = '')`);
+      where.push('(' + parts.join(' OR ') + ')');
+    } else if (c.type === 'range') {
+      if (Number.isFinite(Number(v.min)) && v.min !== null && v.min !== '') { where.push(`${c.col} >= ?`); args.push(Number(v.min)); }
+      if (Number.isFinite(Number(v.max)) && v.max !== null && v.max !== '') { where.push(`${c.col} <= ?`); args.push(Number(v.max)); }
+    } else if (c.type === 'date') {
+      if (isYmd(v.from)) { where.push(`${c.col} >= ?`); args.push(v.from); }
+      if (isYmd(v.to)) { where.push(`${c.col} < DATE_ADD(?, INTERVAL 1 DAY)`); args.push(v.to); }
+    }
+  }
+}
+
+// The values a list column holds (within the date range), with how many of
+// each, for the ▾ popup's tick list.
+router.get('/returns/values', requireAuth, requirePage('returns'), async (req, res) => {
+  try {
+    const c = LIST_COLS[String(req.query.col || '')];
+    if (!c || c.type !== 'list') return res.json([]);
+    const from = String(req.query.from || '').trim(), to = String(req.query.to || '').trim();
+    const where = [], args = [];
+    if (isYmd(from) && isYmd(to)) { where.push('return_date >= ? AND return_date < DATE_ADD(?, INTERVAL 1 DAY)'); args.push(from, to); }
+    const q = String(req.query.q || '').trim();
+    if (q) { where.push(`${c.col} LIKE ?`); args.push('%' + q.slice(0, 100) + '%'); }
+    const rows = await db.rows(
+      `SELECT COALESCE(${c.col}, '') v, COUNT(*) n FROM ims_returns
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        GROUP BY v ORDER BY n DESC, v LIMIT 200`, args);
+    res.json(rows.map(r => ({ v: r.v, n: Number(r.n) })));
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Paginated + searchable + filterable list — the full set, powers the table and
 // the KPI/breakdown drill-downs.
 router.get('/returns/list', requireAuth, requirePage('returns'), async (req, res) => {
@@ -105,6 +169,7 @@ router.get('/returns/list', requireAuth, requirePage('returns'), async (req, res
     dim('return_type', req.query.type);
     dim('status', req.query.status);
     dim('channel_name', req.query.channel);
+    columnFilters(req.query.f, where, args);
 
     if (q) {
       where.push('(return_no LIKE ? OR eretail_order_no LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ? OR customer_city LIKE ? OR customer_state LIKE ? OR tracking_no LIKE ?)');
@@ -116,12 +181,18 @@ router.get('/returns/list', requireAuth, requirePage('returns'), async (req, res
     const cnt = await db.one(
       `SELECT COUNT(*) n, ROUND(SUM(return_amount)) amount FROM ims_returns ${whereSql}`, args);
     const total = cnt ? cnt.n : 0;
+    // A column's sort, "key" or "-key"; newest first otherwise. Blanks last.
+    const sk = String(req.query.sort || '');
+    const sc = LIST_COLS[sk.replace(/^-/, '')];
+    const order = sc
+      ? `(${sc.col} IS NULL OR ${sc.col} = '') ASC, ${sc.col} ${sk[0] === '-' ? 'DESC' : 'ASC'}, return_no DESC`
+      : 'return_date DESC, return_no DESC';
     const returns = await db.rows(
       `SELECT return_no, return_type, status, return_date, return_amount,
               channel_name, eretail_order_no, customer_name, customer_phone,
               customer_city, customer_state, refund_status
          FROM ims_returns ${whereSql}
-        ORDER BY return_date DESC, return_no DESC
+        ORDER BY ${order}
         LIMIT ${PER} OFFSET ${(page - 1) * PER}`, args);
 
     res.json({ returns, total, amount: (cnt && cnt.amount) || 0, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)) });

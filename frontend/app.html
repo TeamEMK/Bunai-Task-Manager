@@ -59,6 +59,13 @@
         </svg>
       </button>
   </div>
+  <!-- Find a tab by name: the menu has grown past what reads at a glance. -->
+  <div class="nav-search">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M20 20l-3.5-3.5"/></svg>
+    <input type="search" id="navSearch" placeholder="Search tabs…  ( / )" autocomplete="off" aria-label="Search the menu"
+      oninput="navSearch(this.value)" onkeydown="navSearchKey(event)"/>
+  </div>
+  <div id="navSearchEmpty" class="nav-search-empty" style="display:none">No tab matches.</div>
   <nav class="nav">
     <div class="nav-section">Workspace</div>
     <div class="nav-item active" onclick="navigate('dashboard',this)">
@@ -99,6 +106,10 @@
     </div>
     <div class="nav-item" id="nav-hr" style="display:none" onclick="navigate('hr',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z"/></svg>
+      <span class="nav-label-text">Employees</span>
+    </div>
+    <div class="nav-item" id="nav-hrsheet" style="display:none" onclick="navigate('hrsheet',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18M3 12h18M3 18h18M9 6v12M15 6v12"/></svg>
       <span class="nav-label-text">HR</span>
     </div>
     <div class="nav-item" id="nav-hrm" style="display:none" onclick="navigate('hrm',this)">
@@ -108,6 +119,10 @@
     <div class="nav-item" id="nav-inventory" onclick="navigate('inventory',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       <span class="nav-label-text">Team Assets</span>
+    </div>
+    <div class="nav-item" id="nav-attendance" style="display:none" onclick="navigate('attendance',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M3 10h18M8 3v4M16 3v4M8 15l2 2 4-4"/></svg>
+      <span class="nav-label-text">Attendance</span>
     </div>
     <div class="nav-item" id="nav-leaves" onclick="navigate('leaves',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -145,6 +160,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7V5a1 1 0 011-1h12a1 1 0 011 1v2M4 7l1 12a1 1 0 001 1h12a1 1 0 001-1l1-12M9 11v5M15 11v5"/></svg>
       <span class="nav-label-text">Bunai B2B</span>
     </div>
+    <div class="nav-item" id="nav-b2bexport" onclick="navigate('b2bexport',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>
+      <span class="nav-label-text">Bunai B2B Exports</span>
+    </div>
     <div class="nav-item" id="nav-returns" style="display:none" onclick="navigate('returns',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
       <span class="nav-label-text">Returns</span>
@@ -164,6 +183,10 @@
     <div class="nav-item" id="nav-samples" style="display:none" onclick="navigate('samples',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9l-6-6H7a2 2 0 00-2 2v14a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v6h6"/></svg>
       <span class="nav-label-text">Sampling</span>
+    </div>
+    <div class="nav-item" id="nav-prodcheck" style="display:none" onclick="navigate('prodcheck',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+      <span class="nav-label-text">Production Checklist</span>
     </div>
     <div class="nav-item" id="nav-bunaicost" style="display:none" onclick="navigate('bunaicost',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-1m6-9a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5a2 2 0 012-2h2a2 2 0 012 2v0a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
@@ -391,6 +414,23 @@
   </div>
 
   <!-- ── HR — employee master (admin only) ── -->
+  <div id="page-hrsheet" class="page">
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="hsSearch" type="text" placeholder="Search name, mobile, designation, department…" oninput="hsDraw()" style="min-width:260px;max-width:380px"/>
+      <span id="hsNote" style="font-size:12.5px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <a id="hsOpenSheet" class="btn btn-outline" target="_blank" rel="noopener" href="#">Open sheet ↗</a>
+      <button class="btn btn-outline" onclick="loadHrSheet()">↻ Refresh</button>
+      <button class="btn btn-primary" onclick="hsOpen()">+ Add</button>
+    </div>
+    <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table class="table" style="min-width:2400px">
+        <thead id="hsHead"></thead>
+        <tbody id="hsBody"><tr><td class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div id="page-hr" class="page">
     <div class="page-header">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -483,8 +523,11 @@
       <span style="font-size:13px;font-weight:600;color:var(--muted-foreground)">Live warehouse stock from Unicommerce</span>
     </div>
     <!-- All warehouses, or one. Everything below follows it: cards, movement, the table. -->
+    <!-- A section per brand (by SKU prefix), then the warehouses within it. -->
+    <div class="lv-tabs" id="stockBrandTabs"></div>
+    <input type="hidden" id="stockBrand" value="" autocomplete="off"/>
     <div class="lv-tabs" id="stockWhTabs"></div>
-    <input type="hidden" id="stockWarehouse" value=""/>
+    <input type="hidden" id="stockWarehouse" value="" autocomplete="off"/>
 
     <div id="stockNotice" style="display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:13.5px"></div>
 
@@ -493,13 +536,6 @@
     <div id="stockMovement" style="margin-bottom:16px"></div>
 
     <div class="cp-filter-row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;align-items:center">
-      <select id="stockBrand" onchange="stockPickBrand()" title="Brand, by the SKU's prefix" style="font-weight:600">
-        <option value="">All brands</option>
-        <option value="bunai">Bunai</option>
-        <option value="aaheli">Aaheli</option>
-        <option value="mulmul">Mulmul</option>
-        <option value="other">Other SKUs</option>
-      </select>
       <input id="stockSearch" type="text" placeholder="Search SKU or product name…" oninput="stockDebounced()" style="min-width:240px;flex:1;max-width:360px"/>
       <select id="stockLow" onchange="loadStock()">
         <option value="">All stock</option>
@@ -627,13 +663,13 @@
 
     <div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px;flex-wrap:wrap">
       <div id="returnsListLabel" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-foreground)">Returns</div>
-      <select id="returnsTypeFilter" onchange="loadReturnsList(1)" style="margin-left:auto"><option value="">All types</option><option value="RTO">RTO</option><option value="Delivered Return">Delivered Return</option></select>
-      <select id="returnsStatusFilter" onchange="loadReturnsList(1)"><option value="">All status</option><option value="Confirmed">Confirmed</option><option value="Closed">Closed</option></select>
-      <input id="returnsSearch" type="text" placeholder="Search return, order, customer, phone, city, tracking…" oninput="returnsSearchDebounced()" style="min-width:240px;max-width:340px"/>
+      <span id="returnsFilterNote" style="font-size:12.5px"></span>
+      <input id="returnsSearch" type="text" placeholder="Search return, order, customer, phone, city, tracking…" oninput="returnsSearchDebounced()" style="min-width:240px;max-width:340px;margin-left:auto"/>
     </div>
     <div class="table-container">
       <table>
-        <thead><tr><th>Return</th><th>Type</th><th>Order</th><th>Date</th><th>Channel</th><th>Customer</th><th>City</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead>
+        <!-- Drawn by returnsHeadHtml(): each heading with its ▾ filter. -->
+        <thead id="returnsHead"></thead>
         <tbody id="returnsBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -752,6 +788,8 @@
       <input id="whSearch" type="text" placeholder="Search SKU or product…" oninput="whFilterRows()" style="min-width:240px"/>
     </div>
 
+    <!-- A section per brand (by SKU prefix), then the warehouses within it. -->
+    <div class="lv-tabs" id="whBrandTabs"></div>
     <div class="lv-tabs" id="whTabs"></div>
     <div id="whFigures" style="margin:0 2px 14px"></div>
 
@@ -788,6 +826,43 @@
         <thead><tr><th>Vendor name</th><th>Company</th><th>Phone</th><th style="text-align:right">Styles</th>
           <th>Last call</th><th>Action</th></tr></thead>
         <tbody id="vbBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="page-attendance" class="page">
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 12px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="attStep(-1)" title="Previous month">‹</button>
+      <select id="attMonth" onchange="loadAttendance(this.value)" style="width:auto;min-width:160px;font-weight:600"></select>
+      <button class="btn btn-outline btn-sm" onclick="attStep(1)" title="Next month">›</button>
+      <span id="attNote" style="font-size:12.5px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="attPeopleBtn" onclick="attPeopleOpen()" style="display:none">People</button>
+    </div>
+    <div id="attLegend" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 2px 10px"></div>
+    <div style="overflow:auto;max-height:72vh;border:1px solid var(--border);border-radius:12px;background:var(--card)">
+      <table class="table" id="attGrid" style="margin:0">
+        <thead id="attHead"></thead>
+        <tbody id="attBody"><tr><td class="empty">Loading…</td></tr></tbody>
+        <tfoot id="attFoot"></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div id="page-prodcheck" class="page">
+    <div class="lv-tabs" id="pcTabs"></div>
+    <div id="pcStepTiles" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 2px 12px"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="pcSearch" type="text" placeholder="Search style, product, notes…" oninput="pcDraw()" style="min-width:260px;max-width:380px"/>
+      <span id="pcNote" style="font-size:12.5px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="pcStepsBtn" onclick="pcStepsOpen()" style="display:none">Steps</button>
+      <button class="btn btn-primary" onclick="pcOpen()">+ Add style</button>
+    </div>
+    <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table class="table">
+        <thead id="pcHead"></thead>
+        <tbody id="pcBody"><tr><td class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -836,6 +911,7 @@
     <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
       <input id="sampleSearch" type="text" placeholder="Search style ID, fabric, notes…" oninput="sampleSearchDebounced()" style="min-width:260px;max-width:380px"/>
       <input type="hidden" id="sampleFilter" value=""/>
+      <span id="sampleFilterNote" style="font-size:12.5px"></span>
       <span style="flex:1"></span>
       <button class="btn btn-primary" onclick="sampleOpen()">+ Add style</button>
     </div>
@@ -846,27 +922,17 @@
           <!-- Grouped the way the client's workbook groups them. On their own,
                "Us / Vendor / Final / Website / Myntra" say nothing. -->
           <tr>
-            <th></th>
+            <th colspan="2"></th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Fabric</th>
             <th colspan="2"></th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Costing (&#8377;)</th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Pricing (&#8377;)</th>
             <th></th>
           </tr>
-          <tr>
-            <th>Style ID</th>
-            <th>Kurta</th><th>Pant</th><th>Dupatta</th>
-            <th>Lining</th><th>Status</th>
-            <th style="text-align:right">Internal</th>
-            <th style="text-align:right">Vendor</th>
-            <th style="text-align:right">Final</th>
-            <th style="text-align:right">Website</th>
-            <th style="text-align:right">Myntra</th>
-            <th style="text-align:right">Wholesale</th>
-            <th></th>
-          </tr>
+          <!-- Drawn by sampleHeadHtml(): each heading with its ▾ filter. -->
+          <tr id="sampleHead"></tr>
         </thead>
-        <tbody id="sampleBody"><tr><td colspan="13" class="empty">Loading…</td></tr></tbody>
+        <tbody id="sampleBody"><tr><td colspan="14" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1527,9 +1593,9 @@
       <table>
         <thead><tr>
           <th>Influencer</th><th>Project</th><th>Collaboration</th><th>Outfit</th><th>Messaged</th>
-          <th>Shipped</th><th>Received</th><th>Posted</th><th>Remark</th><th>Action</th>
+          <th>Shipped</th><th>Received</th><th>Posted</th><th>Content</th><th>Remark</th><th>Action</th>
         </tr></thead>
-        <tbody id="infBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
+        <tbody id="infBody"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1700,6 +1766,9 @@
     <div class="form-row">
       <div class="form-group"><label>Sample Style ID <span style="color:var(--brand-mid)">*</span></label>
         <input type="text" id="sampleStyleId" placeholder="The style's own code"/></div>
+      <div class="form-group"><label>Vendor name</label>
+        <select id="sampleVendor"><option value="">—</option></select>
+        <div id="sampleVendorHint" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
       <div class="form-group"><label>Status</label>
         <select id="sampleStatus">
           <option value="Production Pending">Production Pending</option>
@@ -1891,11 +1960,13 @@
       <div class="form-row">
         <div class="form-group"><label>No. of pieces</label>
           <input type="number" id="b2bPieces" min="0" step="1" oninput="b2bRecalc()" placeholder="0"/></div>
-        <div class="form-group"><label>Rate / piece (₹)</label>
+        <div class="form-group"><label>Rate / piece (<span class="b2bCurSym">₹</span>)</label>
           <input type="number" id="b2bRate" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
       </div>
     </div>
-    <div class="form-group"><label>Order value before GST (₹)</label>
+    <div class="form-group" id="b2bCurWrap" style="display:none"><label>Currency</label>
+      <select id="b2bCurrency" onchange="b2bCurrencyPicked()"></select></div>
+    <div class="form-group"><label>Order value before GST (<span class="b2bCurSym">₹</span>)</label>
       <input type="number" id="b2bTotal" min="0" step="0.01" oninput="b2bRecalc(true)" placeholder="0.00"/>
       <div id="b2bTotalHint" style="font-size:11.5px;color:var(--faint);margin-top:4px">
         Filled in from pieces × rate. Type over it if the agreed price is different.</div></div>
@@ -1903,6 +1974,7 @@
       <div class="form-group"><label>GST</label>
         <div style="display:flex;gap:8px">
           <select id="b2bGst" onchange="b2bGstPicked()" style="flex:1">
+            <option value="0">0% (no GST)</option>
             <option value="5">5%</option>
             <option value="18">18%</option>
             <option value="custom">Custom</option>
@@ -1911,7 +1983,7 @@
             style="display:none;width:90px"/>
         </div>
         <div id="b2bGstHint" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
-      <div class="form-group"><label>Total with GST (₹)</label>
+      <div class="form-group"><label>Total with GST (<span class="b2bCurSym">₹</span>)</label>
         <input type="text" id="b2bGrand" readonly style="background:#f1f5f9;font-weight:700"/></div>
     </div>
 
@@ -1926,10 +1998,10 @@
           <option value="Paid">Paid</option>
         </select>
         <div id="b2bPayHint" style="display:none;font-size:11.5px;margin-top:5px"></div></div>
-      <div class="form-group"><label>Amount received (₹)</label>
+      <div class="form-group"><label>Amount received (<span class="b2bCurSym">₹</span>)</label>
         <input type="number" id="b2bReceived" min="0" step="0.01" oninput="b2bRecalc()" placeholder="0.00"/></div>
     </div>
-    <div class="form-group"><label>Balance amount (₹)</label>
+    <div class="form-group"><label>Balance amount (<span class="b2bCurSym">₹</span>)</label>
       <input type="text" id="b2bBalance" readonly
         style="background:#f1f5f9;cursor:not-allowed" placeholder="—"/>
       <div style="font-size:11.5px;color:var(--faint);margin-top:4px">
@@ -1964,6 +2036,109 @@
     </div>
   </div>
 </div>
+
+<div id="attPop" style="display:none;position:fixed;z-index:1200;min-width:190px;background:var(--card);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:8px;font-size:13px"></div>
+
+<div class="modal-overlay" id="attPeopleModal">
+  <div class="modal" style="width:480px;max-width:94vw">
+    <h3>People on the attendance</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      Rename, reorder or switch someone off. Switched off, their marks stay and they stop showing in new months.
+    </div>
+    <div id="attPeopleList"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <input type="text" id="attNewPerson" placeholder="Name" style="flex:1" onkeydown="if(event.key==='Enter')attAddPerson()"/>
+      <button class="btn btn-outline" onclick="attAddPerson()">+ Add</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('attPeopleModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="attPeopleSave(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  #attGrid th, #attGrid td { padding:6px 8px; font-size:12.5px; white-space:nowrap; border-right:1px solid var(--border); }
+  #attGrid thead th { position:sticky; top:0; background:var(--card); z-index:2; }
+  #attGrid td.att-day, #attGrid th.att-day { position:sticky; left:0; background:var(--card); z-index:1; }
+  #attGrid thead th.att-day { z-index:3; }
+  #attGrid td.att-cell { cursor:pointer; text-align:center; min-width:96px; }
+  #attGrid td.att-cell:hover { outline:2px solid var(--brand-deep); outline-offset:-2px; }
+  #attGrid tr.att-today td { box-shadow: inset 0 0 0 9999px rgba(250,204,21,.12); }
+  #attGrid tr.att-sun td.att-day { color:var(--brand-deep); }
+  .att-pill { display:inline-block; padding:2px 8px; border-radius:6px; font-weight:600; font-size:11.5px; }
+  .att-opt { display:block; width:100%; text-align:left; border:0; background:none; padding:6px 8px; border-radius:7px; cursor:pointer; font-size:13px; }
+  .att-opt:hover { background:var(--muted); }
+</style>
+
+<div class="modal-overlay" id="hsModal">
+  <div class="modal" style="width:860px;max-width:95vw;max-height:92vh;overflow:auto">
+    <h3>Add employee</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      The same fields as the sheet. Saving adds the row to the sheet's <b id="hsTabName">Bunai</b> tab.
+    </div>
+    <div id="hsFields" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px"></div>
+    <div id="hsErr" style="display:none;color:#dc2626;font-size:13px;margin-top:6px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('hsModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="hsSave(this)">Save to sheet</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="pcModal">
+  <div class="modal" style="width:560px;max-width:94vw">
+    <h3 id="pcModalTitle">Add style</h3>
+    <input type="hidden" id="pcEditId"/>
+    <div class="form-row">
+      <div class="form-group"><label>Style ID *</label>
+        <input type="text" id="pcStyle" list="pcStyleList" placeholder="e.g. BUNA-IH 233"/>
+        <datalist id="pcStyleList"></datalist></div>
+      <div class="form-group"><label>Qty (pcs)</label><input type="number" id="pcQty" min="0" step="1"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Product</label><input type="text" id="pcProduct" placeholder="e.g. Cotton satin kurta set"/></div>
+      <div class="form-group"><label>Due date</label><input type="date" id="pcDue"/></div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="pcNotes" rows="2"></textarea></div>
+    <div id="pcErr" style="display:none;color:#dc2626;font-size:13px;margin-top:6px"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" id="pcDeleteBtn" onclick="pcDelete()" style="display:none;color:#b91c1c">Delete</button>
+      <span style="display:flex;gap:8px">
+        <button class="btn btn-outline" onclick="closeModal('pcModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="pcSave(this)">Save</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="pcStepsModal">
+  <div class="modal" style="width:520px;max-width:94vw">
+    <h3>Checklist steps</h3>
+    <div style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)">
+      Rename, reorder or switch off a step. A switched-off step keeps its ticks and stops counting.
+    </div>
+    <div id="pcStepsList"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <input type="text" id="pcNewStep" placeholder="New step, e.g. Embroidery" style="flex:1" onkeydown="if(event.key==='Enter')pcAddStep()"/>
+      <button class="btn btn-outline" onclick="pcAddStep()">+ Add</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('pcStepsModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="pcStepsSave(this)">Save steps</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .pc-tick { width:18px; height:18px; cursor:pointer; accent-color:var(--brand-deep); }
+  .pc-step-th { text-align:center; white-space:nowrap; font-size:11px; }
+  .pc-chip { border:1px solid var(--border); background:var(--card); border-radius:999px; padding:4px 12px; font-size:12.5px; cursor:pointer; }
+  .pc-chip.on { border-color:var(--brand-deep); background:var(--brand-tint); font-weight:700; }
+  .pc-bar { height:6px; border-radius:6px; background:var(--muted); overflow:hidden; min-width:70px; }
+  .pc-bar > i { display:block; height:100%; background:#16a34a; }
+</style>
 
 <div class="modal-overlay" id="vbModal">
   <div class="modal" style="width:640px;max-width:94vw;max-height:92vh;overflow:auto">
@@ -2028,6 +2203,12 @@
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('b2bItemsModal')">Close</button></div>
   </div>
 </div>
+
+<div id="sampleFilterPop" style="display:none;position:fixed;z-index:1200;width:280px;background:var(--card);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:12px 14px;font-size:13px"></div>
+
+<div id="returnsFilterPop" style="display:none;position:fixed;z-index:1200;width:280px;background:var(--card);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:12px 14px;font-size:13px"></div>
 
 <div id="scotFilterPop" style="display:none;position:fixed;z-index:1200;width:280px;background:var(--card);border:1px solid var(--border);
   border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:12px 14px;font-size:13px"></div>
@@ -2116,17 +2297,12 @@
           <input type="text" id="mcBTotal" readonly style="background:#f1f5f9;font-weight:700"/></div>
         <div class="form-group"><label>Overhead</label>
           <div style="display:flex;gap:6px"><input type="text" id="mcOverhead" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
-            <select id="mcOverheadType" onchange="mcRecalc()" style="width:68px"><option value="amt">&#8377;</option><option value="pct">%</option></select></div>
+            <select id="mcOverheadType" onchange="mcRecalc()" style="width:68px"><option value="pct">%</option><option value="amt">&#8377;</option></select></div>
           <div id="mcOverheadAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
         <div class="form-group"><label>Profit</label>
           <div style="display:flex;gap:6px"><input type="text" id="mcProfit" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
-            <select id="mcProfitType" onchange="mcRecalc()" style="width:68px"><option value="amt">&#8377;</option><option value="pct">%</option></select></div>
+            <select id="mcProfitType" onchange="mcRecalc()" style="width:68px"><option value="pct">%</option><option value="amt">&#8377;</option></select></div>
           <div id="mcProfitAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
-        <div class="form-group"><label>GST</label>
-          <div style="display:flex;gap:6px"><select id="mcGst" onchange="mcGstPicked()" style="flex:1">
-              <option value="5">5%</option><option value="18">18%</option><option value="custom">Custom</option></select>
-            <input type="text" id="mcGstCustom" inputmode="decimal" placeholder="%" oninput="mcRecalc()" style="display:none;width:80px"/></div>
-          <div id="mcGstAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
         <div class="form-group"><label>Selling Price (&#8377;)</label>
           <input type="text" id="mcSelling" readonly style="background:#f1f5f9;font-weight:800;color:var(--brand-deep)"/></div>
         <div class="form-group"><label>Image</label>
@@ -2319,6 +2495,10 @@
       <div class="form-group"><label>Post date</label>
         <input type="date" id="infPosted"/></div>
     </div>
+    <div class="form-group"><label>Content link</label>
+      <input type="text" id="infContentLink" placeholder="https://instagram.com/reel/…"/></div>
+    <div class="form-group"><label>Content description <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(optional)</span></label>
+      <textarea id="infContentNote" rows="2" placeholder="What the post or reel is - e.g. styling reel, 3 looks"></textarea></div>
     <div class="form-group"><label>Remark</label>
       <textarea id="infRemark" rows="2" placeholder="Feedback on this influencer, for next time"></textarea></div>
 

@@ -190,6 +190,8 @@ router.get('/sales', requireAuth, requirePage('sales'), async (req, res) => {
     //
     // Missing table means the migration has not run on this database yet, which
     // is a reason to show the online half rather than fail the whole page.
+    // Domestic orders only: exports are in their own currencies, and dollars
+    // added to rupees make a number that means nothing.
     const LIVE_B = "COALESCE(order_status,'') <> 'Cancelled'";
     const b2b = await db.one(
       `SELECT COUNT(*) orders,
@@ -198,13 +200,13 @@ router.get('/sales', requireAuth, requirePage('sales'), async (req, res) => {
               ROUND(SUM(CASE WHEN ${LIVE_B} THEN COALESCE(amount_received,0) ELSE 0 END)) received,
               ROUND(SUM(CASE WHEN ${LIVE_B} THEN COALESCE(balance_amount,0) ELSE 0 END)) outstanding,
               SUM(CASE WHEN ${LIVE_B} THEN COALESCE(pieces,0) ELSE 0 END) units
-         FROM b2b_orders WHERE ${dc}`, A).catch(() => null);
+         FROM b2b_orders WHERE ${dc} AND book = 'domestic'`, A).catch(() => null);
     // Who the wholesale money actually came from, biggest first.
     const b2bParties = await db.rows(
       `SELECT party_name, COUNT(*) n,
               ROUND(SUM(COALESCE(total_order_value,0))) revenue,
               ROUND(SUM(COALESCE(balance_amount,0))) outstanding
-         FROM b2b_orders WHERE ${dc} AND ${LIVE_B}
+         FROM b2b_orders WHERE ${dc} AND ${LIVE_B} AND book = 'domestic'
         GROUP BY party_name ORDER BY revenue DESC LIMIT 10`, A).catch(() => []);
 
     res.json({

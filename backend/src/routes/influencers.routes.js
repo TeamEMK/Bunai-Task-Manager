@@ -97,6 +97,9 @@ function fromBody(b) {
     shipped_on: dateOrNull(b.shipped_on),
     received_on: dateOrNull(b.received_on),
     post_date: dateOrNull(b.post_date),
+    // A link only if it is one; the note says what the content is, if anything.
+    content_link: /^https?:\/\//i.test(clean(b.content_link, 500)) ? clean(b.content_link, 500) : '',
+    content_note: clean(b.content_note, 1000),
     remark: clean(b.remark, 2000),
   };
 }

@@ -193,6 +193,16 @@ router.get('/stock', requireAuth, async (req, res) => {
       db.rows(`SELECT warehouse, sku, qty FROM ims_inventory WHERE qty > 0`),
     ]);
 
+    // The brand sections: units of each brand in the chosen warehouse (all of
+    // them when none is chosen), counted before the brand filter below.
+    const brandUnits = { all: 0 };
+    for (const r of inStockAll) {
+      if (wh && wh !== '__none' && r.warehouse !== wh) continue;
+      const q = Number(r.qty) || 0, b = brands.of(r.sku);
+      brandUnits[b] = (brandUnits[b] || 0) + q;
+      brandUnits.all += q;
+    }
+
     // The warehouse tabs and cards count only the chosen brand's stock.
     if (brand) inStockAll = inStockAll.filter(r => brands.of(r.sku) === brand);
 
@@ -322,6 +332,7 @@ router.get('/stock', requireAuth, async (req, res) => {
       rows: grouping ? outRows.slice(0, ROW_LIMIT) : outRows,
       totals, lastSync, lastOk, counts, soldDays, mtd, period,
       warehouses: allWh.map(w => ({ warehouse: w.warehouse, units: Number(w.units) || 0, skus: Number(w.skus) || 0 })),
+      brand, brandUnits,
       warehouse: wh === NONE ? NONE : (known ? wh : ''),
       noWarehouse: noWh.length,
       brand,

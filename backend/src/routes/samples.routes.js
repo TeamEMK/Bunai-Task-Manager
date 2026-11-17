@@ -72,12 +72,41 @@ function body(req) {
     price_website: money(b.price_website),
     price_myntra: money(b.price_myntra),
     price_wholesale: money(b.price_wholesale),
+    vendor_id: Number.isInteger(Number(b.vendor_id)) && Number(b.vendor_id) > 0 ? Number(b.vendor_id) : null,
   };
 }
 
 const COLS = ['style_id', 'image_url', 'notes', 'kurta_fabric', 'pant_fabric',
   'dupatta_fabric', 'fabric_remarks', 'has_lining', 'lining_fabric', 'status',
-  'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra', 'price_wholesale'];
+  'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra', 'price_wholesale', 'vendor_id'];
+
+// "BUNA-IH 88", "BUNA-IH-88" and "buna ih88" are the same style.
+const styleKey = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// Each style's vendor: the one picked on the style, else whichever vendor in
+// the Vendor Name book lists the style among the styles they make.
+async function withVendors(rows) {
+  const book = await db.rows('SELECT id, vendor_name, styles FROM vendor_book ORDER BY vendor_name').catch(() => []);
+  const byId = new Map(book.map(v => [v.id, v.vendor_name]));
+  const byStyle = new Map();
+  for (const v of book) {
+    let styles = [];
+    try { styles = JSON.parse(v.styles || '[]'); } catch (_) { /* a bad cell is no styles */ }
+    (Array.isArray(styles) ? styles : []).forEach(s => {
+      const k = styleKey(s);
+      if (k && !byStyle.has(k)) byStyle.set(k, { id: v.id, name: v.vendor_name });
+    });
+  }
+  rows.forEach(r => {
+    const picked = r.vendor_id && byId.has(r.vendor_id) ? { id: r.vendor_id, name: byId.get(r.vendor_id) } : null;
+    const listed = byStyle.get(styleKey(r.style_id)) || null;
+    const v = picked || listed;
+    r.vendor_ref = v ? v.id : null;
+    r.vendor_name = v ? v.name : '';
+    r.vendor_from = picked ? 'picked' : listed ? 'book' : '';
+  });
+  return book.map(v => ({ id: v.id, name: v.vendor_name }));
+}
 
 // ── The Google Sheet half ─────────────────────────────
 // Every style lands in two places, here and the client's sheet, on the same
@@ -216,8 +245,10 @@ router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (re
   ]);
 
   const by = Object.fromEntries(counts.map(c => [c.status, Number(c.n)]));
+  const vendors = await withVendors(rows);
   res.json({
     rows,
+    vendors,
     statuses: STATUSES,
     counts: {
       all: counts.reduce((a, c) => a + Number(c.n), 0),

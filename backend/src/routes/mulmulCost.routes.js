@@ -66,7 +66,8 @@ const num = (v) => {
 };
 
 // Bunai's sheet carries the product to a selling price: overhead and profit,
-// each in rupees or as a percent of the cost, then GST on all of it.
+// each in rupees or as a percent of the cost. No GST: the client took it off
+// the sheet (17 Nov 2026), so a rate saved before is not counted.
 const AMT_TYPES = ['amt', 'pct'];
 const round2 = (n) => Math.round(n * 100) / 100;
 function priceUp(total, r) {
@@ -74,8 +75,7 @@ function priceUp(total, r) {
   const part = (v, t) => (v == null ? 0 : t === 'pct' ? total * Number(v) / 100 : Number(v));
   const overhead = round2(part(r.overhead, r.overhead_type));
   const profit = round2(part(r.profit, r.profit_type));
-  const gst = round2((total + overhead + profit) * Number(r.gst_rate || 0) / 100);
-  return { overhead, profit, gst, selling: round2(total + overhead + profit + gst) };
+  return { overhead, profit, selling: round2(total + overhead + profit) };
 }
 
 function fromBody(b, brand) {

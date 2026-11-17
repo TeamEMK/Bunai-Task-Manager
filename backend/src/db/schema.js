@@ -967,6 +967,54 @@ const TABLES = [
   // every Shopify sync and a row id there means nothing from one run to the
   // next. The times are written by the app from the database clock (UTC) and
   // shown in India's time, like every other log here.
+  // Attendance (People → Attendance): the HR team's list of people, and one
+  // status per person per day.
+  ['att_people', `CREATE TABLE att_people (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    active TINYINT(1) NOT NULL DEFAULT 1
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['att_marks', `CREATE TABLE att_marks (
+    person_id INT NOT NULL,
+    day DATE NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    updated_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    updated_at DATETIME NOT NULL,
+    PRIMARY KEY (person_id, day),
+    KEY idx_att_day (day)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
+  // Production checklist (Inventory → Production Checklist): a row per style
+  // being made, the team's own steps, and one tick per style and step.
+  ['prodcheck_steps', `CREATE TABLE prodcheck_steps (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    label VARCHAR(80) NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    active TINYINT(1) NOT NULL DEFAULT 1
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['prodcheck_items', `CREATE TABLE prodcheck_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    style_id VARCHAR(120) NOT NULL,
+    product VARCHAR(255) NOT NULL DEFAULT '',
+    qty INT NULL,
+    notes VARCHAR(2000) NOT NULL DEFAULT '',
+    due_date DATE NULL,
+    created_by INT NULL,
+    created_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    KEY idx_prodcheck_due (due_date)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['prodcheck_ticks', `CREATE TABLE prodcheck_ticks (
+    item_id INT NOT NULL,
+    step_id INT NOT NULL,
+    done_by INT NULL,
+    done_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    done_at DATETIME NOT NULL,
+    PRIMARY KEY (item_id, step_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // The vendor book (Inventory → Vendor Name): who, their company and address,
   // their phone, and the styles they make - a JSON list, one entry per style.
   ['vendor_book', `CREATE TABLE vendor_book (
@@ -1235,6 +1283,11 @@ const COLUMNS = [
   // order saved before GST existed).
   ['b2b_orders', 'subtotal', `DECIMAL(14,2) DEFAULT NULL AFTER rate_per_piece`],
   ['b2b_orders', 'gst_rate', `DECIMAL(5,2) DEFAULT NULL AFTER subtotal`],
+  // Two books on one page: domestic B2B (the original, every older row) and
+  // exports. An export order is in its own currency; domestic is rupees.
+  ['b2b_orders', 'book', `VARCHAR(10) NOT NULL DEFAULT 'domestic' AFTER id`],
+  ['b2b_orders', 'currency', `VARCHAR(3) NOT NULL DEFAULT 'INR' AFTER gst_rate`],
+  ['b2b_parties', 'book', `VARCHAR(10) NOT NULL DEFAULT 'domestic' AFTER id`],
   // A vendor call's notes per style: JSON [{ style, note }].
   ['vendor_calls', 'style_notes', `TEXT NULL AFTER notes`],
   // Product cost: one list per brand, and the vendor's and the final costing
@@ -1252,6 +1305,8 @@ const COLUMNS = [
   // Sample styles: a wholesale price beside website and Myntra. App only - the
   // client's sheet keeps its sixteen columns.
   ['sample_styles', 'price_wholesale', `DECIMAL(12,2) DEFAULT NULL AFTER price_myntra`],
+  // The vendor making the style, from the Vendor Name book. App only, as above.
+  ['sample_styles', 'vendor_id', `INT NULL AFTER price_wholesale`],
   // The same details on a prospect, so they are written down before the first order.
   // The content calendar became one per brand; everything before was Bunai's.
   ['content_calendar_months', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],
@@ -1282,6 +1337,10 @@ const COLUMNS = [
   // it any more, but there is no reason to throw away what was already there.
   ['influencers', 'outfit', `VARCHAR(1000) DEFAULT '' AFTER collaboration_type`],
   ['influencers', 'remark', `VARCHAR(2000) DEFAULT '' AFTER post_date`],
+  // The content the influencer posted: its link, and a note about it if wanted.
+  // App only - the team's sheet has no column for it.
+  ['influencers', 'content_link', `VARCHAR(500) DEFAULT '' AFTER post_date`],
+  ['influencers', 'content_note', `VARCHAR(1000) DEFAULT '' AFTER content_link`],
   // Which of the brands the collaboration is for.
   ['influencers', 'project', `VARCHAR(40) DEFAULT '' AFTER message_sent_on`],
   // Where a Shopify order shipped to, as the two-letter code (IN, US, AE). The

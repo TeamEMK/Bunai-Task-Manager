@@ -160,6 +160,7 @@ async function init() {
       document.getElementById('nav-users').style.display = 'flex';
       document.getElementById('nav-dailyreports').style.display = 'flex';
       document.getElementById('nav-hr').style.display = 'flex';
+      document.getElementById('nav-hrsheet').style.display = 'flex';
       document.getElementById('nav-hrm').style.display = 'flex';
       document.getElementById('nav-mis').style.display = 'flex';
       document.getElementById('nav-fms').style.display = 'flex';
@@ -300,7 +301,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'HR — Employees',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',catalog:'Catalog',samples:'Sample Style MIS',mulmulcost:'Mulmul Product Cost',bunaicost:'Bunai Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'Employees',hrsheet:'HR',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',b2bexport:'Bunai B2B Exports',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',catalog:'Catalog',samples:'Sample Style MIS',prodcheck:'Production Checklist',attendance:'Attendance',mulmulcost:'Mulmul Product Cost',bunaicost:'Bunai Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -382,6 +383,58 @@ function hideEmptyNavSections() {
   });
 }
 
+// ── Sidebar search ──────────────────────────────────
+// Shows the tabs whose name - or whose group's name - holds what was typed.
+// Only tabs this person has at all: a role-hidden one stays hidden. Enter opens
+// the first match, Esc clears, "/" anywhere outside a field jumps here.
+function navSearch(q) {
+  const s = String(q || '').trim().toLowerCase();
+  const nav = document.querySelector('nav.nav');
+  if (!nav) return;
+  document.getElementById('sidebar').classList.toggle('searching', !!s);
+  const kids = [...nav.children];
+  let section = null, sectionName = '', any = false;
+  const shownIn = new Map();
+  kids.forEach(el => {
+    if (el.classList.contains('nav-section')) { section = el; sectionName = el.textContent.toLowerCase(); shownIn.set(el, false); return; }
+    if (!el.classList.contains('nav-item')) { el.classList.toggle('nav-search-hide', !!s); return; }
+    const label = ((el.querySelector('.nav-label-text') || el).textContent || '').toLowerCase();
+    const hit = !s || label.includes(s) || sectionName.includes(s);
+    el.classList.toggle('nav-search-hide', !hit);
+    if (hit && el.style.display !== 'none') { any = true; if (section) shownIn.set(section, true); }
+  });
+  shownIn.forEach((has, sec) => sec.classList.toggle('nav-search-hide', !!s && !has));
+  document.getElementById('navSearchEmpty').style.display = s && !any ? '' : 'none';
+}
+function navSearchClear() {
+  const box = document.getElementById('navSearch');
+  if (box) box.value = '';
+  navSearch('');
+}
+function navSearchKey(e) {
+  if (e.key === 'Escape') { navSearchClear(); e.target.blur(); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const first = [...document.querySelectorAll('nav.nav .nav-item')]
+    .find(n => !n.classList.contains('nav-search-hide') && n.style.display !== 'none');
+  if (first) { first.click(); e.target.blur(); }
+}
+// Picking a tab from the results opens it and puts the whole menu back.
+document.addEventListener('click', (e) => {
+  const item = e.target.closest && e.target.closest('nav.nav .nav-item');
+  if (item && (document.getElementById('navSearch') || {}).value) navSearchClear();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const box = document.getElementById('navSearch');
+  if (!box) return;
+  e.preventDefault();
+  if (window.innerWidth <= 768 && typeof toggleSidebar === 'function' && !document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+  box.focus();
+});
+
 // Pages an Admin can hand to one person. The server has its own list and is the
 // one that enforces it; this one only draws the checkboxes and the menu, so a
 // key added there needs adding here.
@@ -389,7 +442,7 @@ const PAGE_GRANTS = [
   { key: 'sales', label: 'Sales' }, { key: 'returns', label: 'Returns' },
   { key: 'shipments', label: 'Shipments' }, { key: 'vendors', label: 'Vendor Name' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
-  { key: 'samples', label: 'Sampling' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' }, { key: 'bunaicost', label: 'Bunai Product Cost' },
+  { key: 'samples', label: 'Sampling' }, { key: 'prodcheck', label: 'Production Checklist' }, { key: 'attendance', label: 'Attendance' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' }, { key: 'bunaicost', label: 'Bunai Product Cost' },
   { key: 'contentcal', label: 'Content Calendar' },
   { key: 'ims', label: 'IMS' },
   { key: 'mis', label: 'MIS Report' }, { key: 'fms', label: 'FMS Admin' },
@@ -406,7 +459,7 @@ function hasPage(key) {
 }
 
 // The page element a page key shows. Bunai Product Cost is Mulmul's page, for the other brand.
-const pageDom = (page) => (page === 'bunaicost' ? 'mulmulcost' : page);
+const pageDom = (page) => (page === 'bunaicost' ? 'mulmulcost' : page === 'b2bexport' ? 'b2b' : page);
 
 // An address can be typed or bookmarked, so never trust it — the page must
 // exist and the signed-in role must be allowed to open it.
@@ -414,7 +467,7 @@ function canOpenPage(page) {
   if (!page || !document.getElementById('page-' + pageDom(page))) return false;
   if (page === 'mis') return !!ME && (ME.role === 'hod' || hasPage('mis'));
   if (PAGE_GRANT_KEYS.includes(page)) return hasPage(page);
-  if (page === 'hr') return ME && ME.role === 'admin';
+  if (page === 'hr' || page === 'hrsheet') return ME && ME.role === 'admin';
   const el = navElFor(page);
   return !el || el.style.display !== 'none';   // hidden nav item = not their page
 }
@@ -449,7 +502,7 @@ function navigate(page, el, fromHistory) {
   // MIS page — admin and HOD (App Role) only
   if (page === 'mis' && ME.role !== 'hod' && !hasPage('mis')) return;
   // HR page — admin only
-  if (page === 'hr' && (!ME || ME.role !== 'admin')) return;
+  if ((page === 'hr' || page === 'hrsheet') && (!ME || ME.role !== 'admin')) return;
   // IMS, Sales, Returns, Shipments, Catalog, Sampling, Warehouse, SCOT — an
   // Admin, or someone an Admin gave that page to. This used to be a line per
   // page asking only "is this an Admin", which left a granted page in the menu
@@ -472,7 +525,7 @@ function navigate(page, el, fromHistory) {
   if (page==='hr') loadHr();
   if (page==='hrm') loadHrm();
   if (page==='influencers') loadInfluencers();
-  if (page==='b2b') { loadB2B(); loadB2BParties(); }
+  if (page==='b2b' || page==='b2bexport') { B2B_BOOK = page==='b2bexport' ? 'export' : 'domestic'; loadB2B(); loadB2BParties(); }
   if (page==='approvals') loadApprovals();
   if (page==='fms') loadFMSAdmin();
   if (page==='fms-tasks') loadFMSTasks();
@@ -489,6 +542,9 @@ function navigate(page, el, fromHistory) {
   if (page==='returns') loadReturns();
   if (page==='shipments') loadShipments();
   if (page==='vendors') loadVendors();
+  if (page==='prodcheck') loadProdCheck();
+  if (page==='hrsheet') loadHrSheet();
+  if (page==='attendance') loadAttendance();
   if (page==='catalog') loadCatalog(1);
   if (page==='samples') loadSamples();
   if (page==='mulmulcost' || page==='bunaicost') { MC_BRAND = page==='bunaicost' ? 'bunai' : 'mulmul'; loadMulmulCosts(); }
@@ -636,7 +692,9 @@ function _vinSyncWatch(kind, before, startedAt) {
 
 // The warehouse tabs on the Stock page. Codes come from Unicommerce; the names
 // are the ones the team uses.
-const STOCK_WH_NAME = { bunai: 'Bunai', MYNTRA_GUJRAT: 'Gujarat', __none: 'Not in any warehouse' };
+// "warehouse" in the name: the bunai warehouse holds every brand, and the tab
+// was read as the Bunai brand.
+const STOCK_WH_NAME = { bunai: 'Bunai warehouse', MYNTRA_GUJRAT: 'Gujarat warehouse', __none: 'Not in any warehouse' };
 const stockWhName = (w) => STOCK_WH_NAME[w] || w;
 
 function stockDrawWhTabs(list, current, noWh) {
@@ -670,7 +728,25 @@ function stockPickWh(key) {
 }
 
 // A brand narrows everything the warehouse does: cards, tabs, movement, table.
-function stockPickBrand() {
+// The brand sections at the top: All, Bunai, Aaheli, Mulmul, Other - each with
+// its units in the warehouse chosen below. A brand comes from the SKU prefix
+// (BUNA, BUNAAH, BUNMUL); Other is every SKU with none of them.
+const STOCK_BRANDS = [['', 'All brands', 'all'], ['bunai', 'Bunai', 'bunai'], ['aaheli', 'Aaheli', 'aaheli'],
+  ['mulmul', 'Mulmul', 'mulmul'], ['other', 'Other', 'other']];
+function stockDrawBrandTabs(units, current) {
+  const host = document.getElementById('stockBrandTabs');
+  if (!host) return;
+  const u = units || {};
+  host.innerHTML = STOCK_BRANDS.map(([key, label, k]) =>
+    '<div class="lv-tab' + (current === key ? ' active' : '') + '" onclick="stockPickBrand(\'' + key + '\')">'
+    + label + '<span class="lv-tab-badge">' + Number(u[k] || 0).toLocaleString('en-IN') + '</span></div>').join('');
+}
+
+function stockPickBrand(key) {
+  if (key !== undefined) document.getElementById('stockBrand').value = key;
+  document.querySelectorAll('#stockBrandTabs .lv-tab').forEach(t => {
+    t.classList.toggle('active', (t.getAttribute('onclick') || '').includes("('" + (key || '') + "')"));
+  });
   stockFade(true);
   loadStock();
   loadStockMovement();
@@ -734,6 +810,7 @@ async function loadStock() {
     const d = await api('/api/stock' + (params.toString() ? '?' + params : ''));
     if (ticket !== _stockSeq) return;
     stockFade(false);
+    stockDrawBrandTabs(d.brandUnits, d.brand || '');
     stockDrawWhTabs(d.warehouses || [], d.warehouse || '', d.noWarehouse || 0);
 
     if (d.notConfigured) {
@@ -4945,7 +5022,7 @@ async function loadReturns() {
   if (d.lastSync && d.lastSync.started_at) {
     const mins = Math.round((Date.now() - new Date(d.lastSync.started_at).getTime()) / 60000);
     const ago = mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
-    returnsNotice('ok', `Live from Vin eRetail · last synced ${ago} · ${Number(d.lastSync.returns_seen || 0).toLocaleString('en-IN')} returns pulled`);
+    returnsNotice('ok', `Live from Unicommerce · last synced ${ago} · ${Number(d.lastSync.returns_seen || 0).toLocaleString('en-IN')} returns pulled`);
   } else returnsNotice('busy', 'Returns loaded. Set up the daily returns sync to keep this live.');
   loadReturnsList(1);
 }
@@ -4954,16 +5031,19 @@ async function loadReturnsList(page) {
   const rangeSel = document.getElementById('returnsRange');
   const fromI = document.getElementById('returnsFrom'), toI = document.getElementById('returnsTo');
   const q = (document.getElementById('returnsSearch') || {}).value || '';
-  const type = (document.getElementById('returnsTypeFilter') || {}).value || '';
-  const status = (document.getElementById('returnsStatusFilter') || {}).value || '';
   const params = new URLSearchParams({ page: String(page || 1) });
   if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
   if (q.trim()) params.set('q', q.trim());
-  if (type) params.set('type', type);
-  if (status) params.set('status', status);
+  if (Object.keys(RET_F).length) params.set('f', JSON.stringify(RET_F));
+  if (RET_SORT) params.set('sort', RET_SORT);
+  returnsDrawHead();
   const body = document.getElementById('returnsBody');
   body.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+  // Only the newest request may draw: a slow one answering after a filter was
+  // changed would otherwise put the old list back on screen.
+  const seq = ++_retListSeq;
   const d = await api('/api/returns/list?' + params.toString());
+  if (seq !== _retListSeq) return;
   if (d.error) { body.innerHTML = `<tr><td colspan="9" class="empty">Could not load returns — ${dtEscape(d.error)}</td></tr>`; return; }
   document.getElementById('returnsListLabel').textContent = `Returns (${Number(d.total || 0).toLocaleString('en-IN')})`;
   returnsRenderList(d.returns || []);
@@ -4974,6 +5054,143 @@ async function loadReturnsList(page) {
       <button class="btn btn-sm" ${p <= 1 ? 'disabled' : ''} onclick="loadReturnsList(${p - 1})">‹ Prev</button>
       <button class="btn btn-sm" ${p >= pages ? 'disabled' : ''} onclick="loadReturnsList(${p + 1})">Next ›</button></span>`;
 }
+// ── Column filters, as in SCOT: a ▾ on every heading, applied by the server ──
+// [key, label, type, right-aligned]
+const RET_COLS = [
+  ['return_no', 'Return', 'text'], ['return_type', 'Type', 'list'], ['order', 'Order', 'text'],
+  ['return_date', 'Date', 'date'], ['channel', 'Channel', 'list'], ['customer', 'Customer', 'text'],
+  ['city', 'City', 'list'], ['status', 'Status', 'list'], ['amount', 'Amount', 'range', 1],
+];
+let RET_F = {}, RET_SORT = '', RET_POP = null, _retListSeq = 0;
+
+function returnsDrawHead() {
+  const head = document.getElementById('returnsHead');
+  if (head) head.innerHTML = '<tr>' + RET_COLS.map(([key, label, , right]) => {
+    const on = RET_F[key] !== undefined;
+    const arrow = RET_SORT === key ? ' ↑' : RET_SORT === '-' + key ? ' ↓' : '';
+    return '<th style="white-space:nowrap' + (right ? ';text-align:right' : '') + '">' + label + arrow
+      + ' <button type="button" onclick="returnsFilterOpen(event,\'' + key + '\')" title="Filter / sort"'
+      + ' style="border:1px solid ' + (on ? 'var(--brand-deep)' : 'transparent') + ';background:' + (on ? 'var(--brand-deep)' : 'transparent')
+      + ';color:' + (on ? '#fff' : 'var(--muted-foreground)') + ';border-radius:5px;padding:0 4px;font-size:10px;cursor:pointer;line-height:16px">▾</button></th>';
+  }).join('') + '</tr>';
+  const n = Object.keys(RET_F).length;
+  const note = document.getElementById('returnsFilterNote');
+  if (note) note.innerHTML = n || RET_SORT
+    ? '<b style="color:var(--brand-deep)">' + (n ? n + ' filter' + (n === 1 ? '' : 's') + ' on' : 'Sorted') + '</b> · '
+      + '<a href="#" onclick="returnsClearFilters();return false" style="color:var(--brand-deep)">Clear all</a>'
+    : '';
+}
+
+function returnsClearFilters() { RET_F = {}; RET_SORT = ''; returnsFilterClose(); loadReturnsList(1); }
+function returnsFilterClose() {
+  const pop = document.getElementById('returnsFilterPop');
+  if (pop) pop.style.display = 'none';
+  RET_POP = null;
+}
+document.addEventListener('mousedown', (e) => {
+  const pop = document.getElementById('returnsFilterPop');
+  if (RET_POP && pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('#returnsHead button'))) returnsFilterClose();
+});
+
+function returnsFilterOpen(ev, key) {
+  ev.stopPropagation();
+  const col = RET_COLS.find(c => c[0] === key);
+  if (!col) return;
+  const [, label, type] = col;
+  const pop = document.getElementById('returnsFilterPop');
+  if (RET_POP && RET_POP.key === key && pop.style.display !== 'none') return returnsFilterClose();
+  const cur = RET_F[key] || {};
+  RET_POP = { key, type, sel: new Set(cur.values || []) };
+  const lab = (t) => '<div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:8px 0 4px">' + t + '</div>';
+  const words = type === 'range' ? ['Smallest first', 'Largest first'] : type === 'date' ? ['Oldest first', 'Newest first'] : ['Sort A → Z', 'Sort Z → A'];
+  const sb = (dir, w) => '<button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;'
+    + (RET_SORT === dir + key ? 'background:var(--brand-tint);border-color:var(--brand-deep)' : '') + '" onclick="returnsSortBy(\'' + dir + key + '\')">' + w + '</button>';
+  let h = '<div style="font-weight:700;margin-bottom:4px">' + dtEscape(label) + '</div>'
+    + '<div style="display:flex;gap:6px;margin:6px 0 4px">' + sb('', words[0]) + sb('-', words[1]) + '</div>';
+  if (type === 'text') {
+    h += lab('Contains') + '<input type="text" id="rfText" value="' + dtEscape(cur.text || '') + '" placeholder="Type to match" style="width:100%"'
+      + ' onkeydown="if(event.key===\'Enter\')returnsFilterApply()"/>';
+  } else if (type === 'list') {
+    h += lab('Filter by values') + '<input type="text" id="rfSearch" placeholder="Search" style="width:100%" oninput="returnsFilterValuesDebounced()"/>'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin:6px 0">'
+      + '<a href="#" onclick="returnsFilterAll(true);return false" style="color:var(--brand-deep)">Select all shown</a>'
+      + '<a href="#" onclick="returnsFilterAll(false);return false" style="color:var(--brand-deep)">Clear</a></div>'
+      + '<div id="rfList" style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:4px 6px">Loading…</div>';
+  } else if (type === 'range') {
+    h += lab('Between (₹)') + '<div style="display:flex;gap:6px"><input type="number" id="rfMin" placeholder="Min" value="' + (cur.min != null ? cur.min : '') + '" style="width:100%"/>'
+      + '<input type="number" id="rfMax" placeholder="Max" value="' + (cur.max != null ? cur.max : '') + '" style="width:100%"/></div>';
+  } else if (type === 'date') {
+    h += lab('From') + '<input type="date" id="rfFrom" value="' + dtEscape(cur.from || '') + '" style="width:100%"/>'
+      + lab('To') + '<input type="date" id="rfTo" value="' + dtEscape(cur.to || '') + '" style="width:100%"/>';
+  }
+  h += '<div style="display:flex;justify-content:space-between;margin-top:12px">'
+    + '<button type="button" class="btn btn-outline" style="padding:5px 12px;font-size:12.5px" onclick="returnsFilterClear()">Clear</button>'
+    + '<button type="button" class="btn btn-primary" style="padding:5px 14px;font-size:12.5px" onclick="returnsFilterApply()">Apply</button></div>';
+  pop.innerHTML = h;
+  const r = ev.currentTarget.getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.top = Math.min(window.innerHeight - 20 - pop.offsetHeight, r.bottom + 6) + 'px';
+  pop.style.left = Math.max(10, Math.min(window.innerWidth - pop.offsetWidth - 10, r.left - 120)) + 'px';
+  if (type === 'list') returnsFilterValues();
+  const first = pop.querySelector('input[type=text],input[type=number],input[type=date]');
+  if (first) first.focus();
+}
+
+let _rfTimer = null;
+function returnsFilterValuesDebounced() { clearTimeout(_rfTimer); _rfTimer = setTimeout(returnsFilterValues, 250); }
+// The column's values in the chosen date range, with how many returns each.
+async function returnsFilterValues() {
+  const P = RET_POP;
+  if (!P || P.type !== 'list') return;
+  const params = new URLSearchParams({ col: P.key, q: ((document.getElementById('rfSearch') || {}).value || '').trim() });
+  const rangeSel = document.getElementById('returnsRange');
+  const fromI = document.getElementById('returnsFrom'), toI = document.getElementById('returnsTo');
+  if (rangeSel && rangeSel.value !== 'all' && fromI.value && toI.value) { params.set('from', fromI.value); params.set('to', toI.value); }
+  let rows = [];
+  try { rows = await api('/api/returns/values?' + params.toString()); } catch (_) { /* leave the list empty */ }
+  if (RET_POP !== P) return;
+  rows = Array.isArray(rows) ? rows : [];
+  P.shown = rows.map(r => r.v);
+  const extra = [...P.sel].filter(v => !P.shown.includes(v)).map(v => ({ v, n: null }));
+  document.getElementById('rfList').innerHTML = [...extra, ...rows].map(r =>
+    '<label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;letter-spacing:0;margin:3px 0;cursor:pointer">'
+    + '<input type="checkbox" value="' + dtEscape(r.v) + '"' + (P.sel.has(r.v) ? ' checked' : '') + ' onchange="returnsFilterTick(this)" style="width:15px;height:15px;flex:none"/>'
+    + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dtEscape(r.v || '(blank)') + '</span>'
+    + (r.n != null ? '<span style="font-size:11px;color:var(--faint)">' + Number(r.n).toLocaleString('en-IN') + '</span>' : '') + '</label>').join('')
+    || '<div style="color:var(--faint);font-size:12px;padding:4px">Nothing matches.</div>';
+}
+function returnsFilterTick(cb) { if (!RET_POP) return; cb.checked ? RET_POP.sel.add(cb.value) : RET_POP.sel.delete(cb.value); }
+function returnsFilterAll(on) {
+  if (!RET_POP) return;
+  if (on) (RET_POP.shown || []).forEach(v => RET_POP.sel.add(v)); else RET_POP.sel.clear();
+  document.querySelectorAll('#rfList input[type=checkbox]').forEach(cb => { cb.checked = RET_POP.sel.has(cb.value); });
+}
+function returnsSortBy(s) { RET_SORT = RET_SORT === s ? '' : s; returnsFilterClose(); loadReturnsList(1); }
+function returnsFilterClear() {
+  if (!RET_POP) return;
+  delete RET_F[RET_POP.key];
+  returnsFilterClose();
+  loadReturnsList(1);
+}
+function returnsFilterApply() {
+  const P = RET_POP;
+  if (!P) return;
+  const v = (id) => ((document.getElementById(id) || {}).value || '').trim();
+  let f;
+  if (P.type === 'text') { if (v('rfText')) f = { text: v('rfText') }; }
+  else if (P.type === 'list') { if (P.sel.size) f = { values: [...P.sel] }; }
+  else if (P.type === 'range') {
+    const min = v('rfMin'), max = v('rfMax');
+    if (min || max) f = { min: min === '' ? null : Number(min), max: max === '' ? null : Number(max) };
+  } else if (P.type === 'date') {
+    const from = v('rfFrom'), to = v('rfTo');
+    if (from || to) f = { from: from || null, to: to || null };
+  }
+  if (f) RET_F[P.key] = f; else delete RET_F[P.key];
+  returnsFilterClose();
+  loadReturnsList(1);
+}
+
 let _returnsTimer = null;
 function returnsSearchDebounced() { clearTimeout(_returnsTimer); _returnsTimer = setTimeout(() => loadReturnsList(1), 300); }
 
@@ -9263,7 +9480,7 @@ function infPickProject(p) {
 async function loadInfluencers(){
   const body = document.getElementById('infBody');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
 
   const params = new URLSearchParams();
   const q = document.getElementById('infSearch').value.trim();
@@ -9277,7 +9494,7 @@ async function loadInfluencers(){
       api('/api/influencers' + (params.toString() ? '?' + params : '')),
       api('/api/influencers/meta' + (pj ? '?project=' + encodeURIComponent(pj) : '')),
     ]);
-    if (rows.error) { body.innerHTML = `<tr><td colspan="10" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
+    if (rows.error) { body.innerHTML = `<tr><td colspan="11" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     INF_ROWS = Array.isArray(rows) ? rows : [];
 
     const tile = (label, value, sub, tone) => {
@@ -9316,7 +9533,7 @@ async function loadInfluencers(){
     }
 
     if (!INF_ROWS.length) {
-      body.innerHTML = `<tr><td colspan="10" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="11" class="empty">No influencers yet — use <b>+ Add Influencer</b>.</td></tr>`;
       return;
     }
     body.innerHTML = INF_ROWS.map((r, i) => `<tr>
@@ -9333,6 +9550,12 @@ async function loadInfluencers(){
       <td style="font-size:13px;white-space:nowrap">${infDate(r.shipped_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.received_on)}</td>
       <td style="font-size:13px;white-space:nowrap">${infDate(r.post_date)}</td>
+      <td style="font-size:12.5px;max-width:200px" onclick="event.stopPropagation()">
+        ${r.content_link ? `<a href="${dtEscape(r.content_link)}" target="_blank" rel="noopener"
+            style="font-weight:600;color:var(--brand-deep);text-decoration:none">↗ content</a>` : ''}
+        ${r.content_note ? `<div class="inf-clamp" style="color:var(--muted-foreground)" title="${dtEscape(r.content_note)}">${dtEscape(r.content_note)}</div>` : ''}
+        ${!r.content_link && !r.content_note ? '—' : ''}
+      </td>
       <td style="font-size:12.5px;max-width:220px;color:var(--muted-foreground)" title="${dtEscape(r.remark || '')}"><div class="inf-clamp">${dtEscape(r.remark || '—')}</div></td>
       <td style="white-space:nowrap">
         <button class="action-btn" onclick="openInfluencer(${i})">Edit</button>
@@ -9341,7 +9564,7 @@ async function loadInfluencers(){
     </tr>`).join('');
     infMarkMore();
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="10" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" class="empty">Could not load influencers — ${dtEscape(e.message || 'unknown error')}</td></tr>`;
   }
 }
 
@@ -9380,6 +9603,8 @@ function openInfluencer(idx){
   set('infReceived', r?.received_on);
   set('infPosted', r?.post_date);
   set('infRemark', r?.remark);
+  set('infContentLink', r?.content_link);
+  set('infContentNote', r?.content_note);
   document.getElementById('infModal').classList.add('open');
 }
 
@@ -9395,6 +9620,7 @@ async function saveInfluencer(btn){
     shipping_address: val('infAddress'), message_sent_on: val('infMessaged'),
     shipped_on: val('infShipped'), received_on: val('infReceived'), post_date: val('infPosted'),
     remark: val('infRemark'),
+    content_link: val('infContentLink'), content_note: val('infContentNote'),
   };
   if (!body.name) { err.textContent = 'The influencer’s name is required'; err.style.display = 'block'; return; }
 
@@ -9437,6 +9663,14 @@ async function deleteInfluencer(id){
 // than one that admits it.
 // ══════════════════════════════════════════════════════
 let B2B_ROWS = [];
+// Bunai B2B and Bunai B2B Exports: one page, two books. Exports carry each
+// order's own currency; the money on screen is in the currency of the order
+// being drawn (_b2bCur), rupees on the domestic book.
+let B2B_BOOK = 'domestic';
+let _b2bCur = 'INR';
+const b2bExport = () => B2B_BOOK === 'export';
+const B2B_CUR_SIGN = { INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ', AUD: 'A$', CAD: 'C$', SGD: 'S$', JPY: '¥', CHF: 'CHF ' };
+const b2bSign = (c) => B2B_CUR_SIGN[c || _b2bCur] || ((c || _b2bCur) + ' ');
 let _b2bSearchTimer = null;
 function b2bDebounced(){ clearTimeout(_b2bSearchTimer); _b2bSearchTimer = setTimeout(loadB2B, 300); }
 
@@ -9444,12 +9678,21 @@ const b2bNum = (v) => {
   const n = Number(String(v ?? '').trim().replace(/[, ]/g, ''));
   return Number.isFinite(n) && String(v ?? '').trim() !== '' ? n : null;
 };
-// Indian grouping, no decimals unless there are paise worth showing.
-const b2bMoney = (v, dash = '—') => {
+// Indian grouping for rupees, the usual one for other currencies; no decimals
+// unless there are paise (or cents) worth showing.
+const b2bMoney = (v, dash = '—', cur) => {
   const n = Number(v);
   if (v === null || v === undefined || v === '' || !Number.isFinite(n)) return dash;
-  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: Math.round(n) === n ? 0 : 2 });
+  const c = cur || _b2bCur;
+  return b2bSign(c) + n.toLocaleString(c === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: Math.round(n) === n ? 0 : 2 });
 };
+// The form's currency: the symbol in its labels and lines follows it.
+function b2bCurrencyPicked() {
+  _b2bCur = document.getElementById('b2bCurrency').value || 'INR';
+  document.querySelectorAll('#b2bModal .b2bCurSym').forEach(s => { s.textContent = b2bSign().trim(); });
+  b2bDrawLines();
+  b2bRecalc();
+}
 const b2bDate = (d) => {
   if (!d) return '—';
   const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
@@ -9596,7 +9839,7 @@ function b2bDrawLines() {
   if (!box) return;
   const head = '<div style="display:grid;grid-template-columns:24px 2.2fr .7fr 1fr 1.25fr 1fr 24px;gap:6px;'
     + 'font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:4px">'
-    + '<span>#</span><span>SKU</span><span>Qty</span><span>Price ₹</span><span>Discount</span><span style="text-align:right">Amount</span><span></span></div>';
+    + '<span>#</span><span>SKU</span><span>Qty</span><span>Price ' + dtEscape(b2bSign().trim()) + '</span><span>Discount</span><span style="text-align:right">Amount</span><span></span></div>';
   box.innerHTML = head + B2B_LINES.map((l, i) => {
     const a = b2bLineAmount(l);
     return '<div style="display:grid;grid-template-columns:24px 2.2fr .7fr 1fr 1.25fr 1fr 24px;gap:6px;align-items:start;margin-bottom:6px">'
@@ -9610,7 +9853,7 @@ function b2bDrawLines() {
       + ' oninput="b2bLineSet(' + i + ',\'disc_value\',this.value)" style="width:100%;min-width:0"/>'
       + '<select onchange="b2bLineSet(' + i + ',\'disc_type\',this.value)" style="width:52px;padding-left:6px;padding-right:2px">'
       + '<option value="pct"' + (l.disc_type !== 'amt' ? ' selected' : '') + '>%</option>'
-      + '<option value="amt"' + (l.disc_type === 'amt' ? ' selected' : '') + '>₹</option></select></div>'
+      + '<option value="amt"' + (l.disc_type === 'amt' ? ' selected' : '') + '>' + dtEscape(b2bSign().trim()) + '</option></select></div>'
       + '<div id="b2bLineAmt' + i + '" style="text-align:right;font-weight:700;font-size:13px;padding-top:9px">' + b2bMoney(a) + '</div>'
       + '<a href="#" onclick="b2bDropLine(' + i + ');return false" title="Remove" style="color:#b91c1c;text-decoration:none;padding-top:8px;text-align:center">✕</a>'
       + '</div>';
@@ -9675,6 +9918,7 @@ async function b2bSkuPicked(i, value) {
 function b2bView(idx) {
   const r = B2B_ROWS[idx];
   if (!r) return;
+  _b2bCur = r.currency || 'INR';
   const sec = (t) => '<div style="margin:16px 0 6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--brand-deep)">' + t + '</div>';
   const pair = (k, v) => '<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-foreground)">'
     + k + '</div><div style="font-size:13.5px;margin-top:2px;word-break:break-word;white-space:pre-line">' + (v ? dtEscape(v) : '<span style="color:var(--faint)">—</span>') + '</div></div>';
@@ -9717,6 +9961,7 @@ function b2bView(idx) {
 function b2bShowItems(idx) {
   const r = B2B_ROWS[idx];
   if (!r) return;
+  _b2bCur = r.currency || 'INR';
   document.getElementById('b2bItemsTitle').textContent = r.party_name;
   document.getElementById('b2bItemsSub').textContent = r.lines.length + ' SKUs · '
     + Number(r.pieces || 0).toLocaleString('en-IN') + ' pcs · ' + b2bMoney(r.total_order_value)
@@ -9752,8 +9997,8 @@ async function loadB2B(){
 
   try {
     const [rows, meta] = await Promise.all([
-      api('/api/b2b' + (params.toString() ? '?' + params : '')),
-      api('/api/b2b/meta'),
+      api('/api/b2b?book=' + B2B_BOOK + (params.toString() ? '&' + params : '')),
+      api('/api/b2b/meta?book=' + B2B_BOOK),
     ]);
     if (rows.error) { body.innerHTML = `<tr><td colspan="9" class="empty">${dtEscape(rows.error)}</td></tr>`; return; }
     B2B_ROWS = Array.isArray(rows) ? rows : [];
@@ -9768,11 +10013,16 @@ async function loadB2B(){
     };
     const m = meta || {};
     const cancelled = Number((m.byOrderStatus || {})['Cancelled'] || 0);
+    // Exports are totalled per currency - dollars and euros do not add up.
+    const money = (k) => b2bExport()
+      ? ((m.byCurrency || []).filter(c => c[k]).map(c => b2bMoney(c[k], '', c.currency)).join(' · ') || '0')
+      : b2bMoney(m[k], '₹0', 'INR');
+    const owed = b2bExport() ? (m.byCurrency || []).some(c => c.outstanding > 0) : Number(m.outstanding) > 0;
     document.getElementById('b2bTiles').innerHTML =
       tile('Orders', Number(m.liveOrders || 0), cancelled ? `${cancelled} cancelled, not counted` : 'on the book') +
-      tile('Total sales', b2bMoney(m.revenue, '₹0'), `${Number(m.pieces || 0).toLocaleString('en-IN')} pieces`) +
-      tile('Received', b2bMoney(m.received, '₹0'), null, 'good') +
-      tile('Outstanding', b2bMoney(m.outstanding, '₹0'), 'still to come in', Number(m.outstanding) > 0 ? 'warn' : null);
+      tile('Total sales', money('revenue'), `${Number(m.pieces || 0).toLocaleString('en-IN')} pieces`) +
+      tile('Received', money('received'), null, 'good') +
+      tile('Outstanding', money('outstanding'), 'still to come in', owed ? 'warn' : null);
 
     // The sheet is half the point of this page, so its absence is said out
     // loud rather than left for somebody to notice a week later.
@@ -9792,6 +10042,7 @@ async function loadB2B(){
       return;
     }
     body.innerHTML = B2B_ROWS.map((r, i) => {
+      _b2bCur = r.currency || 'INR';
       const bal = Number(r.balance_amount);
       const owes = Number.isFinite(bal) && bal > 0;
       return `<tr onclick="b2bView(${i})" style="cursor:pointer" title="Click to see the whole order">
@@ -9830,7 +10081,15 @@ async function loadB2B(){
 
 function openB2B(idx){
   const r = (idx === undefined || idx === null) ? null : B2B_ROWS[idx];
-  document.getElementById('b2bModalTitle').textContent = r ? 'Edit B2B Order' : 'Add B2B Order';
+  const what = b2bExport() ? 'Export Order' : 'B2B Order';
+  document.getElementById('b2bModalTitle').textContent = (r ? 'Edit ' : 'Add ') + what;
+  // An export order picks its currency (dollars for a new one); domestic is rupees.
+  const curSel = document.getElementById('b2bCurrency');
+  curSel.innerHTML = Object.keys(B2B_CUR_SIGN).map(c => '<option value="' + c + '">' + c + ' (' + B2B_CUR_SIGN[c].trim() + ')</option>').join('');
+  curSel.value = r ? (r.currency || 'INR') : (b2bExport() ? 'USD' : 'INR');
+  document.getElementById('b2bCurWrap').style.display = b2bExport() ? '' : 'none';
+  _b2bCur = curSel.value;
+  document.querySelectorAll('#b2bModal .b2bCurSym').forEach(s => { s.textContent = b2bSign().trim(); });
   document.getElementById('b2bErr').style.display = 'none';
   const set = (el, v) => { document.getElementById(el).value = (v === null || v === undefined) ? '' : v; };
   document.getElementById('b2bEditId').value = r ? r.id : '';
@@ -9860,8 +10119,9 @@ function openB2B(idx){
   // Before GST: the saved subtotal; an order from before GST has none, and its
   // total was the whole value, with no GST on it.
   set('b2bTotal', r ? (r.subtotal ?? r.total_order_value) : null);
-  const rate = !r ? 5 : (r.gst_rate === null || r.gst_rate === undefined ? 0 : Number(r.gst_rate));
-  const preset = rate === 5 || rate === 18;
+  // Exports are zero-rated, so a new export order starts at 0%; domestic at 5%.
+  const rate = !r ? (b2bExport() ? 0 : 5) : (r.gst_rate === null || r.gst_rate === undefined ? 0 : Number(r.gst_rate));
+  const preset = rate === 0 || rate === 5 || rate === 18;
   document.getElementById('b2bGst').value = preset ? String(rate) : 'custom';
   document.getElementById('b2bGstCustom').value = preset ? '' : String(rate);
   document.getElementById('b2bGstCustom').style.display = preset ? 'none' : '';
@@ -9897,6 +10157,7 @@ async function saveB2B(btn){
     lines: B2B_LINES.filter(l => l.sku.trim()).map(l => ({ sku: l.sku.trim(), qty: l.qty, price: l.price,
       disc_type: l.disc_type, disc_value: l.disc_value })),
     pieces: val('b2bPieces'), rate_per_piece: val('b2bRate'), total_order_value: val('b2bTotal'), gst_rate: b2bGstRate(),
+    book: B2B_BOOK, currency: b2bExport() ? val('b2bCurrency') : 'INR',
     payment_status: val('b2bPayStatus'), amount_received: val('b2bReceived'),
     order_date: val('b2bOrdered'), dispatch_date: val('b2bDispatched'),
     delivery_date: val('b2bDelivered'), order_status: val('b2bStatus'), remarks: val('b2bRemarks'),
@@ -9913,10 +10174,12 @@ async function saveB2B(btn){
     closeModal('b2bModal');
     // Saved either way; whether it reached the sheet is a separate fact and is
     // reported as one.
-    if (r.sheet) showToast('✅ Saved — and written to the sheet');
+    if (r.sheet === null) showToast('✅ Saved');
+    else if (r.sheet) showToast('✅ Saved — and written to the sheet');
     else showToast('⚠️ Saved here, but not to the sheet — ' + (r.sheetError || 'no sheet configured'),
       'error', 9000);
     loadB2B();
+    loadB2BParties();   // a first order turns a party into a customer: the counts move
   } finally { done(); }
 }
 
@@ -9933,7 +10196,14 @@ async function loadVendors() {
   if (r.error) { body.innerHTML = `<tr><td colspan="6" class="empty">${dtEscape(r.error)}</td></tr>`; return; }
   VB_ROWS = Array.isArray(r) ? r : [];
   vbDraw();
+  if (_vbOpenId) {
+    const i = VB_ROWS.findIndex(v => v.id === _vbOpenId);
+    _vbOpenId = null;
+    if (i >= 0) vbView(i);
+  }
 }
+// A vendor another page asked to open (a sample style's vendor).
+let _vbOpenId = null;
 
 function vbDraw() {
   const body = document.getElementById('vbBody');
@@ -11902,19 +12172,6 @@ function mcAddSame(a) {
 const mcNum = (v) => { const s = String(v || '').replace(/[^0-9.]/g, ''); return s === '' ? null : Number(s); };
 const mcR2 = (n) => Math.round(n * 100) / 100;
 
-function mcGstRate() {
-  const sel = document.getElementById('mcGst').value;
-  if (sel !== 'custom') return Number(sel);
-  const n = mcNum(document.getElementById('mcGstCustom').value);
-  return n == null ? 0 : Math.min(100, n);
-}
-function mcGstPicked() {
-  const custom = document.getElementById('mcGst').value === 'custom';
-  document.getElementById('mcGstCustom').style.display = custom ? '' : 'none';
-  if (custom) document.getElementById('mcGstCustom').focus();
-  mcRecalc();
-}
-
 function mcRecalc() {
   let total = 0, any = false;
   document.querySelectorAll('#mcLines .mc-line').forEach(tr => {
@@ -11926,7 +12183,7 @@ function mcRecalc() {
   total = mcR2(total);
   document.getElementById('mcTotal').textContent = any ? mcInr(total) : '—';
   document.getElementById('mcTentative').value = any ? mcInr(total) : '';
-  // Bunai: total, overhead, profit, GST on all three, selling price.
+  // Bunai: total, overhead, profit, selling price (no GST on this sheet).
   if (mcBunai()) {
     const part = (id) => {
       const v = mcNum(document.getElementById(id).value);
@@ -11936,11 +12193,8 @@ function mcRecalc() {
       return amt;
     };
     const overhead = part('mcOverhead'), profit = part('mcProfit');
-    const rate = mcGstRate();
-    const gst = mcR2((total + overhead + profit) * rate / 100);
-    document.getElementById('mcGstAmt').textContent = any ? 'GST ' + rate + '% = ' + mcInr(gst) : '';
     document.getElementById('mcBTotal').value = any ? mcInr(total) : '';
-    document.getElementById('mcSelling').value = any ? mcInr(mcR2(total + overhead + profit + gst)) : '';
+    document.getElementById('mcSelling').value = any ? mcInr(mcR2(total + overhead + profit)) : '';
   }
 }
 
@@ -12022,14 +12276,10 @@ async function mcOpen(id, copy) {
   document.getElementById('mcVendorCost').value = p && p.vendor_cost != null ? p.vendor_cost : '';
   document.getElementById('mcFinalCost').value = p && p.final_cost != null ? p.final_cost : '';
   document.getElementById('mcOverhead').value = p && p.overhead != null ? p.overhead : '';
-  document.getElementById('mcOverheadType').value = (p && p.overhead_type) || 'amt';
+  // A new product starts in percent; a saved one keeps what it was saved in.
+  document.getElementById('mcOverheadType').value = (p && p.overhead_type) || 'pct';
   document.getElementById('mcProfit').value = p && p.profit != null ? p.profit : '';
-  document.getElementById('mcProfitType').value = (p && p.profit_type) || 'amt';
-  const rate = p && p.gst_rate != null ? Number(p.gst_rate) : 5;
-  const preset = rate === 5 || rate === 18;
-  document.getElementById('mcGst').value = preset ? String(rate) : 'custom';
-  document.getElementById('mcGstCustom').value = preset ? '' : String(rate);
-  document.getElementById('mcGstCustom').style.display = preset ? 'none' : '';
+  document.getElementById('mcProfitType').value = (p && p.profit_type) || 'pct';
   mcShowPhoto(p && !copy ? p.image_url : '');
   document.getElementById('mcEditId').value = p && !copy ? p.id : '';
   document.getElementById('mcSku').value = p && !copy ? p.sku : '';
@@ -12071,7 +12321,7 @@ async function mcSave(btn) {
     vendor_cost: v('mcVendorCost'), final_cost: v('mcFinalCost'), lines };
   if (mcBunai()) Object.assign(body, {
     overhead: v('mcOverhead'), overhead_type: v('mcOverheadType'), profit: v('mcProfit'), profit_type: v('mcProfitType'),
-    gst_rate: mcGstRate(), image_url: v('mcImage'),
+    image_url: v('mcImage'),
   });
   if (!body.sku) { err.textContent = 'SKU is required.'; err.style.display = 'block'; return; }
   const done = hrmBusy(btn, 'Saving…');
@@ -12407,11 +12657,12 @@ async function loadSamples() {
   try {
     d = await api('/api/samples?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="13" class="empty">Could not load styles — '
+    body.innerHTML = '<tr><td colspan="14" class="empty">Could not load styles — '
       + dtEscape(e.message || 'error') + '</td></tr>';
     return;
   }
-  _sampleRows = d.rows || [];
+  _sampleAll = d.rows || [];
+  _sampleVendors = d.vendors || [];
 
   const tabs = document.getElementById('sampleTabs');
   if (tabs) {
@@ -12425,9 +12676,84 @@ async function loadSamples() {
       + (d.statuses || []).map(s => tab(s, s, (d.counts.byStatus || {})[s])).join('');
   }
 
+  sampleRender();
+}
+
+// ── Column filters, as in SCOT: a ▾ on every heading ──
+// The page has every style already (a few hundred), so the filters and sort
+// work on those rows in the browser, on top of the status tab and the search.
+// [key, label, type, right-aligned]; type is text (contains, or picked values),
+// money (between) or list (picked values).
+const SAMPLE_COLS = [
+  ['style_id', 'Style ID', 'text'], ['vendor_name', 'Vendor name', 'text'], ['kurta_fabric', 'Kurta', 'text'], ['pant_fabric', 'Pant', 'text'],
+  ['dupatta_fabric', 'Dupatta', 'text'], ['has_lining', 'Lining', 'list'], ['status', 'Status', 'list'],
+  ['costing_us', 'Internal', 'money', 1], ['costing_vendor', 'Vendor', 'money', 1], ['final_costing', 'Final', 'money', 1],
+  ['price_website', 'Website', 'money', 1], ['price_myntra', 'Myntra', 'money', 1], ['price_wholesale', 'Wholesale', 'money', 1],
+];
+let _sampleAll = [];
+let _sampleVendors = [];
+let SAMPLE_F = {}, SAMPLE_SORT = '', SAMPLE_POP = null;
+const sampleCellText = (r, k) => String(r[k] == null ? '' : r[k]).trim();
+const sampleColOn = (k) => SAMPLE_F[k] !== undefined;
+
+function sampleHeadHtml() {
+  return SAMPLE_COLS.map(([key, label, , right]) => {
+    const on = sampleColOn(key);
+    const arrow = SAMPLE_SORT === key ? ' ↑' : SAMPLE_SORT === '-' + key ? ' ↓' : '';
+    return '<th style="white-space:nowrap' + (right ? ';text-align:right' : '') + '">' + label + arrow
+      + ' <button type="button" onclick="sampleFilterOpen(event,\'' + key + '\')" title="Filter / sort"'
+      + ' style="border:1px solid ' + (on ? 'var(--brand-deep)' : 'transparent') + ';background:' + (on ? 'var(--brand-deep)' : 'transparent')
+      + ';color:' + (on ? '#fff' : 'var(--muted-foreground)') + ';border-radius:5px;padding:0 4px;font-size:10px;cursor:pointer;line-height:16px">▾</button></th>';
+  }).join('') + '<th></th>';
+}
+
+function sampleMatches(r) {
+  for (const [key, , type] of SAMPLE_COLS) {
+    const f = SAMPLE_F[key];
+    if (f === undefined) continue;
+    if (type === 'money') {
+      const v = r[key] == null || r[key] === '' ? null : Number(r[key]);
+      if (v == null) return false;
+      if (f.min != null && v < f.min) return false;
+      if (f.max != null && v > f.max) return false;
+    } else {
+      const v = sampleCellText(r, key);
+      if (f.text && !v.toLowerCase().includes(f.text.toLowerCase())) return false;
+      if (f.values && !f.values.includes(v)) return false;
+    }
+  }
+  return true;
+}
+
+function sampleRender() {
+  const body = document.getElementById('sampleBody');
+  const head = document.getElementById('sampleHead');
+  if (head) head.innerHTML = sampleHeadHtml();
+  _sampleRows = _sampleAll.filter(sampleMatches);
+  if (SAMPLE_SORT) {
+    const desc = SAMPLE_SORT[0] === '-', key = SAMPLE_SORT.replace(/^-/, '');
+    const money = (SAMPLE_COLS.find(c => c[0] === key) || [])[2] === 'money';
+    // Blanks always last, whichever way round.
+    _sampleRows = _sampleRows.slice().sort((a, b) => {
+      const x = money ? (a[key] == null ? null : Number(a[key])) : sampleCellText(a, key).toLowerCase() || null;
+      const y = money ? (b[key] == null ? null : Number(b[key])) : sampleCellText(b, key).toLowerCase() || null;
+      if (x == null || y == null) return (x == null) - (y == null);
+      const c = money ? x - y : x.localeCompare(y, undefined, { numeric: true });
+      return desc ? -c : c;
+    });
+  }
+  const n = SAMPLE_COLS.filter(([k]) => sampleColOn(k)).length;
+  const note = document.getElementById('sampleFilterNote');
+  if (note) note.innerHTML = n || SAMPLE_SORT
+    ? '<b style="color:var(--brand-deep)">' + (n ? n + ' filter' + (n === 1 ? '' : 's') + ' on · ' + _sampleRows.length + ' of ' + _sampleAll.length : 'Sorted') + '</b> · '
+      + '<a href="#" onclick="sampleClearFilters();return false" style="color:var(--brand-deep)">Clear all</a>'
+    : '';
+
   if (!_sampleRows.length) {
-    body.innerHTML = '<tr><td colspan="13" class="empty">'
-      + (q || status ? 'No styles match that.' : 'No sample styles yet — add the first one.')
+    const q = (document.getElementById('sampleSearch').value || '').trim();
+    const status = document.getElementById('sampleFilter').value;
+    body.innerHTML = '<tr><td colspan="14" class="empty">'
+      + (q || status || n ? 'No styles match that.' : 'No sample styles yet — add the first one.')
       + '</td></tr>';
     return;
   }
@@ -12443,8 +12769,15 @@ async function loadSamples() {
     const badge = '<span class="status-badge" style="' + (SAMPLE_STATUS_STYLE[r.status] || '') + '">' + dtEscape(r.status || '—') + '</span>';
     const num = v => '<td style="text-align:right">' + sampleMoney(v) + '</td>';
     // The whole row opens the style; the photo link and buttons do their own thing.
+    // The vendor opens on the Vendor Name page, for whoever may see that page.
+    const vendor = !r.vendor_name ? '—'
+      : hasPage('vendors') && r.vendor_ref
+        ? '<a href="' + pagePath('vendors') + '" onclick="event.stopPropagation();sampleOpenVendor(' + r.vendor_ref + ');return false"'
+          + ' title="Open this vendor\'s details" style="color:var(--brand-deep);font-weight:600">' + dtEscape(r.vendor_name) + '</a>'
+        : dtEscape(r.vendor_name);
     return '<tr onclick="sampleOpen(' + r.id + ')" style="cursor:pointer" title="Click to see this style">'
       + '<td style="font-weight:600;white-space:nowrap">' + id + '</td>'
+      + '<td style="white-space:nowrap">' + vendor + '</td>'
       + '<td>' + dtEscape(r.kurta_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.pant_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.dupatta_fabric || '—') + '</td>'
@@ -12457,6 +12790,492 @@ async function loadSamples() {
       + '<button class="btn btn-sm btn-outline" onclick="sampleDelete(' + r.id + ')">Delete</button>'
       + '</td></tr>';
   }).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// ATTENDANCE - a month at a time: a row a day, a column a person, a status in
+// each cell, and the month's summary counted from the cells underneath.
+// ══════════════════════════════════════════════════════
+let ATT = null, _attPop = null, _attPeopleDraft = [];
+const ATT_COLOR = {
+  'Present': ['#dcfce7', '#166534'], 'Leave (Full Day)': ['#fee2e2', '#991b1b'], 'Half Day': ['#fef3c7', '#92400e'],
+  'WFH': ['#dbeafe', '#1d4ed8'], 'Holiday': ['#ede9fe', '#5b21b6'], 'Week off': ['#f1f5f9', '#475569'],
+};
+const attPill = (s) => { const [bg, fg] = ATT_COLOR[s] || ['#f1f5f9', '#334155']; return '<span class="att-pill" style="background:' + bg + ';color:' + fg + '">' + dtEscape(s) + '</span>'; };
+const attMonthName = (ym) => new Date(ym + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+async function loadAttendance(month) {
+  const body = document.getElementById('attBody');
+  let d;
+  try { d = await api('/api/attendance' + (month ? '?month=' + encodeURIComponent(month) : (ATT ? '?month=' + ATT.month : ''))); }
+  catch (e) { d = { error: e.message || 'error' }; }
+  if (d.error) { body.innerHTML = '<tr><td class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
+  ATT = d;
+  const sel = document.getElementById('attMonth');
+  sel.innerHTML = d.months.map(m => '<option value="' + m + '"' + (m === d.month ? ' selected' : '') + '>' + attMonthName(m) + '</option>').join('');
+  document.getElementById('attPeopleBtn').style.display = d.canEditPeople ? '' : 'none';
+  document.getElementById('attLegend').innerHTML = d.statuses.map(attPill).join('')
+    + '<span style="font-size:11.5px;color:var(--faint);margin-left:6px">Click a cell to mark it · click a date to mark the whole day</span>';
+  attDraw();
+}
+
+function attStep(dir) {
+  if (!ATT) return;
+  const [y, m] = ATT.month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + dir, 1));
+  loadAttendance(d.toISOString().slice(0, 7));
+}
+
+function attDraw() {
+  const d = ATT, ppl = d.people;
+  const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  document.getElementById('attHead').innerHTML = '<tr><th class="att-day">Day</th>'
+    + ppl.map(p => '<th style="text-align:center">' + dtEscape(p.name) + (p.active ? '' : ' <span style="color:var(--faint)">(off)</span>') + '</th>').join('') + '</tr>';
+  if (!ppl.length) {
+    document.getElementById('attBody').innerHTML = '<tr><td class="empty">No one on the list yet' + (d.canEditPeople ? ' — add people with <b>People</b>.' : '.') + '</td></tr>';
+    document.getElementById('attFoot').innerHTML = '';
+    document.getElementById('attNote').textContent = '';
+    return;
+  }
+  let rows = '', filled = 0;
+  for (let i = 1; i <= d.days; i++) {
+    const day = d.month + '-' + String(i).padStart(2, '0');
+    const dt = new Date(day + 'T00:00:00');
+    const wd = dt.toLocaleDateString('en-IN', { weekday: 'long' });
+    rows += '<tr class="' + (day === today ? 'att-today ' : '') + (dt.getDay() === 0 ? 'att-sun' : '') + '">'
+      + '<td class="att-day" style="cursor:pointer" title="Mark this whole day" onclick="attPopOpen(event,null,\'' + day + '\')">'
+      + '<b>' + String(i).padStart(2, '0') + '</b> <span style="color:var(--faint)">' + wd + '</span></td>'
+      + ppl.map(p => {
+          const c = d.cells[p.id + '|' + day];
+          if (c) filled++;
+          return '<td class="att-cell" onclick="attPopOpen(event,' + p.id + ',\'' + day + '\')"'
+            + (c ? ' title="' + dtEscape(c.status + ' · ' + (c.by || '') + ' · ' + c.at) + '"' : '') + '>'
+            + (c ? attPill(c.status) : '<span style="color:var(--border)">·</span>') + '</td>';
+        }).join('') + '</tr>';
+  }
+  document.getElementById('attBody').innerHTML = rows;
+  // The summary the sheet keeps under each month, counted from the cells.
+  const SUM = ['Present', 'Leave (Full Day)', 'WFH', 'Half Day'];
+  const label = { 'Leave (Full Day)': 'Leave' };
+  document.getElementById('attFoot').innerHTML = '<tr><th class="att-day" style="background:var(--muted)">Attendance summary</th>'
+    + ppl.map(() => '<th style="background:var(--muted)"></th>').join('') + '</tr>'
+    + SUM.map(s => '<tr><td class="att-day"><b>' + (label[s] || s) + '</b></td>' + ppl.map(p => {
+        let n = 0;
+        for (let i = 1; i <= d.days; i++) { const c = d.cells[p.id + '|' + d.month + '-' + String(i).padStart(2, '0')]; if (c && c.status === s) n++; }
+        return '<td style="text-align:center;font-weight:700">' + n + '</td>';
+      }).join('') + '</tr>').join('');
+  document.getElementById('attNote').textContent = attMonthName(d.month) + ' · ' + ppl.length + ' people · ' + filled + ' of ' + (ppl.length * d.days) + ' marked';
+}
+
+// The status menu for one cell, or (person null) for the whole day.
+function attPopOpen(ev, personId, day) {
+  ev.stopPropagation();
+  const pop = document.getElementById('attPop');
+  const who = personId ? (ATT.people.find(p => p.id === personId) || {}).name : 'Everyone';
+  _attPop = { personId, day };
+  pop.innerHTML = '<div style="font-weight:700;padding:4px 8px 6px">' + dtEscape(who) + ' · ' + vbDate(day) + '</div>'
+    + ATT.statuses.map(s => '<button type="button" class="att-opt" onclick="attSet(\'' + s.replace(/'/g, "\\'") + '\')">' + attPill(s) + '</button>').join('')
+    + '<button type="button" class="att-opt" style="color:var(--faint)" onclick="attSet(\'\')">Clear</button>';
+  const r = ev.currentTarget.getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.top = Math.min(window.innerHeight - pop.offsetHeight - 10, r.bottom + 4) + 'px';
+  pop.style.left = Math.max(10, Math.min(window.innerWidth - pop.offsetWidth - 10, r.left)) + 'px';
+}
+function attPopClose() { document.getElementById('attPop').style.display = 'none'; _attPop = null; }
+document.addEventListener('mousedown', (e) => {
+  const pop = document.getElementById('attPop');
+  if (_attPop && pop && !pop.contains(e.target)) attPopClose();
+});
+async function attSet(status) {
+  const P = _attPop;
+  attPopClose();
+  if (!P) return;
+  const r = P.personId
+    ? await api('/api/attendance/mark', 'POST', { person_id: P.personId, day: P.day, status })
+    : await api('/api/attendance/day', 'POST', { day: P.day, status });
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  loadAttendance(ATT.month);
+}
+
+// ── People (Admin) ──
+function attPeopleOpen() {
+  _attPeopleDraft = ATT.allPeople.map(p => ({ ...p }));
+  attPeopleDraw();
+  document.getElementById('attPeopleModal').classList.add('open');
+}
+function attPeopleDraw() {
+  document.getElementById('attPeopleList').innerHTML = _attPeopleDraft.map((p, i) =>
+    '<div style="display:flex;gap:6px;align-items:center;margin:5px 0">'
+    + '<input type="text" value="' + dtEscape(p.name) + '" oninput="_attPeopleDraft[' + i + '].name=this.value" style="flex:1' + (p.active ? '' : ';opacity:.5') + '"/>'
+    + '<button type="button" class="btn btn-sm btn-outline" onclick="attPersonMove(' + i + ',-1)"' + (i ? '' : ' disabled') + '>↑</button>'
+    + '<button type="button" class="btn btn-sm btn-outline" onclick="attPersonMove(' + i + ',1)"' + (i < _attPeopleDraft.length - 1 ? '' : ' disabled') + '>↓</button>'
+    + '<label style="display:flex;gap:4px;align-items:center;font-size:12px;text-transform:none;letter-spacing:0;font-weight:500;margin:0">'
+    + '<input type="checkbox"' + (p.active ? ' checked' : '') + ' onchange="_attPeopleDraft[' + i + '].active=this.checked;attPeopleDraw()"/> on</label></div>').join('')
+    || '<div style="color:var(--faint);font-size:13px">No one yet.</div>';
+}
+function attPersonMove(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= _attPeopleDraft.length) return;
+  [_attPeopleDraft[i], _attPeopleDraft[j]] = [_attPeopleDraft[j], _attPeopleDraft[i]];
+  attPeopleDraw();
+}
+async function attAddPerson() {
+  const box = document.getElementById('attNewPerson');
+  const name = box.value.trim();
+  if (!name) return;
+  const r = await api('/api/attendance/people', 'POST', { name });
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  box.value = '';
+  _attPeopleDraft.push({ id: r.id, name, active: true });
+  attPeopleDraw();
+}
+async function attPeopleSave(btn) {
+  btn.disabled = true;
+  const r = await api('/api/attendance/people', 'PUT', { people: _attPeopleDraft });
+  btn.disabled = false;
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  closeModal('attPeopleModal');
+  showToast('✅ Saved');
+  loadAttendance(ATT.month);
+}
+
+// ══════════════════════════════════════════════════════
+// HR - the HR team's employee sheet ("Bunai" tab), live: its headings, its
+// rows, and "+ Add" writing a new row into the sheet with the same fields.
+// ══════════════════════════════════════════════════════
+let HS = { fields: [], rows: [] };
+
+async function loadHrSheet() {
+  const body = document.getElementById('hsBody');
+  body.innerHTML = '<tr><td class="empty">Loading from the sheet…</td></tr>';
+  let d;
+  try { d = await api('/api/hrsheet'); } catch (e) { d = { error: e.message || 'error' }; }
+  if (d.error) { body.innerHTML = '<tr><td class="empty">' + dtEscape(d.error) + '</td></tr>'; return; }
+  HS = d;
+  document.getElementById('hsOpenSheet').href = d.sheetUrl;
+  document.getElementById('hsTabName').textContent = d.tab;
+  hsDraw();
+}
+
+function hsDraw() {
+  const q = (document.getElementById('hsSearch').value || '').trim().toLowerCase();
+  const rows = HS.rows.filter(r => !q || r.cells.join(' ').toLowerCase().includes(q));
+  document.getElementById('hsNote').textContent = 'Live from the sheet (' + (HS.tab || '') + ') · ' + rows.length + ' of ' + HS.rows.length + ' employees';
+  // The first column (the name) stays in view while the rest scroll sideways.
+  const stick = 'position:sticky;left:0;background:var(--card);z-index:1;';
+  document.getElementById('hsHead').innerHTML = '<tr>' + HS.fields.map((f, k) =>
+    '<th style="white-space:normal;min-width:' + (f.type === 'long' ? 220 : 130) + 'px;' + (k ? '' : stick) + '">' + dtEscape(f.label) + '</th>').join('') + '</tr>';
+  document.getElementById('hsBody').innerHTML = rows.length ? rows.map(r => '<tr>' + r.cells.map((c, k) =>
+    '<td style="font-size:12.5px;vertical-align:top;' + (k ? '' : stick + 'font-weight:600;') + '">'
+    + (c ? '<div class="inf-clamp" title="' + dtEscape(c) + '">' + dtEscape(c) + '</div>' : '<span style="color:var(--faint)">—</span>') + '</td>').join('') + '</tr>').join('')
+    : '<tr><td colspan="' + HS.fields.length + '" class="empty">' + (HS.rows.length ? 'No one matches.' : 'The sheet has no employees yet.') + '</td></tr>';
+}
+
+function hsOpen() {
+  document.getElementById('hsFields').innerHTML = HS.fields.map(f => {
+    const id = 'hsF' + f.i;
+    const input = f.type === 'select'
+      ? '<select id="' + id + '"><option value="">—</option>' + f.options.map(o => '<option>' + dtEscape(o) + '</option>').join('') + '</select>'
+      : f.type === 'date' ? '<input type="date" id="' + id + '"/>'
+      : f.type === 'long' ? '<textarea id="' + id + '" rows="2"></textarea>'
+      : '<input type="text" id="' + id + '"/>';
+    return '<div class="form-group"' + (f.type === 'long' ? ' style="grid-column:1/-1"' : '') + '><label>' + dtEscape(f.label)
+      + (f.i === 0 ? ' <span style="color:var(--brand-mid)">*</span>' : '') + '</label>' + input + '</div>';
+  }).join('');
+  document.getElementById('hsErr').style.display = 'none';
+  document.getElementById('hsModal').classList.add('open');
+  const first = document.getElementById('hsF0');
+  if (first) first.focus();
+}
+
+async function hsSave(btn) {
+  const cells = HS.fields.map(f => ((document.getElementById('hsF' + f.i) || {}).value || '').trim());
+  const err = document.getElementById('hsErr');
+  if (!cells[0]) { err.textContent = 'The employee name is required.'; err.style.display = 'block'; return; }
+  btn.disabled = true;
+  const r = await api('/api/hrsheet', 'POST', { cells });
+  btn.disabled = false;
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('hsModal');
+  showToast('✅ Added to the sheet (row ' + r.row + ')');
+  loadHrSheet();
+}
+
+// ══════════════════════════════════════════════════════
+// PRODUCTION CHECKLIST - a row per style, a tick per production step.
+// A style waits at the first step not ticked; the chips on top count how many
+// wait at each, and filter to them.
+// ══════════════════════════════════════════════════════
+let PC = { steps: [], items: [], styleIds: [], canEditSteps: false };
+let _pcView = 'progress', _pcAt = null, _pcStepsDraft = [];
+const pcActive = () => PC.steps.filter(s => s.active);
+const pcDone = (it) => pcActive().filter(s => it.ticks[s.id]).length;
+const pcWaitingAt = (it) => pcActive().find(s => !it.ticks[s.id]) || null;
+const pcToday = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+
+async function loadProdCheck() {
+  const body = document.getElementById('pcBody');
+  let d;
+  try { d = await api('/api/prodcheck'); } catch (e) { d = { error: e.message || 'error' }; }
+  if (d.error) { body.innerHTML = '<tr><td class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
+  PC = d;
+  document.getElementById('pcStepsBtn').style.display = PC.canEditSteps ? '' : 'none';
+  document.getElementById('pcStyleList').innerHTML = (PC.styleIds || []).map(s => '<option value="' + dtEscape(s) + '">').join('');
+  pcDraw();
+}
+
+function pcPickView(v) { _pcView = v; _pcAt = null; pcDraw(); }
+function pcPickAt(id) { _pcAt = _pcAt === id ? null : id; _pcView = 'progress'; pcDraw(); }
+
+function pcDraw() {
+  const steps = pcActive(), n = steps.length;
+  const isDone = (it) => n > 0 && pcDone(it) === n;
+  const counts = { all: PC.items.length, progress: PC.items.filter(it => !isDone(it)).length, done: PC.items.filter(isDone).length };
+  document.getElementById('pcTabs').innerHTML = [['progress', 'In progress'], ['done', 'Done'], ['all', 'All styles']].map(([k, l]) =>
+    '<div class="lv-tab' + (_pcView === k ? ' active' : '') + '" onclick="pcPickView(\'' + k + '\')">' + l
+    + '<span class="lv-tab-badge">' + counts[k] + '</span></div>').join('');
+  // Where the work is waiting: how many styles stand at each step.
+  const at = {};
+  PC.items.forEach(it => { const w = pcWaitingAt(it); if (w) at[w.id] = (at[w.id] || 0) + 1; });
+  document.getElementById('pcStepTiles').innerHTML = steps.map(s =>
+    '<button type="button" class="pc-chip' + (_pcAt === s.id ? ' on' : '') + '" onclick="pcPickAt(' + s.id + ')" title="Styles waiting at this step">'
+    + dtEscape(s.label) + ' · <b>' + (at[s.id] || 0) + '</b></button>').join('');
+
+  const q = (document.getElementById('pcSearch').value || '').trim().toLowerCase();
+  const rows = PC.items.filter(it =>
+    (_pcView === 'all' || (_pcView === 'done' ? isDone(it) : !isDone(it)))
+    && (!_pcAt || (pcWaitingAt(it) || {}).id === _pcAt)
+    && (!q || [it.style_id, it.product, it.notes].join(' ').toLowerCase().includes(q)));
+  document.getElementById('pcNote').textContent = rows.length + ' of ' + PC.items.length + ' styles' + (_pcAt ? ' · waiting at ' + (steps.find(s => s.id === _pcAt) || {}).label : '');
+
+  document.getElementById('pcHead').innerHTML = '<tr><th>Style</th><th style="text-align:right">Qty</th><th>Due</th>'
+    + steps.map(s => '<th class="pc-step-th">' + dtEscape(s.label) + '</th>').join('') + '<th>Progress</th></tr>';
+  const cols = 4 + n;
+  if (!rows.length) {
+    document.getElementById('pcBody').innerHTML = '<tr><td colspan="' + cols + '" class="empty">'
+      + (PC.items.length ? 'No style matches.' : 'No styles yet — use <b>+ Add style</b>.') + '</td></tr>';
+    return;
+  }
+  const today = pcToday();
+  document.getElementById('pcBody').innerHTML = rows.map(it => {
+    const done = pcDone(it), late = it.due_date && it.due_date < today && done < n;
+    return '<tr onclick="pcOpen(' + it.id + ')" style="cursor:pointer" title="Click to edit this style">'
+      + '<td><b>' + dtEscape(it.style_id) + '</b>' + (it.product ? '<div style="font-size:11.5px;color:var(--faint)">' + dtEscape(it.product) + '</div>' : '') + '</td>'
+      + '<td style="text-align:right">' + (it.qty == null ? '—' : Number(it.qty).toLocaleString('en-IN')) + '</td>'
+      + '<td style="white-space:nowrap;' + (late ? 'color:#dc2626;font-weight:700' : '') + '">' + (it.due_date ? vbDate(it.due_date) : '—') + (late ? ' · late' : '') + '</td>'
+      + steps.map(s => {
+          const t = it.ticks[s.id];
+          return '<td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="pc-tick"'
+            + (t ? ' checked title="' + dtEscape('Done by ' + (t.by || '—') + ' · ' + t.at) + '"' : ' title="Not done yet"')
+            + ' onchange="pcTick(' + it.id + ',' + s.id + ',this)"/></td>';
+        }).join('')
+      + '<td style="white-space:nowrap"><div class="pc-bar"><i style="width:' + (n ? Math.round(done / n * 100) : 0) + '%"></i></div>'
+      + '<div style="font-size:11.5px;color:var(--faint);margin-top:2px">' + done + '/' + n + (done === n && n ? ' · done' : '') + '</div></td></tr>';
+  }).join('');
+}
+
+async function pcTick(itemId, stepId, box) {
+  box.disabled = true;
+  const r = await api('/api/prodcheck/items/' + itemId + '/tick', 'POST', { step_id: stepId, done: box.checked });
+  box.disabled = false;
+  if (r.error) { box.checked = !box.checked; return showToast('⚠️ ' + r.error, 'error'); }
+  loadProdCheck();
+}
+
+function pcOpen(id) {
+  const it = id ? PC.items.find(x => x.id === id) : null;
+  document.getElementById('pcModalTitle').textContent = it ? 'Edit ' + it.style_id : 'Add style';
+  document.getElementById('pcEditId').value = it ? it.id : '';
+  document.getElementById('pcStyle').value = it ? it.style_id : '';
+  document.getElementById('pcQty').value = it && it.qty != null ? it.qty : '';
+  document.getElementById('pcProduct').value = it ? it.product : '';
+  document.getElementById('pcDue').value = it ? (it.due_date || '') : '';
+  document.getElementById('pcNotes').value = it ? it.notes : '';
+  document.getElementById('pcDeleteBtn').style.display = it ? '' : 'none';
+  document.getElementById('pcErr').style.display = 'none';
+  document.getElementById('pcModal').classList.add('open');
+}
+
+async function pcSave(btn) {
+  const id = document.getElementById('pcEditId').value;
+  const v = (x) => document.getElementById(x).value.trim();
+  const body = { style_id: v('pcStyle'), qty: v('pcQty'), product: v('pcProduct'), due_date: v('pcDue'), notes: v('pcNotes') };
+  const err = document.getElementById('pcErr');
+  if (!body.style_id) { err.textContent = 'Style ID is required.'; err.style.display = 'block'; return; }
+  btn.disabled = true;
+  const r = await api(id ? '/api/prodcheck/items/' + id : '/api/prodcheck/items', id ? 'PUT' : 'POST', body);
+  btn.disabled = false;
+  if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
+  closeModal('pcModal');
+  showToast('✅ Saved');
+  loadProdCheck();
+}
+
+async function pcDelete() {
+  const id = document.getElementById('pcEditId').value;
+  if (!id || !confirm('Delete this style and its ticks from the checklist?')) return;
+  const r = await api('/api/prodcheck/items/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  closeModal('pcModal');
+  showToast('✅ Deleted');
+  loadProdCheck();
+}
+
+// ── Steps (Admin): rename, reorder, switch on/off, add ──
+function pcStepsOpen() {
+  _pcStepsDraft = PC.steps.map(s => ({ ...s }));
+  pcStepsDraw();
+  document.getElementById('pcStepsModal').classList.add('open');
+}
+function pcStepsDraw() {
+  document.getElementById('pcStepsList').innerHTML = _pcStepsDraft.map((s, i) =>
+    '<div style="display:flex;gap:6px;align-items:center;margin:5px 0">'
+    + '<span style="width:20px;color:var(--faint);font-size:12px">' + (i + 1) + '.</span>'
+    + '<input type="text" value="' + dtEscape(s.label) + '" oninput="_pcStepsDraft[' + i + '].label=this.value" style="flex:1' + (s.active ? '' : ';opacity:.5') + '"/>'
+    + '<button type="button" class="btn btn-sm btn-outline" title="Move up" onclick="pcStepMove(' + i + ',-1)"' + (i ? '' : ' disabled') + '>↑</button>'
+    + '<button type="button" class="btn btn-sm btn-outline" title="Move down" onclick="pcStepMove(' + i + ',1)"' + (i < _pcStepsDraft.length - 1 ? '' : ' disabled') + '>↓</button>'
+    + '<label style="display:flex;gap:4px;align-items:center;font-size:12px;text-transform:none;letter-spacing:0;font-weight:500;margin:0">'
+    + '<input type="checkbox"' + (s.active ? ' checked' : '') + ' onchange="_pcStepsDraft[' + i + '].active=this.checked;pcStepsDraw()"/> on</label></div>').join('');
+}
+function pcStepMove(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= _pcStepsDraft.length) return;
+  [_pcStepsDraft[i], _pcStepsDraft[j]] = [_pcStepsDraft[j], _pcStepsDraft[i]];
+  pcStepsDraw();
+}
+async function pcAddStep() {
+  const box = document.getElementById('pcNewStep');
+  const label = box.value.trim();
+  if (!label) return;
+  const r = await api('/api/prodcheck/steps', 'POST', { label });
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  box.value = '';
+  _pcStepsDraft.push({ id: r.id, label, active: true });
+  pcStepsDraw();
+}
+async function pcStepsSave(btn) {
+  btn.disabled = true;
+  const r = await api('/api/prodcheck/steps', 'PUT', { steps: _pcStepsDraft.map(s => ({ id: s.id, label: s.label, active: !!s.active })) });
+  btn.disabled = false;
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  closeModal('pcStepsModal');
+  showToast('✅ Steps saved');
+  loadProdCheck();
+}
+
+// From a style to its vendor's details on the Vendor Name page.
+function sampleOpenVendor(id) {
+  _vbOpenId = id;
+  navigate('vendors', navElFor('vendors'));
+}
+
+function sampleClearFilters() {
+  SAMPLE_F = {}; SAMPLE_SORT = '';
+  sampleFilterClose();
+  sampleRender();
+}
+
+function sampleFilterClose() {
+  const pop = document.getElementById('sampleFilterPop');
+  if (pop) pop.style.display = 'none';
+  SAMPLE_POP = null;
+}
+document.addEventListener('mousedown', (e) => {
+  const pop = document.getElementById('sampleFilterPop');
+  if (SAMPLE_POP && pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('#sampleHead button'))) sampleFilterClose();
+});
+
+function sampleFilterOpen(ev, key) {
+  ev.stopPropagation();
+  const col = SAMPLE_COLS.find(c => c[0] === key);
+  if (!col) return;
+  const [, label, type] = col;
+  const pop = document.getElementById('sampleFilterPop');
+  if (SAMPLE_POP && SAMPLE_POP.key === key && pop.style.display !== 'none') return sampleFilterClose();
+  const cur = SAMPLE_F[key] || {};
+  SAMPLE_POP = { key, type, sel: new Set(cur.values || []) };
+  const lab = (t) => '<div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:8px 0 4px">' + t + '</div>';
+  const words = type === 'money' ? ['Smallest first', 'Largest first'] : ['Sort A → Z', 'Sort Z → A'];
+  const sb = (dir, w) => '<button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;'
+    + (SAMPLE_SORT === dir + key ? 'background:var(--brand-tint);border-color:var(--brand-deep)' : '') + '" onclick="sampleSortBy(\'' + dir + key + '\')">' + w + '</button>';
+  let h = '<div style="font-weight:700;margin-bottom:4px">' + dtEscape(label) + '</div>'
+    + '<div style="display:flex;gap:6px;margin:6px 0 4px">' + sb('', words[0]) + sb('-', words[1]) + '</div>';
+  if (type === 'money') {
+    h += lab('Between (₹)') + '<div style="display:flex;gap:6px"><input type="number" id="sfMin" placeholder="Min" value="' + (cur.min != null ? cur.min : '') + '" style="width:100%"/>'
+      + '<input type="number" id="sfMax" placeholder="Max" value="' + (cur.max != null ? cur.max : '') + '" style="width:100%"/></div>';
+  } else {
+    if (type === 'text') h += lab('Contains') + '<input type="text" id="sfText" value="' + dtEscape(cur.text || '') + '" placeholder="Type to match" style="width:100%"'
+      + ' onkeydown="if(event.key===\'Enter\')sampleFilterApply()"/>';
+    h += lab('Filter by values') + '<input type="text" id="sfSearch" placeholder="Search" style="width:100%" oninput="sampleFilterValues()"/>'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin:6px 0">'
+      + '<a href="#" onclick="sampleFilterAll(true);return false" style="color:var(--brand-deep)">Select all shown</a>'
+      + '<a href="#" onclick="sampleFilterAll(false);return false" style="color:var(--brand-deep)">Clear</a></div>'
+      + '<div id="sfList" style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:4px 6px"></div>';
+  }
+  h += '<div style="display:flex;justify-content:space-between;margin-top:12px">'
+    + '<button type="button" class="btn btn-outline" style="padding:5px 12px;font-size:12.5px" onclick="sampleFilterClear()">Clear</button>'
+    + '<button type="button" class="btn btn-primary" style="padding:5px 14px;font-size:12.5px" onclick="sampleFilterApply()">Apply</button></div>';
+  pop.innerHTML = h;
+  const r = ev.currentTarget.getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.top = Math.min(window.innerHeight - 20 - pop.offsetHeight, r.bottom + 6) + 'px';
+  pop.style.left = Math.max(10, Math.min(window.innerWidth - pop.offsetWidth - 10, r.left - 120)) + 'px';
+  if (type !== 'money') sampleFilterValues();
+  const first = pop.querySelector('input[type=text],input[type=number]');
+  if (first) first.focus();
+}
+
+// The values of this column among the styles the tab and the search left, with
+// how many of each - ticked ones stay listed even when the search would hide them.
+function sampleFilterValues() {
+  const P = SAMPLE_POP;
+  if (!P || P.type === 'money') return;
+  const q = ((document.getElementById('sfSearch') || {}).value || '').trim().toLowerCase();
+  const counts = new Map();
+  _sampleAll.forEach(r => { const v = sampleCellText(r, P.key); counts.set(v, (counts.get(v) || 0) + 1); });
+  const rows = [...counts.entries()].filter(([v]) => !q || v.toLowerCase().includes(q))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 300);
+  P.shown = rows.map(r => r[0]);
+  const extra = [...P.sel].filter(v => !P.shown.includes(v)).map(v => [v, null]);
+  document.getElementById('sfList').innerHTML = [...extra, ...rows].map(([v, n]) =>
+    '<label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;letter-spacing:0;margin:3px 0;cursor:pointer">'
+    + '<input type="checkbox" value="' + dtEscape(v) + '"' + (P.sel.has(v) ? ' checked' : '') + ' onchange="sampleFilterTick(this)" style="width:15px;height:15px;flex:none"/>'
+    + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dtEscape(v || '(blank)') + '</span>'
+    + (n != null ? '<span style="font-size:11px;color:var(--faint)">' + n + '</span>' : '') + '</label>').join('')
+    || '<div style="color:var(--faint);font-size:12px;padding:4px">Nothing matches.</div>';
+}
+function sampleFilterTick(cb) { if (!SAMPLE_POP) return; cb.checked ? SAMPLE_POP.sel.add(cb.value) : SAMPLE_POP.sel.delete(cb.value); }
+function sampleFilterAll(on) {
+  if (!SAMPLE_POP) return;
+  if (on) (SAMPLE_POP.shown || []).forEach(v => SAMPLE_POP.sel.add(v)); else SAMPLE_POP.sel.clear();
+  document.querySelectorAll('#sfList input[type=checkbox]').forEach(cb => { cb.checked = SAMPLE_POP.sel.has(cb.value); });
+}
+function sampleSortBy(s) {
+  SAMPLE_SORT = SAMPLE_SORT === s ? '' : s;   // a second click takes it off
+  sampleFilterClose();
+  sampleRender();
+}
+function sampleFilterClear() {
+  if (!SAMPLE_POP) return;
+  delete SAMPLE_F[SAMPLE_POP.key];
+  sampleFilterClose();
+  sampleRender();
+}
+function sampleFilterApply() {
+  const P = SAMPLE_POP;
+  if (!P) return;
+  const v = (id) => ((document.getElementById(id) || {}).value || '').trim();
+  let f;
+  if (P.type === 'money') {
+    const min = v('sfMin'), max = v('sfMax');
+    if (min || max) f = { min: min === '' ? null : Number(min), max: max === '' ? null : Number(max) };
+  } else {
+    const text = P.type === 'text' ? v('sfText') : '';
+    if (text || P.sel.size) f = { text: text || undefined, values: P.sel.size ? [...P.sel] : undefined };
+  }
+  if (f) SAMPLE_F[P.key] = f; else delete SAMPLE_F[P.key];
+  sampleFilterClose();
+  sampleRender();
 }
 
 function sampleLiningChanged() {
@@ -12491,6 +13310,14 @@ function sampleOpen(id) {
   set('samplePriceWeb', r ? r.price_website : '');
   set('samplePriceMyntra', r ? r.price_myntra : '');
   set('samplePriceWholesale', r ? r.price_wholesale : '');
+  // The vendor picked on the style; with none picked, the one whose list in the
+  // Vendor Name book has this style is offered.
+  const vs = document.getElementById('sampleVendor');
+  vs.innerHTML = '<option value="">—</option>' + _sampleVendors.map(v => '<option value="' + v.id + '">' + dtEscape(v.name) + '</option>').join('');
+  vs.value = r && r.vendor_ref ? String(r.vendor_ref) : '';
+  document.getElementById('sampleVendorHint').textContent = r && r.vendor_from === 'book'
+    ? 'From the Vendor Name list of ' + r.vendor_name + ' - save to keep it on the style.'
+    : _sampleVendors.length ? '' : 'Add vendors on the Vendor Name page to pick one here.';
   sampleLiningChanged();
   document.getElementById('sampleModal').classList.add('open');
 }
@@ -12615,6 +13442,7 @@ async function saveSample(btn) {
     final_costing: val('sampleCostFinal'),
     price_website: val('samplePriceWeb'), price_myntra: val('samplePriceMyntra'),
     price_wholesale: val('samplePriceWholesale'),
+    vendor_id: val('sampleVendor'),
   };
 
   btn.disabled = true;
@@ -12662,7 +13490,9 @@ async function sampleDelete(id) {
 // it — which left the same figures on screen two ways and nothing to click.
 // ══════════════════════════════════════════════════════
 let _whRows = [];
-let _whFacility = 'surat';
+// Opens on the Bunai warehouse: Surat's stock was taken out of Unicommerce.
+let _whFacility = 'bunai';
+let _whBrand = '';
 
 function whPeriodChanged() {
   const range = document.getElementById('whPeriod').value === 'range';
@@ -12677,6 +13507,20 @@ function whPick(key) {
   if (key === _whFacility) return;
   _whFacility = key;
   loadWarehouse();
+}
+
+// The brand sections, as on Stock: All, Bunai, Aaheli, Mulmul, Other, each with
+// its stock in the chosen warehouse.
+function whPickBrand(key) {
+  if (key === _whBrand) return;
+  _whBrand = key;
+  loadWarehouse();
+}
+function whBrandStrip(units, current) {
+  const u = units || {};
+  return STOCK_BRANDS.map(([key, label, k]) =>
+    '<div class="lv-tab' + (current === key ? ' active' : '') + '" onclick="whPickBrand(\'' + key + '\')">'
+    + label + '<span class="lv-tab-badge">' + whNum(u[k]) + '</span></div>').join('');
 }
 
 function whQuery() {
@@ -12722,8 +13566,8 @@ async function loadWarehouse() {
   let d, cmp;
   try {
     [d, cmp] = await Promise.all([
-      api('/api/warehouse?facility=' + encodeURIComponent(_whFacility) + '&' + q),
-      api('/api/warehouse/compare?' + q),
+      api('/api/warehouse?facility=' + encodeURIComponent(_whFacility) + '&brand=' + encodeURIComponent(_whBrand) + '&' + q),
+      api('/api/warehouse/compare?brand=' + encodeURIComponent(_whBrand) + '&' + q),
     ]);
   } catch (e) {
     body.innerHTML = '<tr><td colspan="6" class="empty">Could not load — '
@@ -12731,6 +13575,8 @@ async function loadWarehouse() {
     return;
   }
 
+  const btabs = document.getElementById('whBrandTabs');
+  if (btabs) btabs.innerHTML = whBrandStrip(d.brandStock, _whBrand);
   const tabs = document.getElementById('whTabs');
   if (tabs) tabs.innerHTML = whTabStrip(cmp.warehouses || [], _whFacility);
   const figures = document.getElementById('whFigures');
@@ -12741,7 +13587,8 @@ async function loadWarehouse() {
   const t = d.totals || {};
   const title = document.getElementById('whTableTitle');
   if (title) {
-    title.textContent = d.facility.label + ' — ' + whNum(t.skus) + ' variants';
+    const bl = (STOCK_BRANDS.find(b => b[0] === _whBrand) || [])[1];
+    title.textContent = d.facility.label + (_whBrand ? ' · ' + bl : '') + ' — ' + whNum(t.skus) + ' variants';
   }
 
   // One line, not a paragraph. The thing worth saying is that the period moves
@@ -12818,13 +13665,14 @@ function b2bTab(which) {
   const addBtn = document.getElementById('b2bAddPartyBtn');
   if (addBtn) addBtn.style.display = which === 'prospects' ? '' : 'none';
 
-  if (which === 'orders') loadB2B(); else b2bRenderParties();
+  // Fetched afresh: an order saved a moment ago makes its party a customer.
+  if (which === 'orders') loadB2B(); else loadB2BParties();
 }
 
 async function loadB2BParties() {
   const q = (document.getElementById('b2bPartySearch')?.value || '').trim();
   try {
-    _b2bParties = await api('/api/b2b/parties?q=' + encodeURIComponent(q));
+    _b2bParties = await api('/api/b2b/parties?book=' + B2B_BOOK + '&q=' + encodeURIComponent(q));
   } catch (e) {
     document.getElementById('b2bPartyBody').innerHTML =
       '<tr><td colspan="8" class="empty">Could not load — ' + dtEscape(e.message || 'error') + '</td></tr>';
@@ -12843,7 +13691,14 @@ function b2bRenderParties() {
   const note = document.getElementById('b2bPartyNote');
   if (!head || !body) return;
 
-  const inr = v => '₹' + Number(v || 0).toLocaleString('en-IN');
+  // A customer's money in their orders' currency; one with orders in more than
+  // one currency cannot be summed into a single figure, and says so.
+  let inr = v => '₹' + Number(v || 0).toLocaleString('en-IN');
+  const partyMoney = (r) => {
+    const cs = String(r.currencies || 'INR').split(',').filter(Boolean);
+    inr = cs.length > 1 ? () => '<span style="color:var(--faint)" title="Orders in ' + dtEscape(cs.join(', ')) + '">mixed</span>'
+      : (v) => b2bMoney(v || 0, '0', cs[0] || 'INR');
+  };
   const when = d => (d ? new Date(d).toLocaleDateString('en-IN',
     { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
@@ -12854,8 +13709,8 @@ function b2bRenderParties() {
       + '<th style="text-align:right">Value</th><th style="text-align:right">Balance</th>'
       + '<th>Last order</th></tr>';
     const rows = _b2bParties.customers || [];
-    body.innerHTML = rows.length ? rows.map(r =>
-      '<tr>'
+    body.innerHTML = rows.length ? rows.map(r => (partyMoney(r), '')
+      + '<tr>'
       + '<td style="font-weight:600">' + dtEscape(r.party_name) + '</td>'
       + '<td>' + dtEscape(r.contact_person || '—')
       + (r.phone ? '<div style="font-size:11.5px;color:var(--muted-foreground)">' + dtEscape(r.phone) + '</div>' : '')
@@ -12933,6 +13788,7 @@ async function saveB2BParty(btn) {
     email: val('b2bPartyEmail'), phone: val('b2bPartyPhone'), whatsapp: val('b2bPartyWhatsapp'),
     address: val('b2bPartyAddress'), city: val('b2bPartyCity'), state: val('b2bPartyState'),
     pincode: val('b2bPartyPincode'), notes: val('b2bPartyNotes'),
+    book: B2B_BOOK,
   };
   btn.disabled = true;
   const was = btn.textContent;

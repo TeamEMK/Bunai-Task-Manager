@@ -51,6 +51,8 @@ const GRANTABLE_PAGES = [
   { key: 'scot', label: 'SCOT' },
   { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' },
+  { key: 'prodcheck', label: 'Production Checklist' },
+  { key: 'attendance', label: 'Attendance' },
   { key: 'mulmulcost', label: 'Mulmul Product Cost' },
   { key: 'bunaicost', label: 'Bunai Product Cost' },
   { key: 'contentcal', label: 'Content Calendar' },
