@@ -2299,6 +2299,9 @@
           <div style="display:flex;gap:6px"><input type="text" id="mcOverhead" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
             <select id="mcOverheadType" onchange="mcRecalc()" style="width:68px"><option value="pct">%</option><option value="amt">&#8377;</option></select></div>
           <div id="mcOverheadAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
+        <div class="form-group"><label>Total before profit (&#8377;)</label>
+          <input type="text" id="mcBeforeProfit" readonly style="background:#f1f5f9;font-weight:700"/>
+          <div style="font-size:11.5px;color:var(--faint);margin-top:4px">Total + overhead. The profit is worked on this.</div></div>
         <div class="form-group"><label>Profit</label>
           <div style="display:flex;gap:6px"><input type="text" id="mcProfit" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
             <select id="mcProfitType" onchange="mcRecalc()" style="width:68px"><option value="pct">%</option><option value="amt">&#8377;</option></select></div>

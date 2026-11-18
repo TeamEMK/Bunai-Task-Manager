@@ -70,12 +70,15 @@ const num = (v) => {
 // the sheet (17 Nov 2026), so a rate saved before is not counted.
 const AMT_TYPES = ['amt', 'pct'];
 const round2 = (n) => Math.round(n * 100) / 100;
+// One on top of the other, as the client works it: overhead on the total, then
+// profit on the total with its overhead - 200 + 10% = 220, + 15% = 253.
 function priceUp(total, r) {
-  if (total == null) return { overhead: null, profit: null, gst: null, selling: null };
-  const part = (v, t) => (v == null ? 0 : t === 'pct' ? total * Number(v) / 100 : Number(v));
-  const overhead = round2(part(r.overhead, r.overhead_type));
-  const profit = round2(part(r.profit, r.profit_type));
-  return { overhead, profit, selling: round2(total + overhead + profit) };
+  if (total == null) return { overhead: null, beforeProfit: null, profit: null, selling: null };
+  const part = (base, v, t) => (v == null ? 0 : t === 'pct' ? base * Number(v) / 100 : Number(v));
+  const overhead = round2(part(total, r.overhead, r.overhead_type));
+  const beforeProfit = round2(total + overhead);
+  const profit = round2(part(beforeProfit, r.profit, r.profit_type));
+  return { overhead, beforeProfit, profit, selling: round2(beforeProfit + profit) };
 }
 
 function fromBody(b, brand) {

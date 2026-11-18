@@ -12179,16 +12179,21 @@ function mcRecalc() {
   document.getElementById('mcTentative').value = any ? mcInr(total) : '';
   // Bunai: total, overhead, profit, selling price (no GST on this sheet).
   if (mcBunai()) {
-    const part = (id) => {
+    // One on top of the other: overhead on the total, profit on the total with
+    // its overhead (200 + 10% = 220, + 15% = 253).
+    const part = (id, base) => {
       const v = mcNum(document.getElementById(id).value);
       const pct = document.getElementById(id + 'Type').value === 'pct';
-      const amt = v == null ? 0 : mcR2(pct ? total * v / 100 : v);
+      const amt = v == null ? 0 : mcR2(pct ? base * v / 100 : v);
       document.getElementById(id + 'Amt').textContent = v != null && pct ? '= ' + mcInr(amt) : '';
       return amt;
     };
-    const overhead = part('mcOverhead'), profit = part('mcProfit');
+    const overhead = part('mcOverhead', total);
+    const beforeProfit = mcR2(total + overhead);
+    const profit = part('mcProfit', beforeProfit);
     document.getElementById('mcBTotal').value = any ? mcInr(total) : '';
-    document.getElementById('mcSelling').value = any ? mcInr(mcR2(total + overhead + profit)) : '';
+    document.getElementById('mcBeforeProfit').value = any ? mcInr(beforeProfit) : '';
+    document.getElementById('mcSelling').value = any ? mcInr(mcR2(beforeProfit + profit)) : '';
   }
 }
 
