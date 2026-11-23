@@ -12246,15 +12246,21 @@ async function mcPhotoPicked(input) {
 }
 
 // id: edit that product. copy: start a new one from it, SKU left empty.
+// Only the latest call fills the form, and the lines are cleared only once its
+// product has arrived: a row clicked twice used to clear, then fill the lines
+// twice over, and saving that wrote every line two times.
+let _mcOpenSeq = 0;
 async function mcOpen(id, copy) {
-  document.getElementById('mcErr').style.display = 'none';
-  document.getElementById('mcLines').innerHTML = '';
-  document.getElementById('mcMeta').textContent = '';
+  const seq = ++_mcOpenSeq;
   let p = null;
   if (id) {
     p = await api('/api/mulmul-costs/' + id);
+    if (seq !== _mcOpenSeq) return;
     if (p.error) return showToast('⚠️ ' + p.error, 'error');
   }
+  document.getElementById('mcErr').style.display = 'none';
+  document.getElementById('mcLines').innerHTML = '';
+  document.getElementById('mcMeta').textContent = '';
   const bun = mcBunai();
   const brand = bun ? 'Bunai' : 'Mulmul';
   // Bunai's sheet: Particular / Fabric / Quantity / Rate / Amount, no UOM,
