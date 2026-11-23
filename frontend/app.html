@@ -922,17 +922,17 @@
           <!-- Grouped the way the client's workbook groups them. On their own,
                "Us / Vendor / Final / Website / Myntra" say nothing. -->
           <tr>
-            <th colspan="2"></th>
+            <th colspan="3"></th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Fabric</th>
             <th colspan="2"></th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Costing (&#8377;)</th>
             <th colspan="3" style="text-align:center;border-bottom:1px solid var(--border)">Pricing (&#8377;)</th>
-            <th></th>
+            <th colspan="2"></th>
           </tr>
           <!-- Drawn by sampleHeadHtml(): each heading with its ▾ filter. -->
           <tr id="sampleHead"></tr>
         </thead>
-        <tbody id="sampleBody"><tr><td colspan="14" class="empty">Loading…</td></tr></tbody>
+        <tbody id="sampleBody"><tr><td colspan="16" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1757,6 +1757,7 @@
       One row per sample style. Costing and pricing can be filled in later — leave them blank
       until they are decided rather than entering zero.
     </div>
+    <div id="sampleMeta" style="display:none;margin:-4px 0 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
     <div id="sampleErr" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
       border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:12px"></div>
     <input type="hidden" id="sampleEditId"/>
@@ -1826,7 +1827,8 @@
       text-transform:uppercase;color:var(--muted-foreground)">Costing &amp; pricing (₹)</div>
     <div class="form-row">
       <div class="form-group"><label>Internal costing</label>
-        <input type="text" id="sampleCostUs" inputmode="decimal"/></div>
+        <input type="text" id="sampleCostUs" inputmode="decimal"/>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:4px">Filled from the Bunai Product Cost internal price each time that product is saved.</div></div>
       <div class="form-group"><label>Costing by vendor</label>
         <input type="text" id="sampleCostVendor" inputmode="decimal"/></div>
       <div class="form-group"><label>Final costing</label>
@@ -1844,6 +1846,17 @@
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-outline" onclick="closeModal('sampleModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveSample(this)">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Sample style: who changed what (sampleHistory) ── -->
+<div class="modal-overlay" id="sampleHistModal">
+  <div class="modal" style="width:620px;max-width:94vw;max-height:88vh;overflow:auto">
+    <h3 id="sampleHistTitle">History</h3>
+    <div id="sampleHistBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('sampleHistModal')">Close</button>
     </div>
   </div>
 </div>
@@ -2306,7 +2319,7 @@
           <div style="display:flex;gap:6px"><input type="text" id="mcProfit" inputmode="decimal" oninput="mcRecalc()" style="flex:1"/>
             <select id="mcProfitType" onchange="mcRecalc()" style="width:68px"><option value="pct">%</option><option value="amt">&#8377;</option></select></div>
           <div id="mcProfitAmt" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
-        <div class="form-group"><label>Selling Price (&#8377;)</label>
+        <div class="form-group"><label>Internal Price (&#8377;)</label>
           <input type="text" id="mcSelling" readonly style="background:#f1f5f9;font-weight:800;color:var(--brand-deep)"/></div>
         <div class="form-group"><label>Image</label>
           <input type="hidden" id="mcImage"/>

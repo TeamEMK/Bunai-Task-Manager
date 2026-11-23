@@ -80,14 +80,64 @@ const COLS = ['style_id', 'image_url', 'notes', 'kurta_fabric', 'pant_fabric',
   'dupatta_fabric', 'fabric_remarks', 'has_lining', 'lining_fabric', 'status',
   'costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra', 'price_wholesale', 'vendor_id'];
 
+// ── Edit history ──────────────────────────────────────
+// Each save writes down who made it and the fields it changed, as the page
+// names and shows them, so "Status: Production Pending → In Production" reads
+// the same months later even if the vendor's name has changed since.
+const LABELS = {
+  style_id: 'Style ID', image_url: 'Photo', notes: 'Notes', kurta_fabric: 'Kurta fabric',
+  pant_fabric: 'Pant fabric', dupatta_fabric: 'Dupatta fabric', fabric_remarks: 'Fabric remarks',
+  has_lining: 'Lining', lining_fabric: 'Lining fabric', status: 'Status',
+  costing_us: 'Internal costing', costing_vendor: 'Vendor costing', final_costing: 'Final costing',
+  price_website: 'Website price', price_myntra: 'Myntra price', price_wholesale: 'Wholesale price',
+  vendor_id: 'Vendor',
+};
+const LOG_MONEY = ['costing_us', 'costing_vendor', 'final_costing', 'price_website', 'price_myntra', 'price_wholesale'];
+
+async function whoAmI(req) {
+  const me = await db.one('SELECT name FROM users WHERE id = ?', [req.session.userId]).catch(() => null);
+  return String((me && me.name) || req.session.name || '').slice(0, 120);
+}
+
+const same = (c, a, b) => LOG_MONEY.includes(c) || c === 'vendor_id'
+  ? (a == null || a === '' ? null : Number(a)) === (b == null || b === '' ? null : Number(b))
+  : String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim();
+
+async function changesOf(before, after) {
+  const cols = COLS.filter(c => !same(c, before[c], after[c]));
+  if (!cols.length) return [];
+  let vendors = new Map();
+  if (cols.includes('vendor_id')) {
+    const ids = [before.vendor_id, after.vendor_id].filter(Boolean);
+    if (ids.length) vendors = new Map((await db.rows('SELECT id, vendor_name FROM vendor_book WHERE id IN (?)', [ids])).map(v => [v.id, v.vendor_name]));
+  }
+  const show = (c, v) => {
+    if (v == null || String(v).trim() === '') return '';
+    if (c === 'vendor_id') return vendors.get(Number(v)) || '#' + v;
+    if (LOG_MONEY.includes(c)) return '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    if (c === 'image_url') return 'photo';
+    const t = String(v).trim();
+    return t.length > 300 ? t.slice(0, 300) + '…' : t;
+  };
+  return cols.map(c => ({ field: c, label: LABELS[c] || c, from: show(c, before[c]), to: show(c, after[c]) }));
+}
+
+async function logChange(id, styleId, action, changes, req, who) {
+  await db.query(
+    `INSERT INTO sample_style_log (sample_id, style_id, action, changes, user_id, user_name, at)
+     VALUES (?,?,?,?,?,?, UTC_TIMESTAMP())`,
+    [id, styleId, action, changes ? JSON.stringify(changes) : null, req.session.userId || null, who]);
+}
+
 // "BUNA-IH 88", "BUNA-IH-88" and "buna ih88" are the same style.
 const styleKey = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 // Each style's vendor: the one picked on the style, else whichever vendor in
 // the Vendor Name book lists the style among the styles they make.
 async function withVendors(rows) {
-  const book = await db.rows('SELECT id, vendor_name, styles FROM vendor_book ORDER BY vendor_name').catch(() => []);
+  const book = await db.rows('SELECT id, vendor_name, company, styles FROM vendor_book ORDER BY vendor_name').catch(() => []);
   const byId = new Map(book.map(v => [v.id, v.vendor_name]));
+  const companyOf = new Map(book.map(v => [v.id, String(v.company || '').trim()]));
   const byStyle = new Map();
   for (const v of book) {
     let styles = [];
@@ -103,6 +153,7 @@ async function withVendors(rows) {
     const v = picked || listed;
     r.vendor_ref = v ? v.id : null;
     r.vendor_name = v ? v.name : '';
+    r.vendor_company = v ? companyOf.get(v.id) || '' : '';
     r.vendor_from = picked ? 'picked' : listed ? 'book' : '';
   });
   return book.map(v => ({ id: v.id, name: v.vendor_name }));
@@ -235,7 +286,8 @@ router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (re
   const sql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   const [rows, counts] = await Promise.all([
-    db.rows(`SELECT id, ${COLS.join(', ')}, updated_at
+    db.rows(`SELECT id, ${COLS.join(', ')}, updated_at, updated_by_name,
+                    DATE_FORMAT(updated_at + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p') AS updated
                FROM sample_styles ${sql}
               ORDER BY updated_at DESC, id DESC LIMIT 1000`, args),
     // Counted over everything, not the filtered set: the tiles are what the
@@ -257,6 +309,22 @@ router.get('/samples', requireAuth, requirePage('samples'), asyncRoute(async (re
   });
 }));
 
+// The style's history, newest first. Styles from before the history began
+// have none; their Last edited still shows when, without who.
+router.get('/samples/:id/history', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
+  const id = Number(req.params.id);
+  const rows = await db.rows(
+    `SELECT action, changes, user_name, DATE_FORMAT(at + INTERVAL 330 MINUTE, '%e %b %Y, %l:%i %p') AS at
+       FROM sample_style_log WHERE sample_id = ? ORDER BY at DESC, id DESC LIMIT 200`, [id]);
+  res.json({
+    rows: rows.map(r => {
+      let changes = [];
+      try { changes = JSON.parse(r.changes || '[]'); } catch (_) { /* a bad row shows no fields */ }
+      return { action: r.action, by: r.user_name, at: r.at, changes: Array.isArray(changes) ? changes : [] };
+    }),
+  });
+}));
+
 router.post('/samples', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const v = body(req);
   if (!v.style_id) throw httpError(400, 'Sample Style ID is required');
@@ -264,13 +332,15 @@ router.post('/samples', requireAuth, requirePage('samples'), asyncRoute(async (r
   const dup = await db.one('SELECT id FROM sample_styles WHERE style_id = ?', [v.style_id]);
   if (dup) throw httpError(409, `Sample Style ID "${v.style_id}" already exists`);
 
+  const who = await whoAmI(req);
   const [r] = await db.query(
-    `INSERT INTO sample_styles (${COLS.join(', ')}, created_by)
-     VALUES (${COLS.map(() => '?').join(', ')}, ?)`,
-    [...COLS.map(c => v[c]), req.user?.userId || null]);
+    `INSERT INTO sample_styles (${COLS.join(', ')}, created_by, updated_by_name, updated_at)
+     VALUES (${COLS.map(() => '?').join(', ')}, ?, ?, UTC_TIMESTAMP())`,
+    [...COLS.map(c => v[c]), req.session.userId || null, who]);
+  await logChange(r.insertId, v.style_id, 'added', null, req, who);
 
   const sheet = await writeRow(null, v);
-  if (sheet.ok) await db.query('UPDATE sample_styles SET sheet_row=? WHERE id=?', [sheet.row, r.insertId]);
+  if (sheet.ok) await db.query('UPDATE sample_styles SET sheet_row=?, updated_at=updated_at WHERE id=?', [sheet.row, r.insertId]);
   res.json({ ok: true, id: r.insertId, sheet });
 }));
 
@@ -283,26 +353,33 @@ router.put('/samples/:id', requireAuth, requirePage('samples'), asyncRoute(async
     'SELECT id FROM sample_styles WHERE style_id = ? AND id <> ?', [v.style_id, id]);
   if (dup) throw httpError(409, `Sample Style ID "${v.style_id}" already exists`);
 
-  const existing = await db.one('SELECT sheet_row FROM sample_styles WHERE id = ?', [id]);
+  const existing = await db.one(`SELECT sheet_row, ${COLS.join(', ')} FROM sample_styles WHERE id = ?`, [id]);
   if (!existing) throw httpError(404, 'Sample style not found');
 
-  await db.query(
-    `UPDATE sample_styles SET ${COLS.map(c => c + ' = ?').join(', ')} WHERE id = ?`,
-    [...COLS.map(c => v[c]), id]);
+  // A save that changed nothing leaves the last editor and the history alone.
+  const changes = await changesOf(existing, v);
+  if (changes.length) {
+    const who = await whoAmI(req);
+    await db.query(
+      `UPDATE sample_styles SET ${COLS.map(c => c + ' = ?').join(', ')}, updated_by_name = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?`,
+      [...COLS.map(c => v[c]), who, id]);
+    await logChange(id, v.style_id, 'edited', changes, req, who);
+  }
 
   const sheet = await writeRow(existing.sheet_row || null, v);
   if (sheet.ok && sheet.row !== existing.sheet_row) {
-    await db.query('UPDATE sample_styles SET sheet_row=? WHERE id=?', [sheet.row, id]);
+    await db.query('UPDATE sample_styles SET sheet_row=?, updated_at=updated_at WHERE id=?', [sheet.row, id]);
   }
   res.json({ ok: true, sheet });
 }));
 
 router.delete('/samples/:id', requireAuth, requirePage('samples'), asyncRoute(async (req, res) => {
   const id = Number(req.params.id);
-  const existing = await db.one('SELECT sheet_row FROM sample_styles WHERE id = ?', [id]);
+  const existing = await db.one('SELECT sheet_row, style_id FROM sample_styles WHERE id = ?', [id]);
   if (!existing) throw httpError(404, 'Sample style not found');
 
   await db.query('DELETE FROM sample_styles WHERE id = ?', [id]);
+  await logChange(id, existing.style_id, 'deleted', null, req, await whoAmI(req));
 
   // The sheet line is cleared, not removed. Deleting the row would shift every
   // row under it up by one, and every other style's sheet_row would then point
@@ -322,4 +399,37 @@ router.delete('/samples/:id', requireAuth, requirePage('samples'), asyncRoute(as
   res.json({ ok: true });
 }));
 
+// ── Internal costing from Bunai Product Cost ─────────
+// A Bunai product's selling price is the style's internal costing: saving the
+// product writes it onto the style with the same id ("BUNA-IH 268" matches
+// "BUNA-IH-268"), into the history and the client's sheet as a save here would.
+// No style with that id, no price yet, or the same price already: nothing.
+// Never throws - the product saved, and that is what the person asked for.
+async function setInternalFromCost(sku, selling, who, userId) {
+  try {
+    const k = styleKey(sku);
+    if (!k || selling == null || !Number.isFinite(Number(selling))) return null;
+    const all = await db.rows('SELECT id, style_id FROM sample_styles');
+    const hit = all.find(s => styleKey(s.style_id) === k);
+    if (!hit) return null;
+    const before = await db.one(`SELECT sheet_row, ${COLS.join(', ')} FROM sample_styles WHERE id = ?`, [hit.id]);
+    const after = { ...before, costing_us: Math.round(Number(selling) * 100) / 100 };
+    const changes = await changesOf(before, after);
+    if (!changes.length) return null;
+    changes.forEach(c => { c.label += ' (from Bunai Product Cost)'; });
+    await db.query('UPDATE sample_styles SET costing_us = ?, updated_by_name = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
+      [after.costing_us, who, hit.id]);
+    await logChange(hit.id, before.style_id, 'edited', changes, { session: { userId } }, who);
+    const sheet = await writeRow(before.sheet_row || null, after);
+    if (sheet.ok && sheet.row !== before.sheet_row) {
+      await db.query('UPDATE sample_styles SET sheet_row=?, updated_at=updated_at WHERE id=?', [sheet.row, hit.id]);
+    }
+    return { style_id: before.style_id, from: before.costing_us == null ? null : Number(before.costing_us), to: after.costing_us };
+  } catch (err) {
+    console.error('⚠️ Internal costing from Bunai Product Cost failed:', err.message);
+    return null;
+  }
+}
+
 module.exports = router;
+module.exports.setInternalFromCost = setInternalFromCost;

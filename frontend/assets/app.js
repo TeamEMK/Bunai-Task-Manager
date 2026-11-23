@@ -12083,7 +12083,7 @@ async function loadMulmulCosts() {
   const bun = mcBunai();
   const cols = bun ? 7 : 8;
   document.getElementById('mcHead').innerHTML = '<tr><th>SKU</th><th>Category</th><th style="text-align:right">Cost lines</th>'
-    + (bun ? '<th style="text-align:right">Total (&#8377;)</th><th style="text-align:right">Selling price (&#8377;)</th>'
+    + (bun ? '<th style="text-align:right">Total (&#8377;)</th><th style="text-align:right">Internal price (&#8377;)</th>'
            : '<th style="text-align:right">Internal costing (&#8377;)</th><th style="text-align:right">Vendor costing (&#8377;)</th>'
              + '<th style="text-align:right">Final costing (&#8377;)</th>')
     + '<th>Last updated</th><th></th></tr>';
@@ -12334,7 +12334,8 @@ async function mcSave(btn) {
     const r = id ? await api('/api/mulmul-costs/' + id, 'PUT', body) : await api('/api/mulmul-costs', 'POST', body);
     if (r.error) { err.textContent = r.error; err.style.display = 'block'; return; }
     closeModal('mcModal');
-    showToast('✅ Saved');
+    // A Bunai product's selling price also became its sample style's internal costing.
+    showToast(r.sample ? '✅ Saved · ' + r.sample.style_id + ' internal costing set to ₹' + Number(r.sample.to).toLocaleString('en-IN') + ' in Sample Style MIS' : '✅ Saved');
     loadMulmulCosts();
   } finally { done(); }
 }
@@ -12662,7 +12663,7 @@ async function loadSamples() {
   try {
     d = await api('/api/samples?q=' + encodeURIComponent(q) + '&status=' + encodeURIComponent(status));
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="14" class="empty">Could not load styles — '
+    body.innerHTML = '<tr><td colspan="16" class="empty">Could not load styles — '
       + dtEscape(e.message || 'error') + '</td></tr>';
     return;
   }
@@ -12690,10 +12691,11 @@ async function loadSamples() {
 // [key, label, type, right-aligned]; type is text (contains, or picked values),
 // money (between) or list (picked values).
 const SAMPLE_COLS = [
-  ['style_id', 'Style ID', 'text'], ['vendor_name', 'Vendor name', 'text'], ['kurta_fabric', 'Kurta', 'text'], ['pant_fabric', 'Pant', 'text'],
+  ['style_id', 'Style ID', 'text'], ['vendor_name', 'Vendor name', 'text'], ['vendor_company', 'Vendor company', 'text'], ['kurta_fabric', 'Kurta', 'text'], ['pant_fabric', 'Pant', 'text'],
   ['dupatta_fabric', 'Dupatta', 'text'], ['has_lining', 'Lining', 'list'], ['status', 'Status', 'list'],
   ['costing_us', 'Internal', 'money', 1], ['costing_vendor', 'Vendor', 'money', 1], ['final_costing', 'Final', 'money', 1],
   ['price_website', 'Website', 'money', 1], ['price_myntra', 'Myntra', 'money', 1], ['price_wholesale', 'Wholesale', 'money', 1],
+  ['updated_by_name', 'Last edited', 'text'],
 ];
 let _sampleAll = [];
 let _sampleVendors = [];
@@ -12757,7 +12759,7 @@ function sampleRender() {
   if (!_sampleRows.length) {
     const q = (document.getElementById('sampleSearch').value || '').trim();
     const status = document.getElementById('sampleFilter').value;
-    body.innerHTML = '<tr><td colspan="14" class="empty">'
+    body.innerHTML = '<tr><td colspan="16" class="empty">'
       + (q || status || n ? 'No styles match that.' : 'No sample styles yet — add the first one.')
       + '</td></tr>';
     return;
@@ -12775,14 +12777,18 @@ function sampleRender() {
     const num = v => '<td style="text-align:right">' + sampleMoney(v) + '</td>';
     // The whole row opens the style; the photo link and buttons do their own thing.
     // The vendor opens on the Vendor Name page, for whoever may see that page.
-    const vendor = !r.vendor_name ? '—'
+    // The vendor's company opens the same details.
+    const vendorLink = (text) => !text ? '—'
       : hasPage('vendors') && r.vendor_ref
         ? '<a href="' + pagePath('vendors') + '" onclick="event.stopPropagation();sampleOpenVendor(' + r.vendor_ref + ');return false"'
-          + ' title="Open this vendor\'s details" style="color:var(--brand-deep);font-weight:600">' + dtEscape(r.vendor_name) + '</a>'
-        : dtEscape(r.vendor_name);
+          + ' title="Open this vendor\'s details" style="color:var(--brand-deep);font-weight:600">' + dtEscape(text) + '</a>'
+        : dtEscape(text);
+    const vendor = vendorLink(r.vendor_name);
+    const company = vendorLink(r.vendor_company);
     return '<tr onclick="sampleOpen(' + r.id + ')" style="cursor:pointer" title="Click to see this style">'
       + '<td style="font-weight:600;white-space:nowrap">' + id + '</td>'
       + '<td style="white-space:nowrap">' + vendor + '</td>'
+      + '<td>' + company + '</td>'
       + '<td>' + dtEscape(r.kurta_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.pant_fabric || '—') + '</td>'
       + '<td>' + dtEscape(r.dupatta_fabric || '—') + '</td>'
@@ -12790,6 +12796,10 @@ function sampleRender() {
       + '<td>' + badge + '</td>'
       + num(r.costing_us) + num(r.costing_vendor) + num(r.final_costing)
       + num(r.price_website) + num(r.price_myntra) + num(r.price_wholesale)
+      + '<td style="white-space:nowrap;font-size:12.5px" onclick="event.stopPropagation()">'
+      + '<a href="#" onclick="sampleHistory(' + r.id + ');return false" title="See who changed what" style="color:var(--brand-deep)">'
+      + (r.updated_by_name ? '<b>' + dtEscape(r.updated_by_name) + '</b>' : '<span style="color:var(--faint)">—</span>')
+      + '<div style="font-size:11px;color:var(--muted-foreground)">' + dtEscape(r.updated || '') + '</div></a></td>'
       + '<td style="white-space:nowrap" onclick="event.stopPropagation()">'
       + '<button class="btn btn-sm" onclick="sampleOpen(' + r.id + ')">Edit</button> '
       + '<button class="btn btn-sm btn-outline" onclick="sampleDelete(' + r.id + ')">Delete</button>'
@@ -13324,7 +13334,39 @@ function sampleOpen(id) {
     ? 'From the Vendor Name list of ' + r.vendor_name + ' - save to keep it on the style.'
     : _sampleVendors.length ? '' : 'Add vendors on the Vendor Name page to pick one here.';
   sampleLiningChanged();
+  const meta = document.getElementById('sampleMeta');
+  meta.innerHTML = r
+    ? 'Last edited ' + dtEscape(r.updated || '') + (r.updated_by_name ? ' by <b>' + dtEscape(r.updated_by_name) + '</b>' : '')
+      + ' · <a href="#" onclick="sampleHistory(' + r.id + ');return false" style="color:var(--brand-deep)">See history</a>'
+    : '';
+  meta.style.display = r ? '' : 'none';
   document.getElementById('sampleModal').classList.add('open');
+}
+
+// Who changed a style, when, and which fields - from the server's log.
+let _sampleHistSeq = 0;
+async function sampleHistory(id) {
+  const seq = ++_sampleHistSeq;
+  const r = _sampleAll.find(x => x.id === id);
+  const body = document.getElementById('sampleHistBody');
+  document.getElementById('sampleHistTitle').textContent = 'History · ' + (r ? r.style_id : 'style');
+  body.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('sampleHistModal').classList.add('open');
+  let d;
+  try { d = await api('/api/samples/' + id + '/history'); } catch (e) { d = { error: e.message || 'error' }; }
+  if (seq !== _sampleHistSeq) return;
+  if (d.error) { body.innerHTML = '<div class="empty">Could not load — ' + dtEscape(d.error) + '</div>'; return; }
+  const val = (v) => v ? dtEscape(v) : '<span style="color:var(--faint)">blank</span>';
+  const what = { added: 'Added the style', edited: 'Edited', deleted: 'Deleted the style' };
+  body.innerHTML = d.rows.length ? d.rows.map(h =>
+    '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
+    + '<div style="font-size:13px"><b>' + dtEscape(h.by || 'Someone') + '</b> · ' + (what[h.action] || dtEscape(h.action))
+    + '<span style="float:right;font-size:12px;color:var(--muted-foreground)">' + dtEscape(h.at) + '</span></div>'
+    + (h.changes.length ? '<ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.7">'
+      + h.changes.map(c => '<li><b>' + dtEscape(c.label) + ':</b> ' + val(c.from) + ' → ' + val(c.to) + '</li>').join('') + '</ul>' : '')
+    + '</div>').join('')
+    : '<div class="empty">No changes recorded yet. The history starts from today - edits made before it were not written down'
+      + (r && r.updated ? ' (last saved ' + dtEscape(r.updated) + ')' : '') + '.</div>';
 }
 
 // -- Sample photo: pick from the device, shrink in the browser, store as a link --

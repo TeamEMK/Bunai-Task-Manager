@@ -25,6 +25,7 @@ const google = require('../services/google');
 const { db } = require('../db/pool');
 const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
+const { setInternalFromCost } = require('./samples.routes');
 
 const router = express.Router();
 
@@ -188,6 +189,16 @@ async function whoAmI(req) {
   return (me && me.name) || req.session.name || '';
 }
 
+// A Bunai product's selling price, worked as the list works it (the lines'
+// total, then overhead, then profit), goes to the Sample Style MIS internal
+// costing of the style with the same id. Mulmul has no such link.
+async function toSampleInternal(brand, p, name, userId) {
+  if (brand !== 'bunai') return null;
+  const priced = p.lines.filter(l => l.amount != null);
+  const total = priced.length ? round2(priced.reduce((s, l) => s + l.amount, 0)) : null;
+  return setInternalFromCost(p.sku, priceUp(total, p).selling, name, userId);
+}
+
 router.post('/mulmul-costs', requireAuth, byBody, asyncRoute(async (req, res) => {
   const p = fromBody(req.body || {}, req.costBrand);
   const taken = await skuTaken(p.sku);
@@ -200,7 +211,7 @@ router.post('/mulmul-costs', requireAuth, byBody, asyncRoute(async (req, res) =>
     [req.costBrand, p.sku, p.category, p.vendor_cost, p.final_cost, p.overhead, p.overhead_type, p.profit, p.profit_type,
      p.gst_rate, p.image_url, req.session.userId, name]);
   await writeLines(ins.insertId, p.lines);
-  res.json({ id: ins.insertId });
+  res.json({ id: ins.insertId, sample: await toSampleInternal(req.costBrand, p, name, req.session.userId) });
 }));
 
 router.put('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) => {
@@ -209,13 +220,14 @@ router.put('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) 
   const p = fromBody(req.body || {}, req.costBrand);
   const taken = await skuTaken(p.sku, id);
   if (taken) throw httpError(409, taken);
+  const name = await whoAmI(req);
   await db.query(
     `UPDATE mulmul_costs SET sku=?, category=?, vendor_cost=?, final_cost=?, overhead=?, overhead_type=?, profit=?, profit_type=?,
             gst_rate=?, image_url=?, updated_by_name=?, updated_at=UTC_TIMESTAMP() WHERE id=?`,
     [p.sku, p.category, p.vendor_cost, p.final_cost, p.overhead, p.overhead_type, p.profit, p.profit_type,
-     p.gst_rate, p.image_url, await whoAmI(req), id]);
+     p.gst_rate, p.image_url, name, id]);
   await writeLines(id, p.lines);
-  res.json({ success: true });
+  res.json({ success: true, sample: await toSampleInternal(req.costBrand, p, name, req.session.userId) });
 }));
 
 // The product photo: to the client's Drive folder, the link kept on the product,
@@ -245,3 +257,5 @@ router.delete('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, re
 }));
 
 module.exports = router;
+module.exports.toSampleInternal = toSampleInternal;
+module.exports.priceUp = priceUp;

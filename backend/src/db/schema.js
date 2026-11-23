@@ -1240,6 +1240,20 @@ const TABLES = [
       KEY idx_sample_status (status),
       KEY idx_sample_updated (updated_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Who changed a sample style, when, and what: one row a save, the fields
+  // that changed as JSON [{ field, label, from, to }], written as the page
+  // shows them (vendor by name, money as typed). Kept after a style is deleted.
+  ['sample_style_log', `CREATE TABLE sample_style_log (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      sample_id   INT NOT NULL,
+      style_id    VARCHAR(120) NOT NULL DEFAULT '',
+      action      VARCHAR(10) NOT NULL DEFAULT 'edited',
+      changes     TEXT NULL,
+      user_id     INT NULL,
+      user_name   VARCHAR(120) NOT NULL DEFAULT '',
+      at          DATETIME NOT NULL,
+      KEY idx_ssl_sample (sample_id, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // The live sync's own log. The history import does not write here — it runs
   // by hand, once, and says what it did on the console.
   ['sfy_order_sync_log', `CREATE TABLE sfy_order_sync_log (
@@ -1307,6 +1321,8 @@ const COLUMNS = [
   ['sample_styles', 'price_wholesale', `DECIMAL(12,2) DEFAULT NULL AFTER price_myntra`],
   // The vendor making the style, from the Vendor Name book. App only, as above.
   ['sample_styles', 'vendor_id', `INT NULL AFTER price_wholesale`],
+  // Who saved the style last, for the Last edited column; the history is in sample_style_log.
+  ['sample_styles', 'updated_by_name', `VARCHAR(120) NOT NULL DEFAULT '' AFTER created_by`],
   // The same details on a prospect, so they are written down before the first order.
   // The content calendar became one per brand; everything before was Bunai's.
   ['content_calendar_months', 'brand', `VARCHAR(20) NOT NULL DEFAULT 'bunai' FIRST`],
