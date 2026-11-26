@@ -26,7 +26,6 @@ const { db } = require('../db/pool');
 const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { setInternalFromCost } = require('./samples.routes');
-const productCostPdf = require('../services/productCostPdf');
 
 const router = express.Router();
 
@@ -185,31 +184,30 @@ router.get('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) 
     lines: lines.map(l => ({ ...l, qty: money(l.qty), rate: money(l.rate), amount: money(l.amount) })) });
 }));
 
-// A Bunai product's cost sheet as a PDF on the letterhead, for use inside Bunai:
-// lines, overhead, profit and internal price, worked as the page works them.
-// Mulmul has no download.
-router.get('/mulmul-costs/:id/pdf', requireAuth, byRow, asyncRoute(async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const c = await db.one(`SELECT id, sku, category, brand, overhead, overhead_type, profit, profit_type, image_url,
-                                 ${IST('updated_at')} AS updated, updated_by_name
-                            FROM mulmul_costs WHERE id = ?`, [id]);
-  if (!c) throw httpError(404, 'That product is no longer on the list.');
-  if (c.brand !== 'bunai') throw httpError(400, 'Only Bunai products have a cost sheet to download.');
-  const lines = (await db.rows(
-    'SELECT component, material, qty, rate, amount FROM mulmul_cost_lines WHERE cost_id = ? ORDER BY position, id', [id]))
-    .map(l => ({ ...l, qty: money(l.qty), rate: money(l.rate), amount: money(l.amount) }));
-  const priced = lines.filter(l => l.amount != null);
-  const total = priced.length ? round2(priced.reduce((s, l) => s + l.amount, 0)) : null;
-  const sheet = {
-    ...c, overhead: money(c.overhead), profit: money(c.profit), lines,
-    price: { total, ...priceUp(total, c) },
-    photo: await productCostPdf.photoOf(c.image_url),
-    today: new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10),
-  };
-  const pdf = await productCostPdf.render(sheet);
-  res.set('Content-Type', 'application/pdf');
-  res.set('Content-Disposition', 'attachment; filename="' + productCostPdf.fileName(c).replace(/[^\w. -]/g, '_') + '"');
-  res.send(pdf);
+// The product photo from this site, for the cost sheet the browser turns into a
+// PDF: a picture straight from Drive cannot be drawn into the page's PDF (Drive
+// sends no cross-site permission), one from here can. Drive's thumbnail of the
+// uploaded photo - about 60 KB in a second; the full upload took six.
+router.get('/mulmul-costs/:id/photo', requireAuth, byRow, asyncRoute(async (req, res) => {
+  const c = await db.one('SELECT image_url FROM mulmul_costs WHERE id = ?', [parseInt(req.params.id, 10)]);
+  const url = (c && c.image_url) || '';
+  const fileId = (/\/d\/([\w-]{20,})/.exec(url) || /[?&]id=([\w-]{20,})/.exec(url) || [])[1];
+  if (!fileId) throw httpError(404, 'This product has no photo.');
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 6000);
+  try {
+    const r = await fetch('https://drive.google.com/thumbnail?id=' + fileId + '&sz=w600', { signal: stop.signal, redirect: 'follow' });
+    const type = r.headers.get('content-type') || '';
+    if (!r.ok || !/^image\//.test(type)) throw httpError(502, 'Could not fetch the photo from Drive.');
+    res.set('Content-Type', type);
+    res.set('Cache-Control', 'private, max-age=600');
+    res.send(Buffer.from(await r.arrayBuffer()));
+  } catch (e) {
+    if (e.status) throw e;
+    throw httpError(502, 'Could not fetch the photo from Drive: ' + (e.message || e));
+  } finally {
+    clearTimeout(timer);
+  }
 }));
 
 async function whoAmI(req) {

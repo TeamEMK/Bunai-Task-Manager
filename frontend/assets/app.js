@@ -12554,8 +12554,145 @@ async function mcSave(btn) {
   } finally { done(); }
 }
 
-// A Bunai product's cost sheet as a PDF on the letterhead (inside Bunai only).
-const mcDownload = (id, btn) => downloadPdf('/api/mulmul-costs/' + id + '/pdf', btn, 'Cost Sheet.pdf', 'Could not make the cost sheet');
+// ── Bunai product cost: the form, downloaded as it looks ──
+// The client wants the PDF to be the product's own page, same to same (26 Nov
+// 2026): every particular in the sheet's order, empty ones too, then total,
+// overhead, total before profit, profit, internal price and the photo. So the
+// page is laid out again from the saved product, off screen, in the app's own
+// styles, and photographed into an A4 PDF in the browser. The two libraries
+// load only when someone downloads.
+const MC_PDF_LIBS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+];
+let _mcPdfLibs = null;
+function mcLoadPdfLibs() {
+  if (!_mcPdfLibs) {
+    _mcPdfLibs = Promise.all(MC_PDF_LIBS.map(src => new Promise((ok, no) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = ok;
+      s.onerror = () => no(new Error('could not load ' + src.split('/').pop()));
+      document.head.appendChild(s);
+    }))).catch(e => { _mcPdfLibs = null; throw e; });
+  }
+  return _mcPdfLibs;
+}
+
+// The lines in the order the form shows them: each of Bunai's particulars with
+// every line it has (an empty one where it has none), then the Other lines.
+function mcSheetRows(p) {
+  const saved = (p.lines || []).slice();
+  const out = [];
+  MC_FIXED_BRAND.bunai.forEach(c => {
+    const mine = saved.filter(l => l.component === c);
+    mine.forEach(l => saved.splice(saved.indexOf(l), 1));
+    (mine.length ? mine : [{ component: c }]).forEach(l => out.push(l));
+  });
+  (saved.length ? saved : [{ component: 'Other' }]).forEach(l => out.push(l));
+  return out;
+}
+
+function mcSheetHtml(p, photo) {
+  const e = dtEscape;
+  const box = (v, o = {}) => '<div class="mcp-box' + (o.ro ? ' ro' : '') + '" style="' + (o.right ? 'text-align:right;' : '') + (o.css || '') + '">'
+    + (v === '' || v == null ? '&nbsp;' : e(String(v))) + '</div>';
+  const field = (label, inner, note) => '<div class="mcp-field"><div class="mcp-label">' + label + '</div>' + inner
+    + (note ? '<div class="mcp-note">' + note + '</div>' : '') + '</div>';
+  let total = 0, any = false;
+  const rows = mcSheetRows(p).map(l => {
+    const a = l.amount != null ? Number(l.amount) : (l.qty != null && l.rate != null ? mcR2(l.qty * l.rate) : null);
+    if (a != null) { total += a; any = true; }
+    return '<tr><td class="mcp-comp">' + e(l.component || 'Other') + '</td>'
+      + '<td>' + box(l.material || '') + '</td>'
+      + '<td>' + box(l.qty == null ? '' : l.qty, { right: 1 }) + '</td>'
+      + '<td>' + box(l.rate == null ? '' : l.rate, { right: 1 }) + '</td>'
+      + '<td class="mcp-amt">' + mcInr(a) + '</td></tr>';
+  }).join('');
+  total = mcR2(total);
+  // Overhead on the total, profit on the total with its overhead - as the form works it.
+  const part = (v, t, base) => (v == null ? 0 : mcR2(t === 'pct' ? base * v / 100 : v));
+  const overhead = part(p.overhead, p.overhead_type, total);
+  const before = mcR2(total + overhead);
+  const profit = part(p.profit, p.profit_type, before);
+  const sign = (t) => (t === 'amt' ? '₹' : '%');
+  const withType = (v, t, amt) => '<div style="display:flex;gap:6px">' + box(v == null ? '' : v, { css: 'flex:1' })
+    + box(sign(t), { css: 'width:60px;text-align:center' }) + '</div>'
+    + (v != null && t === 'pct' ? '<div class="mcp-note">= ' + mcInr(amt) + '</div>' : '');
+  return '<div class="mcp">'
+    + '<div class="mcp-title">' + e(p.sku) + ' · Bunai product cost</div>'
+    + '<div class="mcp-grid2">' + field('SKU', box(p.sku)) + field('Category', box(p.category || '')) + '</div>'
+    + '<table class="mcp-table"><thead><tr><th style="width:190px">Particular</th><th>Fabric</th>'
+    + '<th style="width:100px;text-align:right">Quantity</th><th style="width:110px;text-align:right">Rate (₹)</th>'
+    + '<th style="width:120px;text-align:right">Amount (₹)</th></tr></thead><tbody>' + rows + '</tbody>'
+    + '<tfoot><tr><td colspan="4" style="text-align:right;font-weight:700">Total</td><td class="mcp-amt" style="font-size:15px;font-weight:800">' + (any ? mcInr(total) : '—') + '</td></tr></tfoot></table>'
+    + '<div class="mcp-grid3">'
+    + field('Total (₹)', box(any ? mcInr(total) : '', { ro: 1, css: 'font-weight:700' }))
+    + field('Overhead', withType(p.overhead, p.overhead_type, overhead))
+    + field('Total before profit (₹)', box(any ? mcInr(before) : '', { ro: 1, css: 'font-weight:700' }), 'Total + overhead. The profit is worked on this.')
+    + field('Profit', withType(p.profit, p.profit_type, profit))
+    + field('Internal Price (₹)', box(any ? mcInr(mcR2(before + profit)) : '', { ro: 1, css: 'font-weight:800;color:var(--brand-deep)' }))
+    + field('Image', photo ? '<img src="' + photo + '" alt="" style="max-width:100%;max-height:220px;border:1px solid var(--border);border-radius:8px;object-fit:contain"/>' : '<div class="mcp-note">No photo</div>')
+    + '</div>'
+    + (p.updated ? '<div class="mcp-note" style="margin-top:10px">Last updated ' + e(p.updated) + (p.updated_by_name ? ' by ' + e(p.updated_by_name) : '') + '</div>' : '')
+    + '</div>';
+}
+
+// The product photo from this site (Drive's own address cannot be drawn into the PDF).
+async function mcPhotoBlobUrl(id) {
+  try {
+    const token = localStorage.getItem('authToken');
+    const r = await fetch('/api/mulmul-costs/' + id + '/photo', { credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {} });
+    if (!r.ok) return '';
+    return URL.createObjectURL(await r.blob());
+  } catch (_) { return ''; }
+}
+
+async function mcDownload(id, btn) {
+  const done = hrmBusy(btn, 'Preparing…');
+  let host = null, photo = '';
+  try {
+    const [p] = await Promise.all([api('/api/mulmul-costs/' + id), mcLoadPdfLibs()]);
+    if (p.error) return showToast('⚠️ ' + p.error, 'error');
+    if (p.image_url) photo = await mcPhotoBlobUrl(id);
+    host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-12000px;top:0;width:1100px;background:#fff';
+    host.innerHTML = mcSheetHtml(p, photo);
+    document.body.appendChild(host);
+    await Promise.all([...host.querySelectorAll('img')].map(i => (i.decode ? i.decode().catch(() => {}) : null)));
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const sheet = host.firstElementChild;
+    const scale = 2;
+    const canvas = await window.html2canvas(sheet, { scale, backgroundColor: '#ffffff', logging: false });
+    // A4 with an 8 mm edge; a page breaks between rows, never through one.
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const edge = 8, pageW = 210 - edge * 2, pageH = 297 - edge * 2;
+    const pxPerMm = canvas.width / pageW, sliceMax = Math.floor(pageH * pxPerMm);
+    const top0 = sheet.getBoundingClientRect().top;
+    const breaks = [...sheet.querySelectorAll('tr, .mcp-grid3, .mcp-field')]
+      .map(el => Math.round((el.getBoundingClientRect().top - top0) * scale)).filter(v => v > 0).sort((a, b) => a - b);
+    for (let y = 0, n = 0; y < canvas.height; n++) {
+      let end = Math.min(y + sliceMax, canvas.height);
+      if (end < canvas.height) {
+        const fit = breaks.filter(b => b > y + sliceMax * 0.5 && b <= end);
+        if (fit.length) end = fit[fit.length - 1];
+      }
+      const part = document.createElement('canvas');
+      part.width = canvas.width; part.height = end - y;
+      part.getContext('2d').drawImage(canvas, 0, y, canvas.width, end - y, 0, 0, canvas.width, end - y);
+      if (n) pdf.addPage();
+      pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', edge, edge, pageW, (end - y) / pxPerMm);
+      y = end;
+    }
+    pdf.save((String(p.sku || 'Product').replace(/[^\w \-.]/g, '').trim() || 'Product') + ' - Cost Sheet.pdf');
+  } catch (err) {
+    showToast('⚠️ Could not make the cost sheet: ' + (err.message || err), 'error');
+  } finally {
+    if (host) host.remove();
+    if (photo) URL.revokeObjectURL(photo);
+    done();
+  }
+}
 
 async function mcDelete(id) {
   const r0 = MC.rows.find(r => r.id === id);

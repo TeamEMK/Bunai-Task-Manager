@@ -2416,6 +2416,20 @@
 </div>
 
 <style>
+  /* Bunai product cost, laid out off screen for its PDF (mcSheetHtml) - the form's look, without the controls. */
+  .mcp { padding:28px 30px; background:#fff; color:var(--foreground); font-size:14px; }
+  .mcp-title { font-size:20px; font-weight:700; margin-bottom:16px; }
+  .mcp-label { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted-foreground); margin-bottom:6px; }
+  .mcp-box { border:1px solid var(--border); border-radius:8px; padding:8px 11px; background:#fff; min-height:36px; line-height:18px; }
+  .mcp-box.ro { background:#f1f5f9; }
+  .mcp-note { font-size:11.5px; color:var(--faint); margin-top:4px; }
+  .mcp-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px; }
+  .mcp-grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:16px; }
+  .mcp-table { width:100%; border-collapse:collapse; }
+  .mcp-table th { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted-foreground); text-align:left; padding:10px 8px; background:var(--muted); }
+  .mcp-table td { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  .mcp-comp { font-weight:600; }
+  .mcp-amt { text-align:right; font-weight:700; white-space:nowrap; }
   #ccGrid th, #ccGrid td { vertical-align: top; font-size: 12.5px; }
   /* A line between every channel and every day, as in a sheet, so a cell's
      plan never reads as the next column's. The date column is sticky, and a
