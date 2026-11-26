@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
-    { "src": "backend/server.js", "use": "@vercel/node", "config": { "includeFiles": "frontend/**" } }
+    { "src": "backend/server.js", "use": "@vercel/node", "config": { "includeFiles": ["frontend/**", "node_modules/pdfkit/js/standard-fonts/*.cjs"] } }
   ],
   "routes": [
     { "src": "/(.*)", "dest": "backend/server.js" }
