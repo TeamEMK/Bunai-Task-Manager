@@ -10352,17 +10352,21 @@ async function vpoSave(btn) {
 }
 
 // The PO as a PDF on the letterhead, saved as "BUN-PO-0012 - Harsh.pdf".
-async function vpoDownload(id, btn) {
+const vpoDownload = (id, btn) => downloadPdf('/api/vendor-pos/' + id + '/pdf', btn, 'PO.pdf', 'Could not make the PO');
+
+// A PDF from the server saved under the name the server gives it. Fetched
+// rather than linked, so a login held as a token (not a cookie) still counts.
+async function downloadPdf(url, btn, fallbackName, failMsg) {
   const done = hrmBusy(btn, 'Preparing…');
   try {
     const token = localStorage.getItem('authToken');
-    const res = await fetch('/api/vendor-pos/' + id + '/pdf', { credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {} });
+    const res = await fetch(url, { credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {} });
     if (!res.ok) {
-      let msg = 'Could not make the PO';
+      let msg = failMsg || 'Could not make the PDF';
       try { msg = (await res.json()).error || msg; } catch (_) { /* not JSON */ }
       return showToast('⚠️ ' + msg, 'error');
     }
-    const name = (/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '') || [])[1] || 'PO.pdf';
+    const name = (/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '') || [])[1] || fallbackName;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(await res.blob());
     a.download = name;
@@ -12319,6 +12323,7 @@ async function loadMulmulCosts() {
         + '<td style="text-align:right;font-weight:700;color:var(--brand-deep)">' + mcInr(r.final_cost) + '</td>')
     + '<td style="font-size:12.5px;color:var(--muted-foreground)">' + dtEscape(r.updated || '') + (r.updated_by_name ? '<div style="font-size:11px">by ' + dtEscape(r.updated_by_name) + '</div>' : '') + '</td>'
     + '<td style="white-space:nowrap" onclick="event.stopPropagation()">'
+    + (bun ? '<button class="btn btn-sm btn-outline" style="font-weight:700;color:var(--brand-deep)" onclick="mcDownload(' + r.id + ', this)" title="The cost sheet as a PDF, for use inside Bunai">⬇ Download</button> ' : '')
     + '<button class="btn btn-sm" onclick="mcOpen(' + r.id + ')">Edit</button> '
     + '<button class="btn btn-sm btn-outline" onclick="mcOpen(' + r.id + ', true)" title="Start a new product from this one">Copy</button> '
     + '<button class="btn btn-sm btn-outline" onclick="mcDelete(' + r.id + ')">Delete</button>'
@@ -12507,6 +12512,11 @@ async function mcOpen(id, copy) {
   const rest = saved;
   (rest.length ? rest : [{ component: 'Other' }]).forEach(l => mcAddLine(l));
   if (p && !copy && p.updated) document.getElementById('mcMeta').textContent = 'Last updated ' + p.updated + (p.updated_by_name ? ' by ' + p.updated_by_name : '');
+  // A saved Bunai product can be downloaded as it was last saved.
+  const dl = document.getElementById('mcDlBtn');
+  const canDl = !!(p && !copy && mcBunai());
+  dl.style.display = canDl ? '' : 'none';
+  dl.onclick = canDl ? () => mcDownload(p.id, dl) : null;
   document.getElementById('mcModal').classList.add('open');
   document.getElementById(p && !copy ? 'mcCategory' : 'mcSku').focus();
 }
@@ -12543,6 +12553,9 @@ async function mcSave(btn) {
     loadMulmulCosts();
   } finally { done(); }
 }
+
+// A Bunai product's cost sheet as a PDF on the letterhead (inside Bunai only).
+const mcDownload = (id, btn) => downloadPdf('/api/mulmul-costs/' + id + '/pdf', btn, 'Cost Sheet.pdf', 'Could not make the cost sheet');
 
 async function mcDelete(id) {
   const r0 = MC.rows.find(r => r.id === id);

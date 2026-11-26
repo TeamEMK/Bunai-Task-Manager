@@ -9,73 +9,21 @@
 // Quantities only - nothing on a PO to a vendor carries a price. A long PO
 // runs onto more pages, the table's header repeated at the top of each.
 // ══════════════════════════════════════════════════════
-const fs = require('fs');
-const path = require('path');
-const PDFDocument = require('pdfkit');
-const config = require('../config');
-const { letterhead, ART_RATIO, ART_INK, COMPANY } = require('./offerLetter');
+const page = require('./letterheadPdf');
 
-// The logo for the watermark, read once. Missing, the PO goes out without one.
-let _logo;
-function logo() {
-  if (_logo === undefined) {
-    try { _logo = fs.readFileSync(path.join(config.publicDir, 'bunai-logo.png')); } catch (_) { _logo = null; }
-  }
-  return _logo;
-}
-
-const PINK = '#F2A9AF';        // the letterhead's pink, a shade deeper so type on white reads
-const PINK_FILL = '#F5B8BC';   // the table header, as the letterhead band
-const INK = '#333333';
-const QUIET = '#555555';
-const LINE = '#D9D9D9';
-const FONT = 'Helvetica';
-const BOLD = 'Helvetica-Bold';
-const M = 44;                  // side margin, as the design has it
+const { PINK, PINK_FILL, INK, QUIET, LINE, FONT, BOLD, M } = page.STYLE;
+const { longDate } = page;
 
 // Written when the PO has no notes of its own - the two lines of the design.
 const DEFAULT_NOTES = ['Deliver as per the approved sample.', 'Mention the PO number on the delivery challan.'];
 
 const qtyText = (v) => (v == null || v === '' ? '-' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 }));
-// "2026-11-26" -> "26 Nov 2026", read as a calendar day, never through a timezone.
-function longDate(ymd) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ''));
-  if (!m) return String(ymd || '');
-  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return Number(m[3]) + ' ' + MON[Number(m[2]) - 1] + ' ' + m[1];
-}
 
 // po: { po_no, po_date, vendor_name, vendor_company, vendor_address, vendor_phone, notes, total_qty, lines: [...] }
 function build(po) {
-  const art = letterhead();
-  const PAGE_W = 595.28;
-  const bandTop = art ? PAGE_W * ART_RATIO.top : 0;
-  const bandBottom = art ? PAGE_W * ART_RATIO.bottom : 0;
-  const top = art ? Math.round(bandTop * ART_INK.top) + 6 : M;
-  const bottom = art ? Math.round(bandBottom * (1 - ART_INK.bottom)) + 34 : M;
-
-  const doc = new PDFDocument({
-    size: 'A4',
-    margins: { top, bottom, left: M, right: M },
-    info: { Title: 'Purchase Order ' + (po.po_no || ''), Author: COMPANY, Subject: 'Purchase Order to ' + (po.vendor_name || '') },
+  const { doc, pw, W, top, limit } = page.open({
+    title: 'Purchase Order ' + (po.po_no || ''), subject: 'Purchase Order to ' + (po.vendor_name || ''),
   });
-  const pw = doc.page.width, ph = doc.page.height;
-  const W = pw - M * 2;
-  const limit = () => ph - doc.page.margins.bottom;
-
-  const dressPage = () => {
-    if (!art) {
-      doc.font(BOLD).fontSize(16).fillColor(INK).text(COMPANY.toUpperCase(), M, 30, { width: W });
-      return;
-    }
-    // The Bunai logo, faint, behind the table as in the design.
-    const mark = logo();
-    if (mark) doc.save().opacity(0.07).image(mark, (pw - 240) / 2, (ph - 234) / 2 + 30, { width: 240 }).restore();
-    doc.image(art.top, 0, 0, { width: pw });
-    doc.image(art.bottom, 0, ph - bandBottom, { width: pw });
-  };
-  doc.on('pageAdded', dressPage);
-  dressPage();
 
   let y = top;
 
@@ -176,20 +124,7 @@ function build(po) {
   return doc;
 }
 
-function render(po) {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = build(po);
-      const chunks = [];
-      doc.on('data', (c) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
+const render = (po) => page.render(() => build(po));
 
 // "BUN-PO-0012 - Harsh.pdf"
 function fileName(po) {

@@ -26,6 +26,7 @@ const { db } = require('../db/pool');
 const { requireAuth, requirePage } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
 const { setInternalFromCost } = require('./samples.routes');
+const productCostPdf = require('../services/productCostPdf');
 
 const router = express.Router();
 
@@ -182,6 +183,33 @@ router.get('/mulmul-costs/:id', requireAuth, byRow, asyncRoute(async (req, res) 
   res.json({ ...c, vendor_cost: money(c.vendor_cost), final_cost: money(c.final_cost),
     overhead: money(c.overhead), profit: money(c.profit), gst_rate: money(c.gst_rate),
     lines: lines.map(l => ({ ...l, qty: money(l.qty), rate: money(l.rate), amount: money(l.amount) })) });
+}));
+
+// A Bunai product's cost sheet as a PDF on the letterhead, for use inside Bunai:
+// lines, overhead, profit and internal price, worked as the page works them.
+// Mulmul has no download.
+router.get('/mulmul-costs/:id/pdf', requireAuth, byRow, asyncRoute(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const c = await db.one(`SELECT id, sku, category, brand, overhead, overhead_type, profit, profit_type, image_url,
+                                 ${IST('updated_at')} AS updated, updated_by_name
+                            FROM mulmul_costs WHERE id = ?`, [id]);
+  if (!c) throw httpError(404, 'That product is no longer on the list.');
+  if (c.brand !== 'bunai') throw httpError(400, 'Only Bunai products have a cost sheet to download.');
+  const lines = (await db.rows(
+    'SELECT component, material, qty, rate, amount FROM mulmul_cost_lines WHERE cost_id = ? ORDER BY position, id', [id]))
+    .map(l => ({ ...l, qty: money(l.qty), rate: money(l.rate), amount: money(l.amount) }));
+  const priced = lines.filter(l => l.amount != null);
+  const total = priced.length ? round2(priced.reduce((s, l) => s + l.amount, 0)) : null;
+  const sheet = {
+    ...c, overhead: money(c.overhead), profit: money(c.profit), lines,
+    price: { total, ...priceUp(total, c) },
+    photo: await productCostPdf.photoOf(c.image_url),
+    today: new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10),
+  };
+  const pdf = await productCostPdf.render(sheet);
+  res.set('Content-Type', 'application/pdf');
+  res.set('Content-Disposition', 'attachment; filename="' + productCostPdf.fileName(c).replace(/[^\w. -]/g, '_') + '"');
+  res.send(pdf);
 }));
 
 async function whoAmI(req) {
