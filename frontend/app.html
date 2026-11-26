@@ -200,6 +200,10 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5M9 10h.01M15 10h.01"/></svg>
       <span class="nav-label-text">Vendor Name</span>
     </div>
+    <div class="nav-item" id="nav-vendorpo" style="display:none" onclick="navigate('vendorpo',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h4M7 3h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3v5h5"/></svg>
+      <span class="nav-label-text">Vendor PO</span>
+    </div>
 
     <div class="nav-section" id="navsec-mulmul">Mulmul</div>
     <div class="nav-item" id="nav-mulmulcost" style="display:none" onclick="navigate('mulmulcost',this)">
@@ -826,6 +830,22 @@
         <thead><tr><th>Vendor name</th><th>Company</th><th>Phone</th><th style="text-align:right">Styles</th>
           <th>Last call</th><th>Action</th></tr></thead>
         <tbody id="vbBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="page-vendorpo" class="page">
+    <div style="display:flex;align-items:center;gap:8px;margin:0 2px 10px;flex-wrap:wrap">
+      <input id="vpoSearch" type="text" placeholder="Search PO no., vendor, company, particular…" oninput="vpoDraw()" style="min-width:260px;max-width:380px"/>
+      <span id="vpoNote" style="font-size:12px;color:var(--muted-foreground)"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary" onclick="vpoOpen()">+ New PO</button>
+    </div>
+    <div class="table-container" style="overflow-x:auto">
+      <table>
+        <thead><tr><th>PO No.</th><th>Date</th><th>Vendor name</th><th>Vendor company</th><th>Particulars</th>
+          <th style="text-align:right">Total qty</th><th>Made by</th><th>Action</th></tr></thead>
+        <tbody id="vpoBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2180,7 +2200,49 @@
   .vb-style:hover { border-color: var(--brand-mid); }
   .vb-style.on { background: var(--brand-tint); border-color: var(--brand-deep); font-weight: 600; }
   .vb-style-n { color: var(--brand-deep); font-weight: 700; }
+  .vpo-lines input, .vpo-lines select { width:100%; }
+  .vpo-lines td { padding:4px 4px; vertical-align:middle; }
+  .vpo-lines th { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted-foreground); text-align:left; padding:6px 4px; }
+  /* The PO form scrolls with the wheel or a swipe; the bar itself is hidden. */
+  #vpoModal .modal { scrollbar-width:none; -ms-overflow-style:none; }
+  #vpoModal .modal::-webkit-scrollbar { display:none; }
 </style>
+
+<!-- ── Vendor PO: a vendor, the date, and any number of particulars ── -->
+<div class="modal-overlay" id="vpoModal">
+  <div class="modal" style="width:860px;max-width:95vw;max-height:92vh;overflow:auto">
+    <h3 id="vpoModalTitle">New PO</h3>
+    <div id="vpoMeta" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted-foreground)"></div>
+    <input type="hidden" id="vpoEditId"/>
+    <div class="form-row">
+      <div class="form-group"><label>Vendor name *</label>
+        <select id="vpoVendor" onchange="vpoVendorPicked()"><option value="">— Pick a vendor —</option></select>
+        <div id="vpoVendorHint" style="font-size:11.5px;color:var(--faint);margin-top:4px"></div></div>
+      <div class="form-group"><label>Vendor company</label>
+        <input type="text" id="vpoCompany" placeholder="Fills in from the Vendor Name list"/></div>
+      <div class="form-group" style="max-width:190px"><label>Date</label>
+        <input type="date" id="vpoDate"/></div>
+    </div>
+    <div style="font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:6px 0 4px">Particulars</div>
+    <table class="vpo-lines" style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="width:34px">#</th><th>Particular *</th><th style="width:110px">Quantity</th><th style="width:100px">Unit</th><th style="width:200px">Remarks</th><th style="width:34px"></th></tr></thead>
+      <tbody id="vpoLines"></tbody>
+    </table>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="vpoAddLine()">+ Add particular</button>
+      <div style="font-size:15px">Total quantity: <b id="vpoTotal" style="color:var(--brand-deep)">0</b></div>
+    </div>
+    <div class="form-group" style="margin-top:12px"><label>Notes (optional)</label>
+      <textarea id="vpoNotes" rows="2" placeholder="Delivery time, instructions for the vendor…"></textarea></div>
+    <div id="vpoErr" style="display:none;color:#dc2626;font-size:13px;margin-top:8px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('vpoModal')">Cancel</button>
+      <button class="btn btn-outline" id="vpoDlBtn" style="display:none" title="The PO as last saved">⬇ Download PO</button>
+      <button class="btn btn-primary" onclick="vpoSave(this)">Save PO</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="vbViewModal">
   <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
     <h3 id="vbViewTitle">Vendor</h3>

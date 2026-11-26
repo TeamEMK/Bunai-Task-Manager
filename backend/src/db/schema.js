@@ -985,6 +985,37 @@ const TABLES = [
     KEY idx_att_day (day)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
 
+  // Vendor PO (Inventory → Vendor PO): what is issued to a vendor - the vendor
+  // from the Vendor Name book, its name and company as they were on the day,
+  // the date, and as many particulars as there are. po_no is BUN-PO- and the id.
+  ['vendor_pos', `CREATE TABLE vendor_pos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    po_no VARCHAR(30) NOT NULL DEFAULT '',
+    vendor_id INT NULL,
+    vendor_name VARCHAR(160) NOT NULL DEFAULT '',
+    vendor_company VARCHAR(200) NOT NULL DEFAULT '',
+    po_date DATE NOT NULL,
+    notes VARCHAR(2000) NOT NULL DEFAULT '',
+    total_qty DECIMAL(14,3) NULL,
+    created_by INT NULL,
+    created_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    updated_by_name VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    KEY idx_vendor_po_date (po_date),
+    KEY idx_vendor_po_vendor (vendor_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+  ['vendor_po_lines', `CREATE TABLE vendor_po_lines (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    po_id INT NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    particular VARCHAR(255) NOT NULL,
+    qty DECIMAL(12,3) NULL,
+    unit VARCHAR(20) NOT NULL DEFAULT '',
+    remarks VARCHAR(500) NOT NULL DEFAULT '',
+    KEY idx_vendor_po_lines (po_id, position)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`],
+
   // Production checklist (Inventory → Production Checklist): a row per style
   // being made, the team's own steps, and one tick per style and step.
   ['prodcheck_steps', `CREATE TABLE prodcheck_steps (

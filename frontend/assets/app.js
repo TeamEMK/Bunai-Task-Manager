@@ -301,7 +301,7 @@ function setMinDates() {
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'Employees',hrsheet:'HR',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',b2bexport:'Bunai B2B Exports',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',catalog:'Catalog',samples:'Sample Style MIS',prodcheck:'Production Checklist',attendance:'Attendance',mulmulcost:'Mulmul Product Cost',bunaicost:'Bunai Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
+const pageTitles = {dashboard:'Dashboard',alltasks:'All Tasks',approvals:'Approvals',users:'Users',hr:'Employees',hrsheet:'HR',hrm:'Recruitment',influencers:'Influencers',b2b:'Bunai B2B',b2bexport:'Bunai B2B Exports',profile:'Profile',daily:'Daily Task Form',dailyreports:'Daily Reports',mis:'MIS Report',fms:'FMS Admin','fms-tasks':'FMS Tasks',merchfms:'Form',pms:'PMS — Production',clients:'Project Master',compliance:'Compliance Tracker',leaves:'Leave Tracker',ims:'Inventory (IMS)',stock:'Stock',sales:'Sales',returns:'Returns',shipments:'Shipments',vendors:'Vendor Name',vendorpo:'Vendor PO',catalog:'Catalog',samples:'Sample Style MIS',prodcheck:'Production Checklist',attendance:'Attendance',mulmulcost:'Mulmul Product Cost',bunaicost:'Bunai Product Cost',contentcal:'Content Calendar',warehouse:'Warehouse',scot:'SCOT — Calling List',inventory:'Team Assets'};
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -440,7 +440,7 @@ document.addEventListener('keydown', (e) => {
 // key added there needs adding here.
 const PAGE_GRANTS = [
   { key: 'sales', label: 'Sales' }, { key: 'returns', label: 'Returns' },
-  { key: 'shipments', label: 'Shipments' }, { key: 'vendors', label: 'Vendor Name' }, { key: 'catalog', label: 'Catalog' },
+  { key: 'shipments', label: 'Shipments' }, { key: 'vendors', label: 'Vendor Name' }, { key: 'vendorpo', label: 'Vendor PO' }, { key: 'catalog', label: 'Catalog' },
   { key: 'scot', label: 'SCOT' }, { key: 'warehouse', label: 'Warehouse' },
   { key: 'samples', label: 'Sampling' }, { key: 'prodcheck', label: 'Production Checklist' }, { key: 'attendance', label: 'Attendance' }, { key: 'mulmulcost', label: 'Mulmul Product Cost' }, { key: 'bunaicost', label: 'Bunai Product Cost' },
   { key: 'contentcal', label: 'Content Calendar' },
@@ -542,6 +542,7 @@ function navigate(page, el, fromHistory) {
   if (page==='returns') loadReturns();
   if (page==='shipments') loadShipments();
   if (page==='vendors') loadVendors();
+  if (page==='vendorpo') loadVendorPos();
   if (page==='prodcheck') loadProdCheck();
   if (page==='hrsheet') loadHrSheet();
   if (page==='attendance') loadAttendance();
@@ -10175,6 +10176,209 @@ async function saveB2B(btn){
     loadB2B();
     loadB2BParties();   // a first order turns a party into a customer: the counts move
   } finally { done(); }
+}
+
+// ══════════════════════════════════════════════════════
+// VENDOR PO — what is issued to a vendor: the vendor, the date and as many
+// particulars as there are, the total quantity added up from them.
+// ══════════════════════════════════════════════════════
+let VPO = { rows: [], vendors: [], units: [], today: '' };
+let _vpoOpenSeq = 0;
+const vpoQty = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 }));
+// What a quantity box holds: null when empty, NaN when not a number.
+const vpoNum = (s) => {
+  const t = String(s == null ? '' : s).replace(/,/g, '').trim();
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : NaN;
+};
+
+async function loadVendorPos() {
+  const body = document.getElementById('vpoBody');
+  let d;
+  try { d = await api('/api/vendor-pos'); } catch (e) { d = { error: e.message || 'error' }; }
+  if (d.error) { body.innerHTML = '<tr><td colspan="8" class="empty">Could not load — ' + dtEscape(d.error) + '</td></tr>'; return; }
+  VPO = d;
+  vpoDraw();
+}
+
+function vpoDraw() {
+  const body = document.getElementById('vpoBody');
+  const q = document.getElementById('vpoSearch').value.trim().toLowerCase();
+  const rows = VPO.rows.filter(p => !q
+    || [p.po_no, p.vendor_name, p.vendor_company, p.particulars, p.notes].join(' ').toLowerCase().includes(q));
+  document.getElementById('vpoNote').textContent = VPO.rows.length ? rows.length + ' of ' + VPO.rows.length + ' POs' : '';
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">' + (VPO.rows.length ? 'No PO matches.' : 'No POs yet — use <b>+ New PO</b>.') + '</td></tr>';
+    return;
+  }
+  const admin = ME && ME.role === 'admin';
+  body.innerHTML = rows.map(p => '<tr onclick="vpoOpen(' + p.id + ')" style="cursor:pointer" title="Click to open this PO">'
+    + '<td style="white-space:nowrap"><b>' + dtEscape(p.po_no) + '</b></td>'
+    + '<td style="white-space:nowrap">' + vbDate(p.po_date) + '</td>'
+    + '<td>' + dtEscape(p.vendor_name || '—') + '</td>'
+    + '<td>' + dtEscape(p.vendor_company || '—') + '</td>'
+    + '<td><div style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + dtEscape(p.particulars) + '">'
+      + '<span style="color:var(--muted-foreground)">' + p.line_count + ' · </span>' + dtEscape(p.particulars) + '</div></td>'
+    + '<td style="text-align:right;font-weight:700">' + vpoQty(p.total_qty) + '</td>'
+    + '<td style="font-size:12.5px">' + dtEscape(p.created_by_name || '—')
+      + '<div style="font-size:11px;color:var(--muted-foreground)">' + dtEscape(p.updated || '') + '</div></td>'
+    + '<td style="white-space:nowrap" onclick="event.stopPropagation()">'
+      + '<button class="action-btn" style="font-weight:700;color:var(--brand-deep)" onclick="vpoDownload(' + p.id + ', this)">⬇ Download PO</button>'
+      + '<button class="action-btn" style="margin-left:6px" onclick="vpoOpen(' + p.id + ')">Edit</button>'
+      + (admin ? '<button class="action-btn delete" style="margin-left:6px" onclick="vpoDelete(' + p.id + ')">Delete</button>' : '')
+    + '</td></tr>').join('');
+}
+
+function vpoLineHtml(l) {
+  const units = (VPO.units || []).map(u => '<option value="' + u + '"' + (l.unit === u ? ' selected' : '') + '>' + u + '</option>').join('');
+  return '<tr class="vpo-line">'
+    + '<td class="vpo-n" style="color:var(--faint);text-align:center;font-size:12.5px"></td>'
+    + '<td><input type="text" class="vpo-part" maxlength="255" value="' + dtEscape(l.particular || '') + '" placeholder="e.g. Cotton Satin fabric"/></td>'
+    + '<td><input type="text" class="vpo-qty" inputmode="decimal" value="' + (l.qty == null ? '' : l.qty) + '" oninput="vpoRecalc()" style="text-align:right"/></td>'
+    + '<td><select class="vpo-unit"><option value="">—</option>' + units + '</select></td>'
+    + '<td><input type="text" class="vpo-rem" maxlength="500" value="' + dtEscape(l.remarks || '') + '"/></td>'
+    + '<td><button type="button" class="btn btn-sm btn-outline" title="Remove this line" onclick="vpoRemoveLine(this)">✕</button></td>'
+    + '</tr>';
+}
+
+function vpoNumber() {
+  document.querySelectorAll('#vpoLines .vpo-n').forEach((td, i) => { td.textContent = i + 1; });
+}
+
+function vpoAddLine(l) {
+  const host = document.getElementById('vpoLines');
+  host.insertAdjacentHTML('beforeend', vpoLineHtml(l || {}));
+  vpoNumber();
+  if (!l) host.lastElementChild.querySelector('.vpo-part').focus();
+}
+
+function vpoRemoveLine(btn) {
+  btn.closest('tr').remove();
+  if (!document.querySelector('#vpoLines tr')) vpoAddLine({});
+  vpoNumber();
+  vpoRecalc();
+}
+
+// Total quantity: every quantity that is a number, added up. A box holding
+// something else turns red rather than being counted as nothing.
+function vpoRecalc() {
+  let total = 0;
+  document.querySelectorAll('#vpoLines .vpo-qty').forEach(x => {
+    const n = vpoNum(x.value);
+    x.style.borderColor = Number.isNaN(n) ? '#dc2626' : '';
+    if (n != null && !Number.isNaN(n)) total += n;
+  });
+  document.getElementById('vpoTotal').textContent = vpoQty(Math.round(total * 1000) / 1000);
+}
+
+// Picking the vendor fills in their company from the Vendor Name list.
+function vpoVendorPicked() {
+  const v = (VPO.vendors || []).find(x => String(x.id) === document.getElementById('vpoVendor').value);
+  document.getElementById('vpoCompany').value = v ? (v.company || '') : '';
+  document.getElementById('vpoVendorHint').textContent = v && !v.company ? 'No company on this vendor in the Vendor Name list.' : '';
+}
+
+async function vpoOpen(id) {
+  const seq = ++_vpoOpenSeq;
+  let p = null;
+  if (id) {
+    p = await api('/api/vendor-pos/' + id);
+    if (seq !== _vpoOpenSeq) return;
+    if (p.error) return showToast('⚠️ ' + p.error, 'error');
+  }
+  document.getElementById('vpoModalTitle').textContent = p ? 'PO ' + p.po_no : 'New PO';
+  document.getElementById('vpoMeta').textContent = p
+    ? 'Made by ' + (p.created_by_name || '—') + (p.updated ? ' · last saved ' + p.updated + (p.updated_by_name ? ' by ' + p.updated_by_name : '') : '')
+    : 'The date is today unless you change it. The PO number is given on save.';
+  document.getElementById('vpoEditId').value = p ? p.id : '';
+  const dl = document.getElementById('vpoDlBtn');
+  dl.style.display = p ? '' : 'none';
+  dl.onclick = p ? () => vpoDownload(p.id, dl) : null;
+  const sel = document.getElementById('vpoVendor');
+  const vendors = VPO.vendors || [];
+  sel.innerHTML = '<option value="">— Pick a vendor —</option>'
+    + vendors.map(v => '<option value="' + v.id + '">' + dtEscape(v.name) + '</option>').join('')
+    // A PO whose vendor has since left the list still shows who it was for.
+    + (p && p.vendor_id && !vendors.some(v => v.id === p.vendor_id)
+      ? '<option value="' + p.vendor_id + '">' + dtEscape(p.vendor_name) + ' (no longer in the list)</option>' : '');
+  sel.value = p && p.vendor_id ? String(p.vendor_id) : '';
+  document.getElementById('vpoVendorHint').textContent = vendors.length ? '' : 'Add vendors on the Vendor Name page first.';
+  document.getElementById('vpoCompany').value = p ? (p.vendor_company || '') : '';
+  document.getElementById('vpoDate').value = p ? p.po_date : (VPO.today || '');
+  document.getElementById('vpoNotes').value = p ? (p.notes || '') : '';
+  document.getElementById('vpoErr').style.display = 'none';
+  const host = document.getElementById('vpoLines');
+  host.innerHTML = '';
+  (p && p.lines.length ? p.lines : [{}, {}, {}]).forEach(l => host.insertAdjacentHTML('beforeend', vpoLineHtml(l)));
+  vpoNumber();
+  vpoRecalc();
+  document.getElementById('vpoModal').classList.add('open');
+}
+
+async function vpoSave(btn) {
+  const err = document.getElementById('vpoErr');
+  const show = (m) => { err.textContent = m; err.style.display = 'block'; };
+  err.style.display = 'none';
+  const id = document.getElementById('vpoEditId').value;
+  // n is the line's number as the form shows it, so a message points at the right row.
+  const lines = [...document.querySelectorAll('#vpoLines tr')].map((tr, i) => ({
+    n: i + 1,
+    particular: tr.querySelector('.vpo-part').value.trim(),
+    qty: tr.querySelector('.vpo-qty').value.trim(),
+    unit: tr.querySelector('.vpo-unit').value,
+    remarks: tr.querySelector('.vpo-rem').value.trim(),
+  })).filter(l => l.particular || l.qty || l.remarks);
+  const body = {
+    vendor_id: document.getElementById('vpoVendor').value,
+    vendor_company: document.getElementById('vpoCompany').value.trim(),
+    po_date: document.getElementById('vpoDate').value,
+    notes: document.getElementById('vpoNotes').value.trim(),
+    lines,
+  };
+  if (!body.vendor_id) return show('Pick the vendor.');
+  if (!lines.length) return show('Add at least one particular.');
+  const bad = lines.findIndex(l => !l.particular || Number.isNaN(vpoNum(l.qty)));
+  if (bad >= 0) return show('Line ' + lines[bad].n + ': ' + (!lines[bad].particular ? 'write the particular.' : 'the quantity is not a number.'));
+  lines.forEach(l => { delete l.n; });
+  const done = hrmBusy(btn, 'Saving…');
+  try {
+    const r = await api('/api/vendor-pos' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', body);
+    if (r.error) return show(r.error);
+    closeModal('vpoModal');
+    showToast('✅ ' + (id ? 'PO saved' : 'PO ' + r.po_no + ' made') + ' · use ⬇ Download PO for the PDF');
+    loadVendorPos();
+  } finally { done(); }
+}
+
+// The PO as a PDF on the letterhead, saved as "BUN-PO-0012 - Harsh.pdf".
+async function vpoDownload(id, btn) {
+  const done = hrmBusy(btn, 'Preparing…');
+  try {
+    const token = localStorage.getItem('authToken');
+    const res = await fetch('/api/vendor-pos/' + id + '/pdf', { credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {} });
+    if (!res.ok) {
+      let msg = 'Could not make the PO';
+      try { msg = (await res.json()).error || msg; } catch (_) { /* not JSON */ }
+      return showToast('⚠️ ' + msg, 'error');
+    }
+    const name = (/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '') || [])[1] || 'PO.pdf';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } finally { done(); }
+}
+
+async function vpoDelete(id) {
+  const p = VPO.rows.find(x => x.id === id);
+  if (!confirm('Delete ' + (p ? p.po_no : 'this PO') + '? This cannot be undone.')) return;
+  const r = await api('/api/vendor-pos/' + id, 'DELETE');
+  if (r.error) return showToast('⚠️ ' + r.error, 'error');
+  showToast('PO deleted');
+  loadVendorPos();
 }
 
 // ══════════════════════════════════════════════════════

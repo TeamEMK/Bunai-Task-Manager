@@ -424,4 +424,6 @@ function fileName(offer) {
   return `Offer Letter - ${who}.pdf`;
 }
 
-module.exports = { render, fileName, slashDate, DOCUMENTS, COMPANY };
+// The letterhead and its measurements are shared with the Vendor PO, which is
+// printed on the same paper.
+module.exports = { render, fileName, slashDate, DOCUMENTS, COMPANY, letterhead, ART_RATIO, ART_INK };
