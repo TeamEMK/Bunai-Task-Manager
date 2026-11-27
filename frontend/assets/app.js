@@ -14052,6 +14052,70 @@ let _b2bTab = 'orders';
 let _b2bPartyTimer = null;
 function b2bPartyDebounced(){ clearTimeout(_b2bPartyTimer); _b2bPartyTimer = setTimeout(loadB2BParties, 300); }
 
+// ── Prospects: bulk upload ────────────────────────────
+// A sheet is checked first (nothing saved, every row's fate listed) and saved
+// only on Import, into the book (Bunai B2B or Exports) the page is showing.
+async function b2bBulkTemplate() {
+  const token = localStorage.getItem('authToken');
+  const r = await fetch('/api/b2b/parties/template', { credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {} });
+  if (!r.ok) return showToast('⚠️ Could not download the template', 'error');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = 'Prospects bulk upload.xlsx';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function b2bBulkOpen() {
+  document.getElementById('b2bBulkFile').value = '';
+  document.getElementById('b2bBulkErr').style.display = 'none';
+  document.getElementById('b2bBulkResult').innerHTML = '';
+  document.getElementById('b2bBulkImport').style.display = 'none';
+  document.getElementById('b2bBulkModal').classList.add('open');
+}
+
+async function b2bBulkSend(btn, check) {
+  const err = document.getElementById('b2bBulkErr');
+  const out = document.getElementById('b2bBulkResult');
+  const imp = document.getElementById('b2bBulkImport');
+  err.style.display = 'none';
+  const file = document.getElementById('b2bBulkFile').files[0];
+  if (!file) { err.textContent = 'Choose the Excel file first.'; err.style.display = 'block'; return; }
+  const done = hrmBusy(btn, check ? 'Checking…' : 'Importing…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const token = localStorage.getItem('authToken');
+    const r = await fetch('/api/b2b/parties/bulk?book=' + B2B_BOOK + (check ? '&check=1' : ''), {
+      method: 'POST', credentials: 'include', headers: token ? { Authorization: 'Bearer ' + token } : {}, body: fd });
+    let d = {};
+    try { d = await r.json(); } catch (_) { d = { error: 'HTTP ' + r.status }; }
+    if (d.error) { err.textContent = d.error; err.style.display = 'block'; imp.style.display = 'none'; return; }
+
+    const bad = d.rows.filter(x => x.problems.length);
+    const noted = d.rows.filter(x => !x.problems.length && x.notes.length);
+    const label = (t, c) => '<div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:' + c + ';margin:10px 0 4px">' + t + '</div>';
+    const line = (x, what, colour) => '<div style="font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--border)">'
+      + '<b>Row ' + x.row + '</b> · ' + dtEscape(x.name) + ' — <span style="color:' + colour + '">' + dtEscape(what.join('; ')) + '</span></div>';
+    const head = check
+      ? '<div style="font-size:14px;font-weight:700;margin-bottom:8px">' + d.ready + ' of ' + d.total + ' rows ready to import'
+        + (bad.length ? ', ' + bad.length + ' will be skipped' : '') + '</div>'
+      : '<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#15803d">✅ ' + d.added + ' prospect' + (d.added === 1 ? '' : 's')
+        + ' added' + (d.skipped ? ', ' + d.skipped + ' skipped' : '') + '</div>';
+    out.innerHTML = head
+      + (bad.length ? label('Skipped', '#b91c1c') + bad.map(x => line(x, x.problems, '#b91c1c')).join('') : '')
+      + (noted.length ? label(check ? 'Will be imported, with a note' : 'Imported, with a note', '#92400e') + noted.map(x => line(x, x.notes, '#92400e')).join('') : '');
+    if (check) {
+      imp.textContent = 'Import ' + d.ready + ' prospect' + (d.ready === 1 ? '' : 's');
+      imp.style.display = d.ready ? '' : 'none';
+    } else {
+      imp.style.display = 'none';
+      document.getElementById('b2bBulkFile').value = '';
+      loadB2BParties();
+    }
+  } finally { done(); }
+}
+
 function b2bTab(which) {
   _b2bTab = which;
   for (const [t, id] of [['orders', 'b2bTabOrders'], ['customers', 'b2bTabCustomers'], ['prospects', 'b2bTabProspects']]) {

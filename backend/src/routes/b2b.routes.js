@@ -23,6 +23,8 @@ const google = require('../services/google');
 const { db } = require('../db/pool');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { asyncRoute, httpError } = require('../middleware/errors');
+const multer = require('multer');
+const partyBulk = require('../services/b2bPartyBulk');
 
 const router = express.Router();
 
@@ -485,6 +487,63 @@ router.put('/b2b/parties/:id', requireAuth, requireAdmin, asyncRoute(async (req,
     [...PARTY_COLS.map(c => v[c]), id]);
   if (!r.affectedRows) throw httpError(404, 'Party not found');
   res.json({ ok: true });
+}));
+
+// ── Prospects: bulk upload ────────────────────────────
+// A sheet of parties brought in as prospects. ?check=1 reads the file and says
+// what would happen to every row, saving nothing; without it the rows that
+// passed are saved, in the book (domestic or export) named by ?book=. Nobody is
+// contacted. A party already on the list - customer or prospect, either book,
+// however it is cased - is skipped, so the same file twice adds nobody twice.
+const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
+
+router.get('/b2b/parties/template', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.set('Content-Disposition', 'attachment; filename="Prospects bulk upload.xlsx"');
+  res.send(Buffer.from(await partyBulk.template()));
+}));
+
+router.post('/b2b/parties/bulk', requireAuth, requireAdmin, (req, res, next) => {
+  sheetUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400)
+      .json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That file is over 4 MB.' : err.message });
+  });
+}, asyncRoute(async (req, res) => {
+  if (!req.file) throw httpError(400, 'Choose the sheet to upload.');
+  const [parties, customers] = await Promise.all([
+    db.rows('SELECT party_name FROM b2b_parties'),
+    db.rows("SELECT DISTINCT party_name FROM b2b_orders WHERE party_name <> ''"),
+  ]);
+  const parsed = await partyBulk.read(req.file.buffer, {
+    parties: parties.map(p => p.party_name), customers: customers.map(c => c.party_name),
+  });
+  if (parsed.error) throw httpError(400, parsed.error);
+
+  const good = parsed.rows.filter(r => !r.problems.length);
+  const report = parsed.rows.map(r => ({ row: r.row, name: r.name, problems: r.problems, notes: r.notes }));
+  if (req.query.check === '1') {
+    return res.json({ check: true, sheet: parsed.sheet, total: parsed.rows.length, ready: good.length, rows: report });
+  }
+
+  const book = bookOf(req.query.book);
+  let added = 0;
+  for (const r of good) {
+    const d = r.data;
+    try {
+      await db.query(
+        `INSERT INTO b2b_parties (${PARTY_COLS.join(', ')}, book, created_by)
+         VALUES (${PARTY_COLS.map(() => '?').join(', ')}, ?, ?)`,
+        [...PARTY_COLS.map(c => d[c] || ''), book, req.session.userId || null]);
+      added++;
+    } catch (err) {
+      // Added by somebody else between the check and now: skipped, not a failure.
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+      r.problems.push('already on the list');
+      report.find(x => x.row === r.row).problems.push('already on the list');
+    }
+  }
+  res.json({ added, skipped: parsed.rows.length - added, rows: report });
 }));
 
 router.delete('/b2b/parties/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {

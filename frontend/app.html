@@ -1573,6 +1573,7 @@
         <input type="text" id="b2bPartySearch" placeholder="Search party, contact, city…"
           oninput="b2bPartyDebounced()" style="flex:1 1 240px;max-width:340px"/>
         <div style="flex:1"></div>
+        <button class="btn btn-outline" id="b2bBulkBtn" onclick="b2bBulkOpen()">⤒ Bulk upload</button>
         <button class="btn btn-primary" id="b2bAddPartyBtn" onclick="b2bPartyOpen()">+ Add prospect</button>
       </div>
       <div id="b2bPartyNote" style="font-size:12.5px;color:var(--muted-foreground);margin:0 2px 12px"></div>
@@ -1877,6 +1878,29 @@
     <div id="sampleHistBody"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('sampleHistModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="b2bBulkModal">
+  <div class="modal" style="width:720px;max-width:94vw;max-height:92vh;overflow:auto">
+    <h3>Bulk upload prospects</h3>
+    <div style="font-size:13px;color:var(--muted-foreground);line-height:1.6;margin:-4px 0 14px">
+      1. Have an Excel sheet with the headings <b>Party Name, City, Mobile Number, Contact Person, Remarks</b>
+      (<a href="#" onclick="b2bBulkTemplate();return false" style="color:var(--brand-deep);font-weight:600">download the template</a>
+      if you want one).<br>
+      2. Choose the file below and press <b>Check file</b>. Nothing is saved until you press Import.<br>
+      <span style="color:var(--faint)">Nobody is contacted. A party already on the list (customer or prospect) is skipped, so the same file twice adds nobody twice.</span>
+    </div>
+    <div class="alert error" id="b2bBulkErr" style="display:none"></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input type="file" id="b2bBulkFile" accept=".xlsx" style="flex:1;min-width:220px;font-size:13px"/>
+      <button class="btn btn-outline" onclick="b2bBulkSend(this, true)">Check file</button>
+    </div>
+    <div id="b2bBulkResult" style="margin-top:14px"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-outline" onclick="closeModal('b2bBulkModal')">Close</button>
+      <button class="btn btn-primary" id="b2bBulkImport" style="display:none" onclick="b2bBulkSend(this, false)">Import</button>
     </div>
   </div>
 </div>
